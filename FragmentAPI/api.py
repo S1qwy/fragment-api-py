@@ -1,5 +1,5 @@
 from typing import Optional, Dict, Any
-from .models import FragmentSession, FragmentAPIError
+from .models import FragmentSession, FragmentAPIError, FragmentErrorType
 from .utils import make_request, handle_api_error
 from .exceptions import FragmentAuthError, FragmentOrderError, FragmentPaymentError
 import os
@@ -38,6 +38,15 @@ class FragmentAPI:
         
     def ton(self) -> 'FragmentTON':
         return FragmentTON(self)
+        
+    def premium_nokyc(self) -> 'FragmentPremiumNoKYC':
+        return FragmentPremiumNoKYC(self)
+        
+    def stars_nokyc(self) -> 'FragmentStarsNoKYC':
+        return FragmentStarsNoKYC(self)
+        
+    def ton_nokyc(self) -> 'FragmentTONNoKYC':
+        return FragmentTONNoKYC(self)
 
 class FragmentAuth:
     def __init__(self, api: FragmentAPI):
@@ -60,7 +69,6 @@ class FragmentAuth:
                     response
                 )
             
-            # Создаем и сохраняем сессию
             self.api.session = FragmentSession(
                 auth_key=response["auth_key"],
                 fragment_cookies=fragment_cookies
@@ -86,9 +94,6 @@ class FragmentGeneral:
         return self.api._make_request("GET", "/v2/ping")
     
     def get_balance(self, auth_key: Optional[str] = None) -> dict:
-        """
-        Получить баланс кошелька
-        """
         if auth_key is None:
             if not self.api.session or not self.api.session.auth_key:
                 raise FragmentAuthError(
@@ -108,7 +113,6 @@ class FragmentGeneral:
         
         response = self.api._make_request("GET", "/v2/getBalance", params=params)
         
-        # Обновляем баланс в сессии
         if self.api.session and response.get("success"):
             self.api.session.last_balance = response.get("balance")
             
@@ -196,6 +200,42 @@ class FragmentPremium:
         params = {"uuid": uuid}
         return self.api._make_request("GET", "/v2/buyPremium/check", params=params)
 
+class FragmentPremiumNoKYC:
+    def __init__(self, api: FragmentAPI):
+        self.api = api
+        
+    def create_premium_order(self, username: str, duration: int) -> dict:
+        data = {
+            "username": username,
+            "duration": duration
+        }
+        return self.api._make_request("POST", "/v2/buyPremiumWithoutKYC/create", json_data=data)
+    
+    def pay_premium_order(self, order_uuid: str, cost: float,
+                         auth_key: Optional[str] = None,
+                         wallet_type: Optional[str] = None) -> dict:
+        if auth_key is None:
+            if not self.api.session or not self.api.session.auth_key:
+                raise FragmentAuthError(
+                    FragmentErrorType.AUTH_KEY_NOT_FOUND,
+                    "No auth key provided and no active session",
+                    401
+                )
+            auth_key = self.api.session.auth_key
+            wallet_type = self.api.session.wallet_type
+        
+        data = {
+            "order_uuid": order_uuid,
+            "auth_key": auth_key,
+            "cost": cost,
+            "wallet_type": wallet_type or "v4r2"
+        }
+        return self.api._make_request("POST", "/v2/buyPremiumWithoutKYC/pay", json_data=data)
+    
+    def check_premium_order(self, uuid: str) -> dict:
+        params = {"uuid": uuid}
+        return self.api._make_request("GET", "/v2/buyPremiumWithoutKYC/check", params=params)
+
 class FragmentStars:
     def __init__(self, api: FragmentAPI):
         self.api = api
@@ -245,6 +285,42 @@ class FragmentStars:
         params = {"uuid": uuid}
         return self.api._make_request("GET", "/v2/buyStars/check", params=params)
 
+class FragmentStarsNoKYC:
+    def __init__(self, api: FragmentAPI):
+        self.api = api
+        
+    def create_stars_order(self, username: str, amount: int) -> dict:
+        data = {
+            "username": username,
+            "amount": amount
+        }
+        return self.api._make_request("POST", "/v2/buyStarsWithoutKYC/create", json_data=data)
+    
+    def pay_stars_order(self, order_uuid: str, cost: float,
+                       auth_key: Optional[str] = None,
+                       wallet_type: Optional[str] = None) -> dict:
+        if auth_key is None:
+            if not self.api.session or not self.api.session.auth_key:
+                raise FragmentAuthError(
+                    FragmentErrorType.AUTH_KEY_NOT_FOUND,
+                    "No auth key provided and no active session",
+                    401
+                )
+            auth_key = self.api.session.auth_key
+            wallet_type = self.api.session.wallet_type
+        
+        data = {
+            "order_uuid": order_uuid,
+            "auth_key": auth_key,
+            "cost": cost,
+            "wallet_type": wallet_type or "v4r2"
+        }
+        return self.api._make_request("POST", "/v2/buyStarsWithoutKYC/pay", json_data=data)
+    
+    def check_stars_order(self, uuid: str) -> dict:
+        params = {"uuid": uuid}
+        return self.api._make_request("GET", "/v2/buyStarsWithoutKYC/check", params=params)
+
 class FragmentTON:
     def __init__(self, api: FragmentAPI):
         self.api = api
@@ -293,3 +369,39 @@ class FragmentTON:
     def check_ton_order(self, uuid: str) -> dict:
         params = {"uuid": uuid}
         return self.api._make_request("GET", "/v2/buyTon/check", params=params)
+
+class FragmentTONNoKYC:
+    def __init__(self, api: FragmentAPI):
+        self.api = api
+        
+    def create_ton_order(self, username: str, amount: int) -> dict:
+        data = {
+            "username": username,
+            "amount": amount
+        }
+        return self.api._make_request("POST", "/v2/buyTonWithoutKYC/create", json_data=data)
+    
+    def pay_ton_order(self, order_uuid: str, cost: float,
+                     auth_key: Optional[str] = None,
+                     wallet_type: Optional[str] = None) -> dict:
+        if auth_key is None:
+            if not self.api.session or not self.api.session.auth_key:
+                raise FragmentAuthError(
+                    FragmentErrorType.AUTH_KEY_NOT_FOUND,
+                    "No auth key provided and no active session",
+                    401
+                )
+            auth_key = self.api.session.auth_key
+            wallet_type = self.api.session.wallet_type
+        
+        data = {
+            "order_uuid": order_uuid,
+            "auth_key": auth_key,
+            "cost": cost,
+            "wallet_type": wallet_type or "v4r2"
+        }
+        return self.api._make_request("POST", "/v2/buyTonWithoutKYC/pay", json_data=data)
+    
+    def check_ton_order(self, uuid: str) -> dict:
+        params = {"uuid": uuid}
+        return self.api._make_request("GET", "/v2/buyTonWithoutKYC/check", params=params)
