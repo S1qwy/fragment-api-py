@@ -61,7 +61,7 @@ pip install -e .
 Import and create an instance of the `FragmentAPI` class, optionally specifying the base URL.
 
 ```python
-from fragment_api_py import FragmentAPI  # Adjust import based on package structure
+from fragment_api import FragmentAPI  # Adjust import based on package structure
 
 # Initialize with default base URL
 api = FragmentAPI()
@@ -200,7 +200,7 @@ except requests.exceptions.RequestException as e:
 ## Examples
 ### Authenticate and Check Balance
 ```python
-from fragment_api_py import FragmentAPI
+from fragment_api import FragmentAPI
 
 api = FragmentAPI()
 try:
@@ -216,7 +216,7 @@ finally:
 
 ### Load Session and Buy Stars
 ```python
-from fragment_api_py import FragmentAPI
+from fragment_api import FragmentAPI
 
 api = FragmentAPI()
 try:
@@ -233,7 +233,7 @@ finally:
 
 ### Gift Premium Subscription
 ```python
-from fragment_api_py import FragmentAPI
+from fragment_api import FragmentAPI
 
 api = FragmentAPI()
 try:
