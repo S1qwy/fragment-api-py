@@ -61,7 +61,7 @@ pip install -e .
 Импортируйте и создайте экземпляр класса `FragmentAPI`, при необходимости указав базовый URL.
 
 ```python
-from fragment_api_py import FragmentAPI  # Настройте импорт в зависимости от структуры пакета
+from fragment_api import FragmentAPI  # Настройте импорт в зависимости от структуры пакета
 
 # Инициализация с базовым URL по умолчанию
 api = FragmentAPI()
@@ -200,7 +200,7 @@ except requests.exceptions.RequestException as e:
 ## Примеры
 ### Аутентификация и проверка баланса
 ```python
-from fragment_api_py import FragmentAPI
+from fragment_api import FragmentAPI
 
 api = FragmentAPI()
 try:
@@ -216,7 +216,7 @@ finally:
 
 ### Загрузка сессии и покупка Stars
 ```python
-from fragment_api_py import FragmentAPI
+from fragment_api import FragmentAPI
 
 api = FragmentAPI()
 try:
@@ -233,7 +233,7 @@ finally:
 
 ### Подарок подписки Premium
 ```python
-from fragment_api_py import FragmentAPI
+from fragment_api import FragmentAPI
 
 api = FragmentAPI()
 try:
