@@ -4,6 +4,8 @@
 [![Python versions](https://img.shields.io/pypi/pyversions/fragment-api-py.svg)](https://pypi.org/project/fragment-api-py/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+**[Read in Russian (Русская версия)](README_ru.md)**
+
 A Python client library for interacting with the Fragment API, designed to manage authentication, session handling, and Telegram-related transactions such as buying Telegram Stars, gifting Telegram Premium, and topping up TON.
 
 ## Table of Contents
@@ -108,22 +110,25 @@ All methods requiring authentication (`get_balance`, `buy_stars`, `gift_premium`
 - **`get_balance()`**: Retrieves the wallet balance.
   ```python
   balance = api.get_balance()
-  # Example response: {"ok": true, "balance": 100.50, "currency": "TON"}
+  # Example response: {"ok": true, "balance": 100.50}
   ```
 
-- **`buy_stars(username, quantity=None)`**: Buys Telegram Stars for a user (username with @ prefix).
+- **`buy_stars(username, quantity=50, show_sender=False)`**: Buys Telegram Stars for a user (username with @ prefix).
   ```python
-  result = api.buy_stars("@username", quantity=100)
+  result = api.buy_stars("@username", quantity=100, show_sender=True)
+  # Example response: {"ok": true, "transaction_hash": "abc123"}
   ```
 
-- **`gift_premium(username, months=None)`**: Gifts Telegram Premium to a user.
+- **`gift_premium(username, months=3, show_sender=False)`**: Gifts Telegram Premium to a user.
   ```python
-  result = api.gift_premium("@username", months=3)
+  result = api.gift_premium("@username", months=6, show_sender=True)
+  # Example response: {"ok": true, "transaction_hash": "xyz789"}
   ```
 
-- **`topup_ton(username, amount)`**: Tops up TON balance for a user.
+- **`topup_ton(username, amount, show_sender=False)`**: Tops up TON balance for a user.
   ```python
-  result = api.topup_ton("@username", amount=10)
+  result = api.topup_ton("@username", amount=10, show_sender=True)
+  # Example response: {"ok": true, "transaction_hash": "def456"}
   ```
 
 - **`get_user_stars(username)`**: Queries user information for Telegram Stars transactions.
@@ -139,7 +144,7 @@ All methods requiring authentication (`get_balance`, `buy_stars`, `gift_premium`
 - **`health_check()`**: Checks the API's health status (no authentication required).
   ```python
   status = api.health_check()
-  # Example response: {"status": "healthy", "timestamp": "2025-09-12T00:00:00Z"}
+  # Example response: {"ok": true, "timestamp": "2025-09-12T00:00:00Z"}
   ```
 
 - **`close()`**: Closes the HTTP session and clears the auth key.
@@ -216,7 +221,24 @@ from fragment_api_py import FragmentAPI
 api = FragmentAPI()
 try:
     if api.load_session():
-        result = api.buy_stars("@example_user", quantity=50)  # Prints response
+        result = api.buy_stars("@example_user", quantity=50, show_sender=True)  # Prints response
+        print(f"Transaction result: {result}")
+    else:
+        print("No valid session found")
+except Exception as e:
+    print(f"Error: {e}")
+finally:
+    api.close()
+```
+
+### Gift Premium Subscription
+```python
+from fragment_api_py import FragmentAPI
+
+api = FragmentAPI()
+try:
+    if api.load_session():
+        result = api.gift_premium("@example_user", months=3, show_sender=False)  # Prints response
         print(f"Transaction result: {result}")
     else:
         print("No valid session found")
