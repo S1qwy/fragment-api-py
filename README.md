@@ -589,9 +589,7 @@ This library is not affiliated with Fragment.com or Telegram. Use at your own ri
 
 ## Acknowledgments
 
-- [tonutils](https://github.com/yungwine/tonutils-py) - TON wallet utilities
+- [tonutils](https://github.com/nessshon/tonutils) - TON wallet utilities
 - [pytoniq](https://github.com/yungwine/pytoniq) - TON blockchain interaction
 - Fragment.com team for the API
 ---
-
-**Made with ❤️ by [S1qwy](https://github.com/S1qwy)**
