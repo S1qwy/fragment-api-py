@@ -580,16 +580,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Disclaimer
 
 This library is not affiliated with Fragment.com or Telegram. Use at your own risk. The authors are not responsible for any losses or damages resulting from the use of this library.
-
-## Support & Contact
-
-- **Issues**: [GitHub Issues](https://github.com/S1qwy/fragment-api-py/issues)
-- **Email**: amirhansuper75@gmail.com
-- **GitHub**: [@S1qwy](https://github.com/S1qwy)
-
-## Acknowledgments
-
-- [tonutils](https://github.com/nessshon/tonutils) - TON wallet utilities
-- [pytoniq](https://github.com/yungwine/pytoniq) - TON blockchain interaction
-- Fragment.com team for the API
----
