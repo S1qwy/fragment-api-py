@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PyPI version](https://img.shields.io/badge/pypi-v3.0.2-blue.svg)](https://pypi.org/project/fragment-api-py/)
 
-**[Русская версия](README_RU.md)**
+**[Русская версия](README_ru.md)**
 
 Professional Python library for Fragment.com API with full Telegram payment support. Send Telegram Stars, Premium subscriptions and TON cryptocurrency with automatic wallet balance checking and error handling.
 
