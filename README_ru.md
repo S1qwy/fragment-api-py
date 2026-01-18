@@ -12,6 +12,7 @@
 
 - ✅ **Асинхронный и синхронный интерфейсы** - Используйте async/await или традиционные блокирующие вызовы
 - ✅ **3 товара** - Telegram Stars, подписки Premium и пополнение TON
+- ✅ **Прямые TON переводы** - Отправляйте TON на любой адрес или username с поддержкой memo
 - ✅ **Поиск получателя** - Получите информацию о пользователе и аватар перед отправкой платежа
 - ✅ **Автоматическая проверка баланса** - Проверка баланса кошелька перед инициацией транзакции
 - ✅ **Поддержка WalletV4R2** - Прямое взаимодействие с блокчейном TON
@@ -66,6 +67,11 @@ else:
 # Отправить с видимым отправителем
 result = api.buy_stars('username', 100, show_sender=True)
 
+# Прямой перевод TON
+transfer = api.transfer_ton("recipient.t.me", 0.5, "Оплата за услуги")
+if transfer.success:
+    print(f"✓ Перевод: {transfer.transaction_hash}")
+
 api.close()
 ```
 
@@ -94,6 +100,11 @@ async def main():
     
     # Отправить с видимым отправителем
     result = await api.buy_stars('username', 100, show_sender=True)
+    
+    # Прямой перевод TON
+    transfer = await api.transfer_ton("recipient.t.me", 0.5, "Оплата")
+    if transfer.success:
+        print(f"✓ Перевод: {transfer.transaction_hash}")
     
     await api.close()
 
@@ -385,6 +396,65 @@ else:
 result = await api.topup_ton('jane_doe', 10, show_sender=True)
 ```
 
+#### `transfer_ton(to_address: str, amount: float, memo: str = None) → TransferResult`
+
+Отправить TON напрямую на любой адрес или Telegram username.
+
+**Параметры:**
+- `to_address` (str): Адрес назначения (TON адрес или username вида `user.t.me`)
+- `amount` (float): Количество TON для отправки
+- `memo` (str, опционально): Комментарий/memo для транзакции
+
+**Возвращает:** `TransferResult` с:
+- `success` (bool) - Статус успешности перевода
+- `transaction_hash` (str | None) - Хеш TX блокчейна если успешно
+- `memo` (str | None) - Memo включенный в транзакцию
+- `error` (str | None) - Сообщение об ошибке если не успешно
+
+**Вызывает исключения:**
+- `InvalidAmountError` - Сумма невалидна
+- `InsufficientBalanceError` - Недостаточно средств в кошельке
+- `WalletError` - Ошибка операции кошелька
+- `NetworkError` - Ошибка сетевого запроса
+
+**Примеры:**
+
+```python
+# Перевод на username (формат t.me)
+result = api.transfer_ton("username.t.me", 0.5, "Оплата за услуги")
+
+if result.success:
+    print(f"✓ Перевод успешен!")
+    print(f"Хеш: {result.transaction_hash}")
+    print(f"Memo: {result.memo}")
+else:
+    print(f"✗ Ошибка: {result.error}")
+```
+
+```python
+# Перевод на TON адрес
+result = api.transfer_ton("EQDrjaLahLkMB-hMCmkzOyBuHJ139ZUYmPHu6RRBKnbRELWt", 1.0)
+
+if result.success:
+    print(f"✓ Хеш: {result.transaction_hash}")
+else:
+    print(f"✗ Ошибка: {result.error}")
+```
+
+```python
+# Перевод без memo
+result = api.transfer_ton("username.t.me", 0.01)
+```
+
+```python
+# Асинхронная версия
+result = await api.transfer_ton("username.t.me", 0.5, "async платеж")
+
+if result.success:
+    print(f"✓ Хеш: {result.transaction_hash}")
+    print(f"Memo: {result.memo}")
+```
+
 ### Методы кошелька
 
 #### `get_wallet_balance() → Dict[str, Any]`
@@ -547,6 +617,28 @@ else:
     print(f"✗ Ошибка: {result.error}")
 ```
 
+### TransferResult
+
+```python
+@dataclass
+class TransferResult:
+    success: bool                    # Был ли перевод успешным
+    transaction_hash: Optional[str]  # Хеш TX блокчейна
+    memo: Optional[str]              # Memo/комментарий включенный в транзакцию
+    error: Optional[str]             # Сообщение об ошибке если не успешно
+```
+
+**Пример:**
+```python
+result = api.transfer_ton("username.t.me", 0.5, "оплата за услуги")
+
+if result.success:
+    print(f"✓ Успешно: {result.transaction_hash}")
+    print(f"Memo: {result.memo}")
+else:
+    print(f"✗ Ошибка: {result.error}")
+```
+
 ### WalletBalance
 
 ```python
@@ -566,6 +658,7 @@ class WalletBalance:
 with SyncFragmentAPI(cookies, hash_value, mnemonic, api_key) as api:
     result = api.buy_stars('username', 50)
     result = api.gift_premium('username', 6, show_sender=True)
+    transfer = api.transfer_ton("recipient.t.me", 0.1, "тест")
     # Соединение закроется автоматически
 ```
 
@@ -575,6 +668,7 @@ with SyncFragmentAPI(cookies, hash_value, mnemonic, api_key) as api:
 async with AsyncFragmentAPI(cookies, hash_value, mnemonic, api_key) as api:
     result = await api.buy_stars('username', 50)
     result = await api.gift_premium('username', 6, show_sender=True)
+    transfer = await api.transfer_ton("recipient.t.me", 0.1, "тест")
     # Соединение закроется автоматически
 ```
 
@@ -641,6 +735,57 @@ async def main():
     await api.close()
 
 asyncio.run(main())
+```
+
+### Прямой перевод TON
+
+```python
+import asyncio
+from FragmentAPI import AsyncFragmentAPI, SyncFragmentAPI
+
+# Синхронный пример
+api = SyncFragmentAPI(cookies, hash_value, mnemonic, api_key)
+
+# Сначала проверить баланс
+balance = api.get_wallet_balance()
+print(f"Баланс: {balance['balance_ton']} TON")
+print(f"Адрес: {balance['address']}")
+
+# Перевод на username с memo
+result = api.transfer_ton("username.t.me", 0.01, "тестовый платеж")
+
+if result.success:
+    print(f"✓ Успех! Хеш: {result.transaction_hash}")
+    print(f"Memo: {result.memo}")
+else:
+    print(f"✗ Ошибка: {result.error}")
+
+api.close()
+
+# Асинхронный пример
+async def transfer_async():
+    api = AsyncFragmentAPI(cookies, hash_value, mnemonic, api_key)
+    
+    balance = await api.get_wallet_balance()
+    print(f"Баланс: {balance['balance_ton']} TON")
+    print(f"Адрес: {balance['address']}")
+    
+    # Перевод на TON адрес
+    result = await api.transfer_ton(
+        "EQDrjaLahLkMB-hMCmkzOyBuHJ139ZUYmPHu6RRBKnbRELWt",
+        0.5,
+        "async платеж"
+    )
+    
+    if result.success:
+        print(f"✓ Успех! Хеш: {result.transaction_hash}")
+        print(f"Memo: {result.memo}")
+    else:
+        print(f"✗ Ошибка: {result.error}")
+    
+    await api.close()
+
+asyncio.run(transfer_async())
 ```
 
 ### Предварительная проверка перед платежом
@@ -759,6 +904,10 @@ result5 = api.topup_ton('ads_account1', 10)
 # Пополнение TON видимо
 result6 = api.topup_ton('ads_account2', 10, show_sender=True)
 # Владелец аккаунта увидит ваш аккаунт
+
+# Прямой перевод (всегда видим - блокчейн публичный)
+result7 = api.transfer_ton('recipient.t.me', 0.5, 'платеж')
+# Адрес отправителя видим в блокчейне
 
 api.close()
 ```
