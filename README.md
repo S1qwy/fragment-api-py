@@ -12,6 +12,7 @@ Professional Python library for Fragment.com API with full Telegram payment supp
 
 - ✅ **Async and Sync Interfaces** - Use async/await or traditional blocking calls
 - ✅ **3 Products** - Telegram Stars, Premium subscriptions, and TON top-ups
+- ✅ **Direct TON Transfers** - Send TON to any address or username with memo support
 - ✅ **Recipient Lookup** - Get user information and avatar before sending payment
 - ✅ **Automatic Balance Checking** - Validate wallet balance before initiating transaction
 - ✅ **WalletV4R2 Support** - Direct interaction with TON blockchain
@@ -66,6 +67,11 @@ else:
 # Send with visible sender
 result = api.buy_stars('username', 100, show_sender=True)
 
+# Direct TON transfer
+transfer = api.transfer_ton("recipient.t.me", 0.5, "Payment for services")
+if transfer.success:
+    print(f"✓ Transfer: {transfer.transaction_hash}")
+
 api.close()
 ```
 
@@ -94,6 +100,11 @@ async def main():
     
     # Send with visible sender
     result = await api.buy_stars('username', 100, show_sender=True)
+    
+    # Direct TON transfer
+    transfer = await api.transfer_ton("recipient.t.me", 0.5, "Payment")
+    if transfer.success:
+        print(f"✓ Transfer: {transfer.transaction_hash}")
     
     await api.close()
 
@@ -385,6 +396,65 @@ else:
 result = await api.topup_ton('jane_doe', 10, show_sender=True)
 ```
 
+#### `transfer_ton(to_address: str, amount: float, memo: str = None) → TransferResult`
+
+Send TON directly to any address or Telegram username.
+
+**Parameters:**
+- `to_address` (str): Destination address (TON address or username like `user.t.me`)
+- `amount` (float): Amount of TON to send
+- `memo` (str, optional): Comment/memo for the transaction
+
+**Returns:** `TransferResult` with:
+- `success` (bool) - Whether transfer was successful
+- `transaction_hash` (str | None) - Blockchain TX hash if successful
+- `memo` (str | None) - The memo included in transaction
+- `error` (str | None) - Error message if unsuccessful
+
+**Raises:**
+- `InvalidAmountError` - Amount is invalid
+- `InsufficientBalanceError` - Not enough funds in wallet
+- `WalletError` - Wallet operation failed
+- `NetworkError` - Network request error
+
+**Examples:**
+
+```python
+# Transfer to username (t.me format)
+result = api.transfer_ton("username.t.me", 0.5, "Payment for services")
+
+if result.success:
+    print(f"✓ Transfer successful!")
+    print(f"Hash: {result.transaction_hash}")
+    print(f"Memo: {result.memo}")
+else:
+    print(f"✗ Error: {result.error}")
+```
+
+```python
+# Transfer to TON address
+result = api.transfer_ton("EQDrjaLahLkMB-hMCmkzOyBuHJ139ZUYmPHu6RRBKnbRELWt", 1.0)
+
+if result.success:
+    print(f"✓ Hash: {result.transaction_hash}")
+else:
+    print(f"✗ Error: {result.error}")
+```
+
+```python
+# Transfer without memo
+result = api.transfer_ton("username.t.me", 0.01)
+```
+
+```python
+# Async version
+result = await api.transfer_ton("username.t.me", 0.5, "async payment")
+
+if result.success:
+    print(f"✓ Hash: {result.transaction_hash}")
+    print(f"Memo: {result.memo}")
+```
+
 ### Wallet Methods
 
 #### `get_wallet_balance() → Dict[str, Any]`
@@ -547,6 +617,28 @@ else:
     print(f"✗ Error: {result.error}")
 ```
 
+### TransferResult
+
+```python
+@dataclass
+class TransferResult:
+    success: bool                    # Whether transfer was successful
+    transaction_hash: Optional[str]  # Blockchain TX hash
+    memo: Optional[str]              # Memo/comment included in transaction
+    error: Optional[str]             # Error message if unsuccessful
+```
+
+**Example:**
+```python
+result = api.transfer_ton("username.t.me", 0.5, "payment for services")
+
+if result.success:
+    print(f"✓ Success: {result.transaction_hash}")
+    print(f"Memo: {result.memo}")
+else:
+    print(f"✗ Error: {result.error}")
+```
+
 ### WalletBalance
 
 ```python
@@ -566,6 +658,7 @@ class WalletBalance:
 with SyncFragmentAPI(cookies, hash_value, mnemonic, api_key) as api:
     result = api.buy_stars('username', 50)
     result = api.gift_premium('username', 6, show_sender=True)
+    transfer = api.transfer_ton("recipient.t.me", 0.1, "test")
     # Connection closes automatically
 ```
 
@@ -575,6 +668,7 @@ with SyncFragmentAPI(cookies, hash_value, mnemonic, api_key) as api:
 async with AsyncFragmentAPI(cookies, hash_value, mnemonic, api_key) as api:
     result = await api.buy_stars('username', 50)
     result = await api.gift_premium('username', 6, show_sender=True)
+    transfer = await api.transfer_ton("recipient.t.me", 0.1, "test")
     # Connection closes automatically
 ```
 
@@ -641,6 +735,57 @@ async def main():
     await api.close()
 
 asyncio.run(main())
+```
+
+### Direct TON Transfer
+
+```python
+import asyncio
+from FragmentAPI import AsyncFragmentAPI, SyncFragmentAPI
+
+# Synchronous example
+api = SyncFragmentAPI(cookies, hash_value, mnemonic, api_key)
+
+# Check balance first
+balance = api.get_wallet_balance()
+print(f"Balance: {balance['balance_ton']} TON")
+print(f"Address: {balance['address']}")
+
+# Transfer to username with memo
+result = api.transfer_ton("username.t.me", 0.01, "test payment")
+
+if result.success:
+    print(f"✓ Success! Hash: {result.transaction_hash}")
+    print(f"Memo: {result.memo}")
+else:
+    print(f"✗ Error: {result.error}")
+
+api.close()
+
+# Asynchronous example
+async def transfer_async():
+    api = AsyncFragmentAPI(cookies, hash_value, mnemonic, api_key)
+    
+    balance = await api.get_wallet_balance()
+    print(f"Balance: {balance['balance_ton']} TON")
+    print(f"Address: {balance['address']}")
+    
+    # Transfer to TON address
+    result = await api.transfer_ton(
+        "EQDrjaLahLkMB-hMCmkzOyBuHJ139ZUYmPHu6RRBKnbRELWt",
+        0.5,
+        "async payment"
+    )
+    
+    if result.success:
+        print(f"✓ Success! Hash: {result.transaction_hash}")
+        print(f"Memo: {result.memo}")
+    else:
+        print(f"✗ Error: {result.error}")
+    
+    await api.close()
+
+asyncio.run(transfer_async())
 ```
 
 ### Pre-Payment Validation
@@ -759,6 +904,10 @@ result5 = api.topup_ton('ads_account1', 10)
 # Top-up TON visibly
 result6 = api.topup_ton('ads_account2', 10, show_sender=True)
 # Account owner will see your account
+
+# Direct transfer (always visible - blockchain is public)
+result7 = api.transfer_ton('recipient.t.me', 0.5, 'payment')
+# Sender address is visible on blockchain
 
 api.close()
 ```
