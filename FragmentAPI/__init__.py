@@ -4,6 +4,7 @@ Fragment API Python Library - Async and Sync support for Telegram payments
 Professional library for Fragment.com API with:
 - Support for Telegram Stars, Premium, and TON
 - Both async/await and synchronous interfaces
+- Multiple wallet version support (V3R1, V3R2, V4R2, V5R1/W5)
 - Automatic wallet balance validation
 - Comprehensive error handling
 """
@@ -21,17 +22,19 @@ from .exceptions import (
     NetworkError,
     RateLimitError,
     InsufficientBalanceError,
-    WalletError
+    WalletError,
+    InvalidWalletVersionError
 )
 from .models import (
     UserInfo, 
     TransactionMessage, 
     TransactionData, 
     PurchaseResult,
-    WalletBalance
+    WalletBalance,
+    TransferResult
 )
 
-__version__ = "3.0.3"
+__version__ = "3.2.0"
 __author__ = "S1qwy"
 __email__ = "amirhansuper75@gmail.com"
 
@@ -49,9 +52,11 @@ __all__ = [
     'RateLimitError',
     'InsufficientBalanceError',
     'WalletError',
+    'InvalidWalletVersionError',
     'UserInfo',
     'TransactionMessage',
     'TransactionData',
     'PurchaseResult',
     'WalletBalance',
+    'TransferResult',
 ]
