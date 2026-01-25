@@ -1,3 +1,13 @@
+"""
+Async Fragment API client for Telegram payments
+
+Provides asynchronous interface for:
+- Purchasing Telegram Stars
+- Gifting Telegram Premium subscriptions
+- Topping up TON for Telegram Ads
+- Direct TON transfers
+"""
+
 import asyncio
 import aiohttp
 import logging
@@ -9,9 +19,9 @@ from .wallet import WalletManager
 from .exceptions import (
     UserNotFoundError, InvalidAmountError, PaymentInitiationError,
     TransactionError, NetworkError, AuthenticationError, FragmentAPIException,
-    InsufficientBalanceError
+    InsufficientBalanceError, WalletError, InvalidWalletVersionError
 )
-from .models import UserInfo, TransactionData, PurchaseResult
+from .models import UserInfo, TransactionData, PurchaseResult, TransferResult
 from .utils import parse_cookies, validate_username, validate_amount, get_default_headers, nano_to_ton
 
 logger = logging.getLogger(__name__)
@@ -19,50 +29,75 @@ logger = logging.getLogger(__name__)
 
 class AsyncFragmentAPI:
     """
-    Asynchronous client for Fragment API with automatic wallet transaction handling
+    Async client for Fragment.com API with TON wallet integration
     
-    Provides async/await interface for sending Telegram Stars, Premium, and TON.
-    Automatically validates wallet balance before initiating transactions.
+    Provides async/await interface for all Fragment API operations.
+    Supports multiple wallet versions and automatic balance validation.
+    
+    Attributes:
+        core: FragmentAPICore instance for HTTP requests
+        wallet: WalletManager instance for blockchain operations
+    
+    Example:
+        >>> async with AsyncFragmentAPI(
+        ...     cookies="...",
+        ...     hash_value="...",
+        ...     wallet_mnemonic="...",
+        ...     wallet_api_key="...",
+        ...     wallet_version="V4R2"
+        ... ) as api:
+        ...     result = await api.buy_stars("username", 100)
     """
-
+    
     BASE_URL = "https://fragment.com/api"
     DEFAULT_TIMEOUT = 15
     TRANSFER_FEE_TON = 0.001
 
     def __init__(self, cookies: str, hash_value: str, wallet_mnemonic: str, 
-                 wallet_api_key: str, timeout: int = DEFAULT_TIMEOUT):
+                 wallet_api_key: str, wallet_version: str = "V4R2",
+                 timeout: int = DEFAULT_TIMEOUT):
         """
-        Initialize async Fragment API client with wallet support
+        Initialize async Fragment API client
         
         Args:
-            cookies: Authenticated session cookies from Fragment.com
-            hash_value: API hash for request authentication
-            wallet_mnemonic: 24-word mnemonic for WalletV4R2
-            wallet_api_key: API key from https://tonconsole.com
-            timeout: Request timeout in seconds (default 15)
+            cookies: Cookie string from authenticated Fragment session
+            hash_value: Hash value for API authentication
+            wallet_mnemonic: Space-separated mnemonic phrase for TON wallet
+            wallet_api_key: TonAPI key for blockchain interactions
+            wallet_version: Wallet version (V3R1, V3R2, V4R2, V5R1, W5)
+                           Case-insensitive, defaults to V4R2
+            timeout: Request timeout in seconds
         
         Raises:
-            AuthenticationError: If provided credentials are invalid
+            AuthenticationError: If credentials are invalid
+            InvalidWalletVersionError: If wallet version is not supported
+        
+        Example:
+            >>> api = AsyncFragmentAPI(
+            ...     cookies="stel_ssid=...; stel_token=...",
+            ...     hash_value="abc123",
+            ...     wallet_mnemonic="word1 word2 ... word24",
+            ...     wallet_api_key="your-api-key",
+            ...     wallet_version="V4R2"
+            ... )
         """
         if not all([cookies, hash_value, wallet_mnemonic, wallet_api_key]):
             raise AuthenticationError("All credentials are required")
         
         self.core = FragmentAPICore(cookies, hash_value, timeout)
-        self.wallet = WalletManager(wallet_mnemonic, wallet_api_key)
+        self.wallet = WalletManager(wallet_mnemonic, wallet_api_key, wallet_version)
         self.session: Optional[aiohttp.ClientSession] = None
 
     @staticmethod
     def _extract_avatar_url(photo_html: str) -> str:
         """
-        Extract avatar URL from HTML img tag or return base64 encoded image
-        
-        Handles both regular URLs and base64 encoded images
+        Extract avatar URL from HTML photo element
         
         Args:
             photo_html: HTML string containing img tag
         
         Returns:
-            Extracted URL or base64 string, empty string if not found
+            Extracted URL or empty string if not found
         """
         if not photo_html:
             return ""
@@ -78,20 +113,17 @@ class AsyncFragmentAPI:
 
     async def _check_user(self, username: str, method: str) -> UserInfo:
         """
-        Internal method to check if user exists using specified API method
-        
-        Validates username format, makes API request to Fragment, and handles various error scenarios.
-        Differentiates between different error messages to provide specific exception types.
+        Check if user exists and get recipient info
         
         Args:
-            username: Target username to check
-            method: API method name for user search (searchStarsRecipient, searchPremiumGiftRecipient, etc)
+            username: Telegram username to check
+            method: API method for user search
         
         Returns:
-            UserInfo object with recipient address and user name
+            UserInfo with user details
         
         Raises:
-            UserNotFoundError: If user not found or username format invalid
+            UserNotFoundError: If user not found
             NetworkError: If request fails
             AuthenticationError: If session expired
         """
@@ -135,30 +167,17 @@ class AsyncFragmentAPI:
 
     async def get_recipient_stars(self, username: str) -> UserInfo:
         """
-        Get recipient information for Telegram Stars transfer
-        
-        Searches Fragment API for user who can receive Telegram Stars.
-        Returns user details including blockchain recipient address needed for transaction.
-        Does not perform actual transfer, only retrieves recipient information.
+        Get recipient info for Telegram Stars purchase
         
         Args:
-            username: Target username (with or without @ prefix)
+            username: Telegram username
         
         Returns:
-            UserInfo object containing:
-            - name: User's display name
-            - recipient: Blockchain address for receiving Stars
-            - found: Boolean indicating successful lookup
-            - avatar: User's avatar URL or base64 encoded image
+            UserInfo with recipient details
         
         Raises:
-            UserNotFoundError: If username doesn't exist or format invalid
-            NetworkError: If API request fails
+            UserNotFoundError: If user not found
             AuthenticationError: If session expired
-        
-        Example:
-            >>> user_info = await api.get_recipient_stars('john_doe')
-            >>> print(f"User: {user_info.name}, Avatar: {user_info.avatar}")
         """
         if not validate_username(username):
             raise UserNotFoundError(f"Invalid username format: {username}")
@@ -200,30 +219,17 @@ class AsyncFragmentAPI:
 
     async def get_recipient_premium(self, username: str) -> UserInfo:
         """
-        Get recipient information for Telegram Premium gift
-        
-        Searches Fragment API for user who can receive Telegram Premium subscription gift.
-        Returns user details including blockchain recipient address for premium transaction.
-        Handles specific premium errors like "already subscribed" or "can't gift".
+        Get recipient info for Telegram Premium gift
         
         Args:
-            username: Target username (with or without @ prefix)
+            username: Telegram username
         
         Returns:
-            UserInfo object containing:
-            - name: User's display name
-            - recipient: Blockchain address for receiving Premium
-            - found: Boolean indicating successful lookup
-            - avatar: User's avatar URL or base64 encoded image
+            UserInfo with recipient details
         
         Raises:
-            UserNotFoundError: If user doesn't exist, already has Premium, or can't receive gift
-            NetworkError: If API request fails
+            UserNotFoundError: If user not found or already has Premium
             AuthenticationError: If session expired
-        
-        Example:
-            >>> user_info = await api.get_recipient_premium('jane_doe')
-            >>> print(f"Avatar: {user_info.avatar[:50]}...")
         """
         if not validate_username(username):
             raise UserNotFoundError(f"Invalid username format: {username}")
@@ -269,30 +275,17 @@ class AsyncFragmentAPI:
 
     async def get_recipient_ton(self, username: str) -> UserInfo:
         """
-        Get recipient information for Telegram Ads account top-up
-        
-        Searches Fragment API for user who can receive TON cryptocurrency top-up for ads account.
-        Returns user details including blockchain recipient address for TON transfer.
-        Used specifically for Telegram Ads account balance top-up transactions.
+        Get recipient info for TON Ads topup
         
         Args:
-            username: Target username (with or without @ prefix)
+            username: Telegram username/channel
         
         Returns:
-            UserInfo object containing:
-            - name: User's display name
-            - recipient: Blockchain address for receiving TON for ads
-            - found: Boolean indicating successful lookup
-            - avatar: User's avatar URL or base64 encoded image
+            UserInfo with recipient details
         
         Raises:
-            UserNotFoundError: If username doesn't exist or format invalid
-            NetworkError: If API request fails
+            UserNotFoundError: If user not found
             AuthenticationError: If session expired
-        
-        Example:
-            >>> user_info = await api.get_recipient_ton('ads_user')
-            >>> print(f"Avatar: {user_info.avatar}")
         """
         if not validate_username(username):
             raise UserNotFoundError(f"Invalid username format: {username}")
@@ -333,34 +326,20 @@ class AsyncFragmentAPI:
 
     async def buy_stars(self, username: str, quantity: int, show_sender: bool = False) -> PurchaseResult:
         """
-        Purchase and send Telegram Stars to user
-        
-        Process:
-        1. Validates username and quantity
-        2. Checks if user exists on Fragment
-        3. Retrieves wallet balance
-        4. Initiates purchase request on Fragment
-        5. Verifies sufficient balance for transaction
-        6. Sends TON transaction to Fragment contract
-        7. Returns transaction hash
+        Purchase Telegram Stars for a user
         
         Args:
-            username: Target Telegram username (with or without @)
-            quantity: Number of stars (1-999999)
-            show_sender: Whether to show sender info (default False)
+            username: Recipient's Telegram username
+            quantity: Number of stars to purchase (1-999999)
+            show_sender: Whether to show sender info to recipient
         
         Returns:
-            PurchaseResult with:
-            - success: True if completed successfully
-            - transaction_hash: Blockchain transaction ID
-            - error: Error message if failed
-            - user: UserInfo object
-            - balance_checked: Whether balance was validated
+            PurchaseResult with transaction status and details
         
-        Raises:
-            UserNotFoundError: If username doesn't exist
-            InvalidAmountError: If quantity is invalid
-            InsufficientBalanceError: If wallet lacks funds
+        Example:
+            >>> result = await api.buy_stars("username", 100)
+            >>> if result.success:
+            ...     print(f"TX: {result.transaction_hash}")
         """
         if not validate_amount(quantity, 1, 999999):
             raise InvalidAmountError(f"Invalid quantity: {quantity}")
@@ -434,29 +413,23 @@ class AsyncFragmentAPI:
 
     async def gift_premium(self, username: str, months: int = 3, show_sender: bool = False) -> PurchaseResult:
         """
-        Gift Telegram Premium subscription to user
-        
-        Process:
-        1. Validates username and months (3, 6, or 12)
-        2. Checks if user exists
-        3. Retrieves current wallet balance
-        4. Initiates premium gift request
-        5. Validates sufficient wallet balance
-        6. Sends transaction to Fragment contract
-        7. Returns confirmation with transaction hash
+        Gift Telegram Premium subscription to a user
         
         Args:
-            username: Target username
+            username: Recipient's Telegram username
             months: Subscription duration (3, 6, or 12 months)
-            show_sender: Whether to show sender info (default False)
+            show_sender: Whether to show sender info to recipient
         
         Returns:
-            PurchaseResult with transaction details
+            PurchaseResult with transaction status and details
         
         Raises:
-            UserNotFoundError: If user doesn't exist
-            InvalidAmountError: If months not in [3, 6, 12]
-            InsufficientBalanceError: If insufficient wallet balance
+            InvalidAmountError: If months is not 3, 6, or 12
+        
+        Example:
+            >>> result = await api.gift_premium("username", months=3)
+            >>> if result.success:
+            ...     print(f"Premium gifted! TX: {result.transaction_hash}")
         """
         if months not in [3, 6, 12]:
             raise InvalidAmountError(f"Invalid months: {months}. Must be 3, 6, or 12")
@@ -530,29 +503,20 @@ class AsyncFragmentAPI:
 
     async def topup_ton(self, username: str, amount: int, show_sender: bool = False) -> PurchaseResult:
         """
-        Top up Telegram Ads account with TON cryptocurrency
-        
-        Process:
-        1. Validates username and amount
-        2. Checks if user exists
-        3. Reads current wallet balance from blockchain
-        4. Initiates ads topup request on Fragment
-        5. Verifies wallet has sufficient balance + fee
-        6. Sends transaction to Fragment contract
-        7. Returns blockchain transaction hash
+        Top up TON for Telegram Ads
         
         Args:
-            username: Target username
-            amount: Amount of TON to send (1-999999)
-            show_sender: Whether to show sender info (default False)
+            username: Recipient's Telegram username/channel
+            amount: Amount in TON to top up (1-999999)
+            show_sender: Whether to show sender info
         
         Returns:
-            PurchaseResult with transaction hash and balance info
+            PurchaseResult with transaction status and details
         
-        Raises:
-            UserNotFoundError: If user doesn't exist
-            InvalidAmountError: If amount is invalid
-            InsufficientBalanceError: If wallet balance insufficient
+        Example:
+            >>> result = await api.topup_ton("channel_name", 10)
+            >>> if result.success:
+            ...     print(f"Topped up! TX: {result.transaction_hash}")
         """
         if not validate_amount(amount, 1, 999999):
             raise InvalidAmountError(f"Invalid amount: {amount}")
@@ -624,20 +588,54 @@ class AsyncFragmentAPI:
                 balance_checked=False
             )
 
-    async def get_wallet_balance(self) -> Dict[str, Any]:
+    async def transfer_ton(self, to_address: str, amount_ton: float, memo: Optional[str] = None) -> TransferResult:
         """
-        Get current wallet balance and address
+        Transfer TON directly to another wallet
         
-        Queries TON blockchain directly to retrieve:
-        - Current balance in TON and nanotons
-        - Wallet address
-        - Wallet readiness for transactions
+        Args:
+            to_address: Destination wallet address
+            amount_ton: Amount to transfer in TON
+            memo: Optional text message for transfer
         
         Returns:
-            Dictionary with balance information
+            TransferResult with transaction status and details
         
-        Raises:
-            WalletError: If balance retrieval fails
+        Example:
+            >>> result = await api.transfer_ton("EQ...", 1.5, memo="Payment")
+            >>> if result.success:
+            ...     print(f"Sent! TX: {result.transaction_hash}")
+        """
+        try:
+            return await self.wallet.transfer_ton(to_address, amount_ton, memo)
+        except (InsufficientBalanceError, WalletError, TransactionError) as e:
+            return TransferResult(
+                success=False,
+                error=str(e),
+                to_address=to_address,
+                amount_ton=amount_ton,
+                memo=memo
+            )
+        except Exception as e:
+            logger.error(f"Error transferring TON: {e}")
+            return TransferResult(
+                success=False,
+                error=str(e),
+                to_address=to_address,
+                amount_ton=amount_ton,
+                memo=memo
+            )
+
+    async def get_wallet_balance(self) -> Dict[str, Any]:
+        """
+        Get current wallet balance and info
+        
+        Returns:
+            Dictionary with balance_ton, balance_nano, address, 
+            is_ready, and wallet_version
+        
+        Example:
+            >>> balance = await api.get_wallet_balance()
+            >>> print(f"Balance: {balance['balance_ton']} TON")
         """
         try:
             balance = await self.wallet.get_balance()
@@ -645,7 +643,8 @@ class AsyncFragmentAPI:
                 'balance_ton': balance.balance_ton,
                 'balance_nano': balance.balance_nano,
                 'address': balance.address,
-                'is_ready': balance.is_ready
+                'is_ready': balance.is_ready,
+                'wallet_version': self.wallet.wallet_version
             }
         except Exception as e:
             logger.error(f"Failed to get wallet balance: {e}")
@@ -653,22 +652,16 @@ class AsyncFragmentAPI:
 
     async def close(self) -> None:
         """
-        Close aiohttp session and cleanup resources
-        
-        Should be called when done with the client.
+        Close client and cleanup resources
         """
         self.core.close()
         if self.session:
             await self.session.close()
 
     async def __aenter__(self):
-        """
-        Async context manager entry
-        """
+        """Context manager entry"""
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """
-        Async context manager exit
-        """
+        """Context manager exit with cleanup"""
         await self.close()
