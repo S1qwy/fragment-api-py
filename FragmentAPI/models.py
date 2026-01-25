@@ -4,9 +4,6 @@ from dataclasses import dataclass, field
 
 @dataclass
 class UserInfo:
-    """
-    Represents user information found on Fragment
-    """
     name: str
     recipient: str
     found: bool
@@ -18,9 +15,6 @@ class UserInfo:
 
 @dataclass
 class TransactionMessage:
-    """
-    Represents a single transaction message with blockchain details
-    """
     address: str
     amount: str
     payload: str
@@ -31,22 +25,10 @@ class TransactionMessage:
 
 @dataclass
 class TransactionData:
-    """
-    Represents complete transaction data with all messages
-    """
     messages: list
     req_id: Optional[str] = None
 
     def get_first_message(self) -> TransactionMessage:
-        """
-        Get the first message from transaction messages list
-        
-        Returns:
-            TransactionMessage object with blockchain details
-            
-        Raises:
-            ValueError: If no messages in transaction
-        """
         if not self.messages:
             raise ValueError("No messages in transaction")
         msg = self.messages[0]
@@ -62,25 +44,12 @@ class TransactionData:
 
 @dataclass
 class WalletBalance:
-    """
-    Represents wallet balance information
-    """
     balance_nano: str
     balance_ton: float
     address: str
     is_ready: bool
 
     def has_sufficient_balance(self, required_nano: str, fee_nano: str = "1000000") -> bool:
-        """
-        Check if wallet has sufficient balance for transaction
-        
-        Args:
-            required_nano: Required amount in nanotons
-            fee_nano: Transaction fee in nanotons (default 1 TON = 1,000,000,000 nano)
-        
-        Returns:
-            True if balance is sufficient, False otherwise
-        """
         total_required = int(required_nano) + int(fee_nano)
         current_balance = int(self.balance_nano)
         return current_balance >= total_required
@@ -91,9 +60,6 @@ class WalletBalance:
 
 @dataclass
 class PurchaseResult:
-    """
-    Represents the result of a purchase operation
-    """
     success: bool
     transaction_hash: Optional[str] = None
     error: Optional[str] = None
@@ -104,3 +70,20 @@ class PurchaseResult:
     def __repr__(self) -> str:
         status = "SUCCESS" if self.success else "FAILED"
         return f"PurchaseResult({status}, tx_hash={self.transaction_hash})"
+
+
+@dataclass
+class TransferResult:
+    success: bool
+    transaction_hash: Optional[str] = None
+    from_address: Optional[str] = None
+    to_address: Optional[str] = None
+    amount_ton: Optional[float] = None
+    balance_before: Optional[float] = None
+    memo: Optional[str] = None
+    error: Optional[str] = None
+
+    def __repr__(self) -> str:
+        status = "SUCCESS" if self.success else "FAILED"
+        memo_str = f", memo={self.memo}" if self.memo else ""
+        return f"TransferResult({status}, amount={self.amount_ton} TON{memo_str}, tx_hash={self.transaction_hash})"
