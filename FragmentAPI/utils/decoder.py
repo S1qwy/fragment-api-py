@@ -1,0 +1,43 @@
+"""
+BOC payload decoder for Fragment transaction comments
+"""
+
+from __future__ import annotations
+
+import base64
+
+from ton_core import Cell
+
+from FragmentAPI.exceptions import ParseError
+
+
+def decode_boc_comment(payload: str) -> str:
+    """Decode a base64-encoded BOC payload to a plain-text comment string.
+
+    Fragment transaction payloads are BOC-serialised TVM cells. This function
+    base64-decodes the payload, parses the cell, skips the 32-bit op-code
+    prefix, and reads the snake-encoded UTF-8 comment.
+
+    Args:
+        payload: Base64url-encoded BOC string (padding is added automatically).
+
+    Returns:
+        Decoded comment string, or empty string for empty payload.
+
+    Raises:
+        ParseError: If the payload cannot be decoded or parsed.
+    """
+    s = payload.strip()
+    if not s:
+        return ""
+    s += "=" * (-len(s) % 4)
+    try:
+        boc = base64.b64decode(s)
+        cell = Cell.one_from_boc(boc)
+        sl = cell.begin_parse()
+        sl.load_uint(32)
+        return sl.load_snake_string().strip()
+    except Exception as exc:
+        raise ParseError(
+            ParseError.UNPARSEABLE.format(context="payload decode", exc=exc)
+        ) from exc
