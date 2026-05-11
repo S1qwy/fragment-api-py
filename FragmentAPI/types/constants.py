@@ -1,6 +1,6 @@
-'''
+"""
 Constants and configuration for Fragment API library
-'''
+"""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ WALLET_CLASSES: dict[str, Any] = {
     "V5R1": WalletV5R1,
 }
 
-MIN_TON_BALANCE: float = 0.01
+MIN_TON_BALANCE: float = 0.056
 
 DEFAULT_TIMEOUT: float = 30.0
 
@@ -28,44 +28,31 @@ REQUIRED_COOKIE_KEYS: tuple[str, ...] = (
     "stel_ton_token",
 )
 
-AUTH_REQUIRED_COOKIE_KEYS: tuple[str, ...] = (
-    "stel_ssid",
-    "stel_dt",
-)
-
-TONAPI_BASE_URL: str = "https://tonapi.io/v2"
 TONAPI_PROXY_BASE: str = "https://tonapi.ru:444/v2"
 TONAPI_DEFAULT_KEY: str = "AH" + "0" * 48
 
 FRAGMENT_DOMAIN: str = "fragment.com"
 FRAGMENT_BASE_URL: str = f"https://{FRAGMENT_DOMAIN}"
 STARS_PAGE: str = f"{FRAGMENT_BASE_URL}/stars/buy"
-STARS_BUY_PAGE: str = f"{FRAGMENT_BASE_URL}/stars/buy"
-STARS_HISTORY_PAGE: str = f"{FRAGMENT_BASE_URL}/stars/history"
 STARS_GIVEAWAY_PAGE: str = f"{FRAGMENT_BASE_URL}/stars/giveaway"
 PREMIUM_PAGE: str = f"{FRAGMENT_BASE_URL}/premium/gift"
-PREMIUM_GIFT_PAGE: str = f"{FRAGMENT_BASE_URL}/premium/gift"
-PREMIUM_HISTORY_PAGE: str = f"{FRAGMENT_BASE_URL}/premium/history"
 PREMIUM_GIVEAWAY_PAGE: str = f"{FRAGMENT_BASE_URL}/premium/giveaway"
 ADS_TOPUP_PAGE: str = f"{FRAGMENT_BASE_URL}/ads/topup"
 NUMBERS_PAGE: str = f"{FRAGMENT_BASE_URL}/numbers"
 GIFTS_PAGE: str = f"{FRAGMENT_BASE_URL}/gifts"
-PROFILE_PAGE: str = f"{FRAGMENT_BASE_URL}/my/profile"
-SESSIONS_PAGE: str = f"{FRAGMENT_BASE_URL}/my/sessions"
 
 DEVICE_FINGERPRINT: str = json.dumps(
     {
-        "platform": "android",
+        "platform": "iphone",
         "appName": "Tonkeeper",
-        "appVersion": "26.04.3",
+        "appVersion": "26.04.0",
         "maxProtocolVersion": 2,
         "features": [
             "SendTransaction",
-            {"name": "SignData", "types": ["text", "binary", "cell"]},
             {"name": "SendTransaction", "maxMessages": 255},
+            {"name": "SignData", "types": ["text", "binary", "cell"]},
         ],
-    },
-    separators=(",", ":"),
+    }
 )
 
 BASE_HEADERS: dict[str, str] = {
@@ -78,11 +65,9 @@ BASE_HEADERS: dict[str, str] = {
     "sec-fetch-mode": "cors",
     "sec-fetch-site": "same-origin",
     "user-agent": (
-        "Mozilla/5.0 (Linux; Android 14; Pixel 8) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/131.0.0.0 Mobile Safari/537.36"
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) "
+        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 "
+        "Mobile/15E148 Safari/604.1"
     ),
     "x-requested-with": "XMLHttpRequest",
 }
-
-VALID_PAYMENT_METHODS: frozenset[str] = frozenset({"ton", "usdt_ton"})

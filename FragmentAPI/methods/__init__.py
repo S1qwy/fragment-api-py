@@ -3,7 +3,6 @@ from FragmentAPI.methods.purchase_premium import purchase_premium, purchase_prem
 from FragmentAPI.methods.topup_ton import topup_ton, topup_ton_sync
 from FragmentAPI.methods.giveaway_stars import giveaway_stars, giveaway_stars_sync
 from FragmentAPI.methods.giveaway_premium import giveaway_premium, giveaway_premium_sync
-from FragmentAPI.methods.place_bid import place_bid, place_bid_sync
 from FragmentAPI.methods.search import (
     search_usernames,
     search_usernames_sync,
@@ -18,8 +17,6 @@ __all__ = [
     "giveaway_premium_sync",
     "giveaway_stars",
     "giveaway_stars_sync",
-    "place_bid",
-    "place_bid_sync",
     "purchase_premium",
     "purchase_premium_sync",
     "purchase_stars",
