@@ -26,7 +26,7 @@
 ## Возможности
 
 - **Sync / Async** — `FragmentClient` и `AsyncFragmentClient`
-- **Покупки** — Stars (50–1M), Premium (3/6/12 мес), TON Ads, `payment_method="ton"|"usdt_ton"`
+- **Покупки** — Stars (50–10M), Premium (3/6/12 мес), TON Ads, `payment_method="ton"|"usdt_ton"`
 - **Розыгрыши** — Stars и Premium для каналов
 - **Ставки (Bid)** — `place_bid(item_type=1|3|5, slug, bid)` — если ставка = цене выкупа, покупка моментальна
 - **Маркетплейс** — поиск username, numbers, gifts с фильтрами и пагинацией
