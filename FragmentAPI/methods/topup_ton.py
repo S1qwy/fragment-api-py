@@ -105,6 +105,8 @@ async def topup_ton(
                     "amount": amount,
                 },
             )
+            if result.get("error"):
+                raise FragmentAPIError(result["error"])
             req_id = result.get("req_id")
             if not req_id:
                 raise FragmentAPIError(
@@ -210,6 +212,8 @@ def topup_ton_sync(
                     "amount": amount,
                 },
             )
+            if result.get("error"):
+                raise FragmentAPIError(result["error"])
             req_id = result.get("req_id")
             if not req_id:
                 raise FragmentAPIError(

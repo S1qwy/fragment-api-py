@@ -1,3 +1,4 @@
+methods/giveaway_premium.py:
 """
 Premium giveaway methods - async and sync
 """
@@ -17,7 +18,7 @@ from FragmentAPI.exceptions import (
     UserNotFoundError,
     VerificationError,
 )
-from FragmentAPI.types.constants import DEVICE_FINGERPRINT, PREMIUM_GIVEAWAY_PAGE
+from FragmentAPI.types.constants import DEVICE_FINGERPRINT, PREMIUM_GIVEAWAY_PAGE, VALID_PAYMENT_METHODS
 from FragmentAPI.types.results import GiveawayPremiumResult
 from FragmentAPI.utils.http import (
     build_headers,
@@ -43,28 +44,15 @@ async def giveaway_premium(
     channel: str,
     winners: int,
     months: int = 3,
+    payment_method: str = "ton",
 ) -> GiveawayPremiumResult:
-    """Run a Telegram Premium giveaway for a channel (async).
-
-    Args:
-        client: Authenticated AsyncFragmentClient instance.
-        channel: Channel username (with or without @).
-        winners: Number of winners - integer from 1 to 24 000.
-        months: Premium duration per winner - 3, 6, or 12. Defaults to 3.
-
-    Returns:
-        GiveawayPremiumResult with transaction_id, channel, winners, and amount.
-
-    Raises:
-        ConfigError: If winners or months are invalid.
-        UserNotFoundError: If channel not found on Fragment.
-        FragmentAPIError: If Fragment API returns an error.
-        UnexpectedError: For any other unexpected failure.
-    """
+    """Run a Telegram Premium giveaway for a channel (async)."""
     if not isinstance(winners, int) or not (1 <= winners <= 24_000):
         raise ConfigError(ConfigError.INVALID_WINNERS_PREMIUM)
     if months not in (3, 6, 12):
         raise ConfigError(ConfigError.INVALID_MONTHS)
+    if payment_method not in VALID_PAYMENT_METHODS:
+        raise ConfigError(ConfigError.INVALID_PAYMENT_METHOD)
 
     try:
         headers = build_headers(PREMIUM_GIVEAWAY_PAGE)
@@ -104,8 +92,11 @@ async def giveaway_premium(
                     "recipient": recipient,
                     "quantity": str(winners),
                     "months": str(months),
+                    "payment_method": payment_method,
                 },
             )
+            if result.get("error"):
+                raise FragmentAPIError(result["error"])
             req_id = result.get("req_id")
             if not req_id:
                 raise FragmentAPIError(
@@ -136,6 +127,7 @@ async def giveaway_premium(
             channel=channel,
             winners=winners,
             amount=months,
+            payment_method=payment_method,
         )
 
     except FragmentBaseError:
@@ -151,28 +143,15 @@ def giveaway_premium_sync(
     channel: str,
     winners: int,
     months: int = 3,
+    payment_method: str = "ton",
 ) -> GiveawayPremiumResult:
-    """Run a Telegram Premium giveaway for a channel (sync).
-
-    Args:
-        client: Authenticated FragmentClient instance.
-        channel: Channel username (with or without @).
-        winners: Number of winners - integer from 1 to 24 000.
-        months: Premium duration per winner - 3, 6, or 12. Defaults to 3.
-
-    Returns:
-        GiveawayPremiumResult with transaction_id, channel, winners, and amount.
-
-    Raises:
-        ConfigError: If winners or months are invalid.
-        UserNotFoundError: If channel not found on Fragment.
-        FragmentAPIError: If Fragment API returns an error.
-        UnexpectedError: For any other unexpected failure.
-    """
+    """Run a Telegram Premium giveaway for a channel (sync)."""
     if not isinstance(winners, int) or not (1 <= winners <= 24_000):
         raise ConfigError(ConfigError.INVALID_WINNERS_PREMIUM)
     if months not in (3, 6, 12):
         raise ConfigError(ConfigError.INVALID_MONTHS)
+    if payment_method not in VALID_PAYMENT_METHODS:
+        raise ConfigError(ConfigError.INVALID_PAYMENT_METHOD)
 
     try:
         headers = build_headers(PREMIUM_GIVEAWAY_PAGE)
@@ -212,8 +191,11 @@ def giveaway_premium_sync(
                     "recipient": recipient,
                     "quantity": str(winners),
                     "months": str(months),
+                    "payment_method": payment_method,
                 },
             )
+            if result.get("error"):
+                raise FragmentAPIError(result["error"])
             req_id = result.get("req_id")
             if not req_id:
                 raise FragmentAPIError(
@@ -244,6 +226,7 @@ def giveaway_premium_sync(
             channel=channel,
             winners=winners,
             amount=months,
+            payment_method=payment_method,
         )
 
     except FragmentBaseError:

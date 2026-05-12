@@ -17,7 +17,7 @@ from FragmentAPI.exceptions import (
     UserNotFoundError,
     VerificationError,
 )
-from FragmentAPI.types.constants import DEVICE_FINGERPRINT, STARS_GIVEAWAY_PAGE
+from FragmentAPI.types.constants import DEVICE_FINGERPRINT, STARS_GIVEAWAY_PAGE, VALID_PAYMENT_METHODS
 from FragmentAPI.types.results import GiveawayStarsResult
 from FragmentAPI.utils.http import (
     build_headers,
@@ -43,28 +43,13 @@ async def giveaway_stars(
     channel: str,
     winners: int,
     amount: int,
+    payment_method: str = "ton",
 ) -> GiveawayStarsResult:
-    """Run a Telegram Stars giveaway for a channel (async).
-
-    Args:
-        client: Authenticated AsyncFragmentClient instance.
-        channel: Channel username (with or without @).
-        winners: Number of winners - integer from 1 to 5.
-        amount: Stars each winner receives - 500 to 1 000 000.
-
-    Returns:
-        GiveawayStarsResult with transaction_id, channel, winners, and amount.
-
-    Raises:
-        ConfigError: If winners or amount are invalid.
-        UserNotFoundError: If channel not found on Fragment.
-        FragmentAPIError: If Fragment API returns an error.
-        UnexpectedError: For any other unexpected failure.
-    """
+    """Run a Telegram Stars giveaway for a channel (async)."""
     if not isinstance(winners, int) or not (1 <= winners <= 5):
         raise ConfigError(ConfigError.INVALID_WINNERS_STARS)
-    if not isinstance(amount, int) or not (500 <= amount <= 1_000_000):
-        raise ConfigError(ConfigError.INVALID_STARS_PER_WINNER)
+    if payment_method not in VALID_PAYMENT_METHODS:
+        raise ConfigError(ConfigError.INVALID_PAYMENT_METHOD)
 
     try:
         headers = build_headers(STARS_GIVEAWAY_PAGE)
@@ -76,12 +61,12 @@ async def giveaway_stars(
             )
 
             result = await post_FragmentAPI(
-                session,
-                fragment_hash,
-                headers,
+                session, fragment_hash, headers,
                 {
                     "method": "searchStarsGiveawayRecipient",
                     "query": channel,
+                    "quantity": winners,
+                    "stars": amount,
                 },
             )
             recipient = result.get("found", {}).get("recipient")
@@ -91,29 +76,26 @@ async def giveaway_stars(
                 )
 
             result = await post_FragmentAPI(
-                session,
-                fragment_hash,
-                headers,
+                session, fragment_hash, headers,
                 {
                     "method": "initGiveawayStarsRequest",
                     "recipient": recipient,
                     "quantity": str(winners),
                     "stars": str(amount),
+                    "payment_method": payment_method,
                 },
             )
+            if result.get("error"):
+                raise FragmentAPIError(result["error"])
             req_id = result.get("req_id")
             if not req_id:
                 raise FragmentAPIError(
-                    FragmentAPIError.NO_REQUEST_ID.format(
-                        context="Stars giveaway"
-                    )
+                    FragmentAPIError.NO_REQUEST_ID.format(context="Stars giveaway")
                 )
 
             account = await build_account_info(client)
             transaction = await post_FragmentAPI(
-                session,
-                fragment_hash,
-                headers,
+                session, fragment_hash, headers,
                 {
                     "method": "getGiveawayStarsLink",
                     "account": json.dumps(account),
@@ -131,6 +113,7 @@ async def giveaway_stars(
             channel=channel,
             winners=winners,
             amount=amount,
+            payment_method=payment_method,
         )
 
     except FragmentBaseError:
@@ -146,28 +129,13 @@ def giveaway_stars_sync(
     channel: str,
     winners: int,
     amount: int,
+    payment_method: str = "ton",
 ) -> GiveawayStarsResult:
-    """Run a Telegram Stars giveaway for a channel (sync).
-
-    Args:
-        client: Authenticated FragmentClient instance.
-        channel: Channel username (with or without @).
-        winners: Number of winners - integer from 1 to 5.
-        amount: Stars each winner receives - 500 to 1 000 000.
-
-    Returns:
-        GiveawayStarsResult with transaction_id, channel, winners, and amount.
-
-    Raises:
-        ConfigError: If winners or amount are invalid.
-        UserNotFoundError: If channel not found on Fragment.
-        FragmentAPIError: If Fragment API returns an error.
-        UnexpectedError: For any other unexpected failure.
-    """
+    """Run a Telegram Stars giveaway for a channel (sync)."""
     if not isinstance(winners, int) or not (1 <= winners <= 5):
         raise ConfigError(ConfigError.INVALID_WINNERS_STARS)
-    if not isinstance(amount, int) or not (500 <= amount <= 1_000_000):
-        raise ConfigError(ConfigError.INVALID_STARS_PER_WINNER)
+    if payment_method not in VALID_PAYMENT_METHODS:
+        raise ConfigError(ConfigError.INVALID_PAYMENT_METHOD)
 
     try:
         headers = build_headers(STARS_GIVEAWAY_PAGE)
@@ -179,12 +147,12 @@ def giveaway_stars_sync(
             )
 
             result = post_FragmentAPI_sync(
-                session,
-                fragment_hash,
-                headers,
+                session, fragment_hash, headers,
                 {
                     "method": "searchStarsGiveawayRecipient",
                     "query": channel,
+                    "quantity": winners,
+                    "stars": amount,
                 },
             )
             recipient = result.get("found", {}).get("recipient")
@@ -194,29 +162,26 @@ def giveaway_stars_sync(
                 )
 
             result = post_FragmentAPI_sync(
-                session,
-                fragment_hash,
-                headers,
+                session, fragment_hash, headers,
                 {
                     "method": "initGiveawayStarsRequest",
                     "recipient": recipient,
                     "quantity": str(winners),
                     "stars": str(amount),
+                    "payment_method": payment_method,
                 },
             )
+            if result.get("error"):
+                raise FragmentAPIError(result["error"])
             req_id = result.get("req_id")
             if not req_id:
                 raise FragmentAPIError(
-                    FragmentAPIError.NO_REQUEST_ID.format(
-                        context="Stars giveaway"
-                    )
+                    FragmentAPIError.NO_REQUEST_ID.format(context="Stars giveaway")
                 )
 
             account = build_account_info_sync(client)
             transaction = post_FragmentAPI_sync(
-                session,
-                fragment_hash,
-                headers,
+                session, fragment_hash, headers,
                 {
                     "method": "getGiveawayStarsLink",
                     "account": json.dumps(account),
@@ -234,6 +199,7 @@ def giveaway_stars_sync(
             channel=channel,
             winners=winners,
             amount=amount,
+            payment_method=payment_method,
         )
 
     except FragmentBaseError:

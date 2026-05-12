@@ -43,6 +43,7 @@ async def purchase_stars(
     username: str,
     amount: int,
     show_sender: bool = True,
+    payment_method: str = "ton",
 ) -> StarsResult:
     """Send Telegram Stars to a user (async).
 
@@ -96,9 +97,12 @@ async def purchase_stars(
                 {
                     "method": "initBuyStarsRequest",
                     "recipient": recipient,
-                    "quantity": amount,
+                    "quantity": str(amount),
+                    "payment_method": payment_method,
                 },
             )
+            if result.get("error"):
+                raise FragmentAPIError(result["error"])
             req_id = result.get("req_id")
             if not req_id:
                 raise FragmentAPIError(
@@ -142,6 +146,7 @@ def purchase_stars_sync(
     username: str,
     amount: int,
     show_sender: bool = True,
+    payment_method: str = "ton",
 ) -> StarsResult:
     """Send Telegram Stars to a user (sync).
 
@@ -195,9 +200,12 @@ def purchase_stars_sync(
                 {
                     "method": "initBuyStarsRequest",
                     "recipient": recipient,
-                    "quantity": amount,
+                    "quantity": str(amount),
+                    "payment_method": payment_method,
                 },
             )
+            if result.get("error"):
+                raise FragmentAPIError(result["error"])
             req_id = result.get("req_id")
             if not req_id:
                 raise FragmentAPIError(
