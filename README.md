@@ -2,7 +2,7 @@
   <img src="https://fragment.com/img/fragment_icon.svg" width="200" alt="Fragment API Python">
 </p>
 
-<h1 align="center">Fragment API Python v5.0</h1>
+<h1 align="center">Fragment API Python</h1>
 
 <p align="center">
   <strong>Professional Python library for Fragment.com automation</strong>
