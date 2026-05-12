@@ -112,4 +112,4 @@ async with AsyncFragmentClient(seed="...", cookies=...) as client:
 
 ---
 
-**Лицензия MIT** | Разработчик [S1qwy](https://github.com/S1qwy) — `S1qwy@internet.ru`
+**Лицензия MIT**
