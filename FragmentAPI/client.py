@@ -54,13 +54,18 @@ from FragmentAPI.types.constants import (
 )
 from FragmentAPI.types.results import (
     AdsTopupResult,
+    AssignResult,
     BidResult,
     GiftInfo,
     GiftsResult,
     GiveawayPremiumResult,
     GiveawayStarsResult,
     LoginCodeResult,
+    MyAssetsResult,
     MyBidsResult,
+    MyAsset,
+    NftTransferRecipient,
+    NftTransferRequest,
     NumberInfo,
     NumbersResult,
     PremiumPrices,
@@ -68,6 +73,7 @@ from FragmentAPI.types.results import (
     PremiumTransaction,
     ProfileInfo,
     SessionInfo,
+    StartAuctionResult,
     StarsPrice,
     StarsPrices,
     StarsResult,
@@ -85,6 +91,7 @@ from FragmentAPI.utils.html import (
     parse_gift_attributes,
     parse_gift_issued,
     parse_item_status,
+    parse_my_assets,
     parse_my_bids,
     parse_owner_history,
     parse_premium_history,
@@ -899,6 +906,393 @@ class FragmentClient:
                 ton_rate=ton_rate,
                 total_count=total_count,
             )
+        except FragmentBaseError:
+            raise
+        except Exception as exc:
+            raise UnexpectedError(
+                UnexpectedError.UNEXPECTED.format(exc=exc),
+            ) from exc
+            
+    async def get_my_assets(
+        self,
+        item_type: str = "usernames",
+    ) -> MyAssetsResult:
+        '''
+        Get My Assets from Fragment.
+
+        Args:
+            item_type: "usernames", "numbers", or "gifts".
+
+        Returns:
+            MyAssetsResult with items, ton_rate, and total_count.
+        '''
+        try:
+            from FragmentAPI.types.constants import (
+                MY_USERNAMES_PAGE,
+                MY_NUMBERS_PAGE,
+                MY_GIFTS_PAGE,
+            )
+
+            page_map = {
+                "usernames": MY_USERNAMES_PAGE,
+                "numbers": MY_NUMBERS_PAGE,
+                "gifts": MY_GIFTS_PAGE,
+            }
+
+            if item_type not in page_map:
+                raise ConfigError(f"Invalid item_type: {item_type}")
+
+            url = page_map[item_type]
+            headers = build_headers(url)
+            data = await fetch_page_ajax(
+                self.cookies,
+                headers,
+                url,
+                self.timeout,
+            )
+
+            html = data.get("h", "")
+            items, total_count = parse_my_assets(html, item_type)
+            ton_rate = data.get("s", {}).get("tonRate", 0.0)
+
+            return MyAssetsResult(
+                items=items,
+                ton_rate=ton_rate,
+                total_count=total_count,
+            )
+        except FragmentBaseError:
+            raise
+        except Exception as exc:
+            raise UnexpectedError(
+                UnexpectedError.UNEXPECTED.format(exc=exc),
+            ) from exc
+
+    async def assign_to_telegram(
+        self,
+        item_type: int,
+        slug: str,
+        assign_to: str | None = None,
+    ) -> AssignResult:
+        '''
+        Assign a username or gift to a Telegram account.
+
+        Args:
+            item_type: 1 (username), 5 (gift).
+            slug: Item identifier.
+            assign_to: Telegram account ID or None to remove.
+
+        Returns:
+            AssignResult with status and optional payment info.
+        '''
+        try:
+            url = f"{FRAGMENT_BASE_URL}/" + (
+                f"username/{slug}" if item_type == 1 else f"gift/{slug}"
+            )
+            headers = build_headers(url)
+            fragment_hash = await fetch_fragment_hash(
+                self.cookies,
+                headers,
+                url,
+                self.timeout,
+            )
+
+            async with httpx.AsyncClient(
+                cookies=self.cookies,
+                timeout=self.timeout,
+            ) as session:
+                data = {
+                    "type": str(item_type),
+                    "username": slug,
+                    "method": "assignToTgAccount",
+                }
+                if assign_to is not None:
+                    data["assign_to"] = assign_to
+
+                result = await post_FragmentAPI(
+                    session,
+                    fragment_hash,
+                    headers,
+                    data,
+                )
+
+            if result.get("error"):
+                return AssignResult(ok=False, message=result["error"])
+
+            if result.get("need_pay"):
+                return AssignResult(
+                    ok=True,
+                    need_pay=True,
+                    req_id=result.get("req_id"),
+                    amount=result.get("amount"),
+                )
+
+            return AssignResult(
+                ok=result.get("ok", False),
+                message=result.get("msg"),
+                assign_name=result.get("assign_name"),
+            )
+        except FragmentBaseError:
+            raise
+        except Exception as exc:
+            raise UnexpectedError(
+                UnexpectedError.UNEXPECTED.format(exc=exc),
+            ) from exc
+
+    async def start_auction(
+        self,
+        item_type: int,
+        slug: str,
+        min_amount: int,
+        max_amount: int = 0,
+    ) -> StartAuctionResult:
+        '''
+        Start an auction for a username or gift.
+
+        Args:
+            item_type: 1 (username), 5 (gift).
+            slug: Item identifier.
+            min_amount: Minimum bid in TON.
+            max_amount: Maximum price (buy now), 0 for auction only.
+
+        Returns:
+            StartAuctionResult with req_id.
+        '''
+        try:
+            url = f"{FRAGMENT_BASE_URL}/" + (
+                f"username/{slug}" if item_type == 1 else f"gift/{slug}"
+            )
+            headers = build_headers(url)
+            fragment_hash = await fetch_fragment_hash(
+                self.cookies,
+                headers,
+                url,
+                self.timeout,
+            )
+
+            can_sell = await self.call(
+                "canSellItem",
+                {
+                    "type": str(item_type),
+                    "username": slug,
+                    "auction": "true" if max_amount == 0 else "false",
+                },
+                page_url=url,
+            )
+
+            if not can_sell.get("ok"):
+                return StartAuctionResult(ok=False)
+
+            account = await build_account_info(self)
+
+            async with httpx.AsyncClient(
+                cookies=self.cookies,
+                timeout=self.timeout,
+            ) as session:
+                transaction = await post_FragmentAPI(
+                    session,
+                    fragment_hash,
+                    headers,
+                    {
+                        "method": "getStartAuctionLink",
+                        "account": json.dumps(account),
+                        "device": DEVICE_FINGERPRINT,
+                        "transaction": "1",
+                        "type": str(item_type),
+                        "username": slug,
+                        "min_amount": str(min_amount),
+                        "max_amount": str(max_amount),
+                    },
+                )
+
+            if transaction.get("error"):
+                return StartAuctionResult(ok=False)
+
+            confirm_params = transaction.get("confirm_params", {})
+            await execute_transaction(self, transaction)
+
+            return StartAuctionResult(
+                ok=True,
+                req_id=confirm_params.get("id"),
+            )
+        except FragmentBaseError:
+            raise
+        except Exception as exc:
+            raise UnexpectedError(
+                UnexpectedError.UNEXPECTED.format(exc=exc),
+            ) from exc
+
+    async def sell_asset(
+        self,
+        item_type: int,
+        slug: str,
+        price: int,
+    ) -> StartAuctionResult:
+        '''
+        Sell a username or gift at a fixed price.
+
+        Args:
+            item_type: 1 (username), 5 (gift).
+            slug: Item identifier.
+            price: Fixed price in TON.
+
+        Returns:
+            StartAuctionResult with req_id.
+        '''
+        return await self.start_auction(item_type, slug, price, price)
+
+    async def search_nft_transfer_recipient(
+        self,
+        query: str,
+    ) -> NftTransferRecipient | None:
+        '''
+        Search for a recipient to transfer NFT.
+
+        Args:
+            query: Telegram username.
+
+        Returns:
+            NftTransferRecipient or None if not found.
+        '''
+        try:
+            headers = build_headers(FRAGMENT_BASE_URL)
+            fragment_hash = await fetch_fragment_hash(
+                self.cookies,
+                headers,
+                FRAGMENT_BASE_URL,
+                self.timeout,
+            )
+
+            async with httpx.AsyncClient(
+                cookies=self.cookies,
+                timeout=self.timeout,
+            ) as session:
+                result = await post_FragmentAPI(
+                    session,
+                    fragment_hash,
+                    headers,
+                    {
+                        "method": "searchNftTransferRecipient",
+                        "query": query,
+                    },
+                )
+
+            if result.get("error") or not result.get("found"):
+                return None
+
+            found = result["found"]
+            photo_match = re.search(r'src="([^"]+)"', found.get("photo", ""))
+            return NftTransferRecipient(
+                myself=found.get("myself", False),
+                recipient=found.get("recipient", ""),
+                name=found.get("name", ""),
+                photo_url=photo_match.group(1) if photo_match else None,
+            )
+        except FragmentBaseError:
+            raise
+        except Exception as exc:
+            raise UnexpectedError(
+                UnexpectedError.UNEXPECTED.format(exc=exc),
+            ) from exc
+
+    async def init_nft_transfer(
+        self,
+        slug: str,
+        recipient: str,
+    ) -> NftTransferRequest:
+        '''
+        Initialize NFT transfer request.
+
+        Args:
+            slug: Gift slug.
+            recipient: Recipient ID from search.
+
+        Returns:
+            NftTransferRequest with req_id and content.
+        '''
+        try:
+            url = f"{FRAGMENT_BASE_URL}/gift/{slug}/transfer"
+            headers = build_headers(url)
+            fragment_hash = await fetch_fragment_hash(
+                self.cookies,
+                headers,
+                url,
+                self.timeout,
+            )
+
+            async with httpx.AsyncClient(
+                cookies=self.cookies,
+                timeout=self.timeout,
+            ) as session:
+                result = await post_FragmentAPI(
+                    session,
+                    fragment_hash,
+                    headers,
+                    {
+                        "method": "initNftTransferRequest",
+                        "slug": slug,
+                        "recipient": recipient,
+                    },
+                )
+
+            if result.get("error"):
+                raise FragmentAPIError(result["error"])
+
+            return NftTransferRequest(
+                req_id=result.get("req_id", ""),
+                myself=result.get("myself", False),
+                item_title=result.get("item_title", ""),
+                content=result.get("content", ""),
+                button=result.get("button", ""),
+            )
+        except FragmentBaseError:
+            raise
+        except Exception as exc:
+            raise UnexpectedError(
+                UnexpectedError.UNEXPECTED.format(exc=exc),
+            ) from exc
+
+    async def transfer_nft(
+        self,
+        req_id: str,
+        show_sender: bool = True,
+    ) -> TransactionResult:
+        '''
+        Execute NFT transfer.
+
+        Args:
+            req_id: Request ID from init_nft_transfer.
+            show_sender: Show your name to the recipient.
+
+        Returns:
+            TransactionResult with transaction details.
+        '''
+        try:
+            account = await build_account_info(self)
+
+            async with httpx.AsyncClient(
+                cookies=self.cookies,
+                timeout=self.timeout,
+            ) as session:
+                transaction = await self.call(
+                    "getNftTransferLink",
+                    {
+                        "account": json.dumps(account),
+                        "device": DEVICE_FINGERPRINT,
+                        "transaction": "1",
+                        "id": req_id,
+                        "show_sender": "1" if show_sender else "0",
+                    },
+                )
+
+            tx_result = await execute_transaction(self, transaction)
+
+            if tx_result.boc and req_id:
+                try:
+                    await self.confirm_request(req_id, tx_result.boc)
+                except Exception:
+                    pass
+
+            return tx_result
         except FragmentBaseError:
             raise
         except Exception as exc:

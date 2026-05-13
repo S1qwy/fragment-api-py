@@ -537,6 +537,116 @@ class MyBidsResult:
 
 
 @dataclass
+class MyAsset:
+    '''Single asset from My Assets page.'''
+
+    item_type: str
+    slug: str
+    name: str
+    description: str | None = None
+    image_url: str | None = None
+    assigned_to: str | None = None
+    assigned_name: str | None = None
+
+    def __repr__(self) -> str:
+        return (
+            f"MyAsset("
+            f"type='{self.item_type}', "
+            f"name='{self.name}', "
+            f"assigned_to='{self.assigned_name}'"
+            f")"
+        )
+
+
+@dataclass
+class MyAssetsResult:
+    '''Result of My Assets query.'''
+
+    items: list[MyAsset]
+    ton_rate: float
+    total_count: int
+
+    def __repr__(self) -> str:
+        return (
+            f"MyAssetsResult("
+            f"items={len(self.items)}, "
+            f"ton_rate={self.ton_rate}, "
+            f"total={self.total_count}"
+            f")"
+        )
+
+
+@dataclass
+class AssignResult:
+    '''Result of assigning asset to Telegram account.'''
+
+    ok: bool
+    message: str | None = None
+    need_pay: bool = False
+    req_id: str | None = None
+    amount: str | None = None
+    assign_name: str | None = None
+
+    def __repr__(self) -> str:
+        return (
+            f"AssignResult("
+            f"ok={self.ok}, "
+            f"need_pay={self.need_pay}, "
+            f"message={self.message!r}"
+            f")"
+        )
+
+
+@dataclass
+class StartAuctionResult:
+    '''Result of starting auction or selling asset.'''
+
+    ok: bool
+    req_id: str | None = None
+
+    def __repr__(self) -> str:
+        return f"StartAuctionResult(ok={self.ok}, req_id={self.req_id!r})"
+
+
+@dataclass
+class NftTransferRecipient:
+    '''Recipient info for NFT transfer.'''
+
+    myself: bool
+    recipient: str
+    name: str
+    photo_url: str | None = None
+
+    def __repr__(self) -> str:
+        return (
+            f"NftTransferRecipient("
+            f"myself={self.myself}, "
+            f"name='{self.name}', "
+            f"recipient='{self.recipient[:16]}...'"
+            f")"
+        )
+
+
+@dataclass
+class NftTransferRequest:
+    '''Result of initNftTransferRequest.'''
+
+    req_id: str
+    myself: bool
+    item_title: str
+    content: str
+    button: str
+
+    def __repr__(self) -> str:
+        return (
+            f"NftTransferRequest("
+            f"req_id='{self.req_id}', "
+            f"item_title='{self.item_title}'"
+            f")"
+        )
+
+
+@dataclass
 class LoginCodeResult:
     '''Result of a pending login code request.'''
 

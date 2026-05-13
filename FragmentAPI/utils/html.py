@@ -805,6 +805,92 @@ def parse_my_bids(html: str, item_type: str) -> tuple[list["MyBid"], int]:
     return items, total_count
 
 
+def parse_my_assets(html: str, item_type: str) -> tuple[list["MyAsset"], int]:
+    '''Parse My Assets HTML into structured asset objects.'''
+    from FragmentAPI.types.results import MyAsset
+
+    items: list[MyAsset] = []
+
+    tab_counter_pattern = r'<a href="/my/{}"[^>]*>.*?<span[^>]*>(\d+)</span>'
+    if item_type == "usernames":
+        tab_pattern = r'<a href="/my/usernames"[^>]*>.*?Usernames.*?<span[^>]*>(\d+)</span>'
+    elif item_type == "gifts":
+        tab_pattern = r'<a href="/my/gifts"[^>]*>.*?Gifts.*?<span[^>]*>(\d+)</span>'
+    else:
+        tab_pattern = r'<a href="/my/numbers"[^>]*>.*?(?:Collectible )?Numbers.*?<span[^>]*>(\d+)</span>'
+
+    total_match = re.search(tab_pattern, html, re.DOTALL)
+    total_count = int(total_match.group(1)) if total_match else 0
+
+    tbody_m = re.search(r'<tbody[^>]*class="[^"]*js-assets-table-body[^"]*"[^>]*>(.*?)</tbody>', html, re.DOTALL)
+    if not tbody_m:
+        tbody_m = re.search(r'<tbody[^>]*>(.*?)</tbody>', html, re.DOTALL)
+    if not tbody_m:
+        return items, total_count
+
+    rows = re.findall(r'<tr[^>]*class="[^"]*tm-row-selectable[^"]*"[^>]*>(.*?)</tr>', tbody_m.group(1), re.DOTALL)
+
+    for row in rows:
+        if item_type == "usernames":
+            href_match = re.search(r'href="/(username/[^"]+)"', row)
+            slug = href_match.group(1) if href_match else ""
+
+            name_match = re.search(r'<div class="table-cell-value tm-value">@([^<]+)</div>', row)
+            name = f"@{name_match.group(1)}" if name_match else slug
+
+            desc_match = re.search(r'<div class="table-cell-desc tm-nowrap">([^<]+)</div>', row)
+            description = desc_match.group(1).strip() if desc_match else None
+            image_url = None
+
+            assign_match = re.search(r'data-assigned-to="([^"]+)"', row)
+            assigned_to = assign_match.group(1) if assign_match else None
+            assigned_name = None
+
+        elif item_type == "gifts":
+            href_match = re.search(r'href="(/gift/[^"]+)"', row)
+            slug = href_match.group(1) if href_match else ""
+
+            name_match = re.search(r'<div class="table-cell-value tm-value">([^<]+)</div>', row)
+            name = name_match.group(1).strip() if name_match else slug
+
+            img_match = re.search(r'<img src="([^"]+)"', row)
+            image_url = img_match.group(1) if img_match else None
+
+            desc_match = re.search(r'<div class="table-cell-desc tm-nowrap">([^<]+)</div>', row)
+            description = desc_match.group(1).strip() if desc_match else None
+
+            assign_match = re.search(r'class="js-assigned-to">([^<]+)</span>', row)
+            assigned_name = assign_match.group(1).strip() if assign_match else "Wallet"
+            assigned_to = None
+
+        else:
+            href_match = re.search(r'href="(/number/[^"]+)"', row)
+            slug = href_match.group(1) if href_match else ""
+
+            name_match = re.search(r'<div class="table-cell-value tm-value">\+?([^<]+)</div>', row)
+            name = name_match.group(1).strip() if name_match else slug
+
+            image_url = None
+            description = None
+            assigned_to = None
+            assigned_name = None
+
+        if slug:
+            items.append(
+                MyAsset(
+                    item_type=item_type,
+                    slug=slug,
+                    name=name,
+                    description=description,
+                    image_url=image_url,
+                    assigned_to=assigned_to,
+                    assigned_name=assigned_name,
+                )
+            )
+
+    return items, total_count
+
+
 def parse_sessions(html: str) -> list[SessionInfo]:
     '''Parse active sessions from sessions page HTML.'''
     sessions: list[SessionInfo] = []
