@@ -495,6 +495,48 @@ class SessionInfo:
 
 
 @dataclass
+class MyBid:
+    '''Single bid entry from My Bid History.'''
+
+    item_type: str
+    slug: str
+    name: str
+    bid: float
+    status: str
+    date: str
+    image_url: str | None = None
+    description: str | None = None
+
+    def __repr__(self) -> str:
+        return (
+            f"MyBid("
+            f"type='{self.item_type}', "
+            f"name='{self.name}', "
+            f"bid={self.bid} TON, "
+            f"status='{self.status}'"
+            f")"
+        )
+
+
+@dataclass
+class MyBidsResult:
+    '''Result of My Bid History query.'''
+
+    items: list[MyBid]
+    ton_rate: float
+    total_count: int
+
+    def __repr__(self) -> str:
+        return (
+            f"MyBidsResult("
+            f"items={len(self.items)}, "
+            f"ton_rate={self.ton_rate}, "
+            f"total={self.total_count}"
+            f")"
+        )
+
+
+@dataclass
 class LoginCodeResult:
     '''Result of a pending login code request.'''
 

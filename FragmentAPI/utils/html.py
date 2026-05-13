@@ -11,6 +11,7 @@ from FragmentAPI.types.results import (
     AuctionInfo,
     BidHistoryEntry,
     GiftAttribute,
+    MyBid,
     OwnerHistoryEntry,
     PremiumPriceOption,
     PremiumTransaction,
@@ -18,6 +19,7 @@ from FragmentAPI.types.results import (
     SessionInfo,
     StarsPrice,
     StarsTransaction,
+    TopupTransaction,
 )
 
 ROW_BLOCK_RE = re.compile(
@@ -725,6 +727,82 @@ def parse_profile(html: str) -> ProfileInfo:
         wallet_label=wallet_label,
         wallet_verified=wallet_verified,
     )
+
+
+def parse_my_bids(html: str, item_type: str) -> tuple[list["MyBid"], int]:
+    '''Parse My Bid History HTML into structured bid objects.'''
+    
+    items: list[MyBid] = []
+    tbody_m = re.search(r"<tbody[^>]*>(.*?)</tbody>", html, re.DOTALL)
+
+    if not tbody_m:
+        return items, 0
+
+    total_match = re.search(r'tm-section-tab-counter[^>]*>(\d+)</span>', html)
+    total_count = int(total_match.group(1)) if total_match else 0
+
+    for row_m in TRANSACTION_ROW_RE.finditer(tbody_m.group(1)):
+        row = row_m.group(1)
+        if "<th" in row:
+            continue
+
+        if item_type == "usernames":
+            href_m = re.search(r'href="/(username/[^"]+)"', row)
+            slug = href_m.group(1) if href_m else ""
+
+            name_m = re.search(r'<div class="table-cell-value tm-value">@([^<]+)</div>', row)
+            name = f"@{name_m.group(1)}" if name_m else slug
+
+            image_url = None
+            desc_m = re.search(r'<div class="table-cell-desc tm-nowrap">([^<]+)</div>', row)
+            description = desc_m.group(1).strip() if desc_m else None
+
+        elif item_type == "gifts":
+            href_m = re.search(r'href="(/gift/[^"]+)"', row)
+            slug = href_m.group(1) if href_m else ""
+
+            name_m = re.search(r'<div class="table-cell-value tm-value">([^<]+)</div>', row)
+            name = name_m.group(1).strip() if name_m else slug
+
+            img_m = re.search(r'<img src="([^"]+)"', row)
+            image_url = img_m.group(1) if img_m else None
+
+            desc_m = re.search(r'<div class="table-cell-desc tm-nowrap">([^<]+)</div>', row)
+            description = desc_m.group(1).strip() if desc_m else None
+
+        else:
+            href_m = re.search(r'href="/(number/[^"]+)"', row)
+            slug = href_m.group(1) if href_m else ""
+
+            name_m = re.search(r'<div class="table-cell-value tm-value">\+?([^<]+)</div>', row)
+            name = name_m.group(1).strip() if name_m else slug
+
+            image_url = None
+            description = None
+
+        bid_m = TX_PRICE_RE.search(row)
+        bid = float(bid_m.group(1).strip().replace(",", "")) if bid_m else 0.0
+
+        date_m = TX_DATE_RE.search(row)
+        date = date_m.group(1) if date_m else ""
+
+        status_m = re.search(r'tm-status-([a-z]+)[^>]*>([^<]+)</div>', row)
+        status = status_m.group(2).strip() if status_m else "Unknown"
+
+        items.append(
+            MyBid(
+                item_type=item_type,
+                slug=slug,
+                name=name,
+                bid=bid,
+                status=status,
+                date=date,
+                image_url=image_url,
+                description=description,
+            )
+        )
+
+    return items, total_count
 
 
 def parse_sessions(html: str) -> list[SessionInfo]:

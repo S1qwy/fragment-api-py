@@ -35,9 +35,11 @@ from FragmentAPI.methods.search import (
 )
 from FragmentAPI.methods.topup_ton import topup_ton
 from FragmentAPI.types.constants import (
+    ADS_HISTORY_PAGE,
     DEFAULT_TIMEOUT,
     FRAGMENT_BASE_URL,
     GIFTS_PAGE,
+    MY_BIDS_PAGE,
     NUMBERS_PAGE,
     PREMIUM_HISTORY_PAGE,
     PREMIUM_PAGE,
@@ -58,6 +60,7 @@ from FragmentAPI.types.results import (
     GiveawayPremiumResult,
     GiveawayStarsResult,
     LoginCodeResult,
+    MyBidsResult,
     NumberInfo,
     NumbersResult,
     PremiumPrices,
@@ -69,8 +72,8 @@ from FragmentAPI.types.results import (
     StarsPrices,
     StarsResult,
     StarsTransaction,
-    TopupTransaction,
     TerminateSessionsResult,
+    TopupTransaction,
     UsernameInfo,
     UsernamesResult,
     WalletInfo,
@@ -82,6 +85,7 @@ from FragmentAPI.utils.html import (
     parse_gift_attributes,
     parse_gift_issued,
     parse_item_status,
+    parse_my_bids,
     parse_owner_history,
     parse_premium_history,
     parse_premium_options,
@@ -810,10 +814,6 @@ class FragmentClient:
             List of TopupTransaction objects.
         '''
         try:
-            from FragmentAPI.types.constants import ADS_HISTORY_PAGE
-            from FragmentAPI.types.results import TopupTransaction
-            from FragmentAPI.utils.html import parse_topup_history
-
             url = f"{ADS_HISTORY_PAGE}?type=topup&sort={sort}"
             headers = build_headers(ADS_HISTORY_PAGE)
             data = await fetch_page_ajax(
@@ -846,6 +846,59 @@ class FragmentClient:
             html = data.get("h", "")
             js = data.get("j", "")
             return parse_profile(html + js)
+        except FragmentBaseError:
+            raise
+        except Exception as exc:
+            raise UnexpectedError(
+                UnexpectedError.UNEXPECTED.format(exc=exc),
+            ) from exc
+            
+    async def get_my_bids(
+        self,
+        item_type: str = "usernames",
+        sort: str = "desc",
+    ) -> "MyBidsResult":
+        '''
+        Get My Bid History from Fragment.
+
+        Args:
+            item_type: "usernames", "numbers", or "gifts".
+            sort: "asc" (oldest first) or "desc" (newest first).
+
+        Returns:
+            MyBidsResult with items, ton_rate, and total_count.
+        '''
+        try:
+            if item_type not in ("usernames", "numbers", "gifts"):
+                raise ConfigError(f"Invalid item_type: {item_type}")
+
+            params = []
+            if item_type != "usernames":
+                params.append(f"type={item_type}")
+            if sort:
+                params.append(f"sort={sort}")
+
+            url = MY_BIDS_PAGE
+            if params:
+                url += "?" + "&".join(params)
+
+            headers = build_headers(MY_BIDS_PAGE)
+            data = await fetch_page_ajax(
+                self.cookies,
+                headers,
+                url,
+                self.timeout,
+            )
+
+            html = data.get("h", "")
+            items, total_count = parse_my_bids(html, item_type)
+            ton_rate = data.get("s", {}).get("tonRate", 0.0)
+
+            return MyBidsResult(
+                items=items,
+                ton_rate=ton_rate,
+                total_count=total_count,
+            )
         except FragmentBaseError:
             raise
         except Exception as exc:

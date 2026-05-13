@@ -65,6 +65,7 @@ NUMBERS_PAGE: str = f"{FRAGMENT_BASE_URL}/numbers"
 GIFTS_PAGE: str = f"{FRAGMENT_BASE_URL}/gifts"
 PROFILE_PAGE: str = f"{FRAGMENT_BASE_URL}/my/profile"
 SESSIONS_PAGE: str = f"{FRAGMENT_BASE_URL}/my/sessions"
+MY_BIDS_PAGE: str = f"{FRAGMENT_BASE_URL}/my/bids"
 
 DEVICE_FINGERPRINT: str = json.dumps(
     {
