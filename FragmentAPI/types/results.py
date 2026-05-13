@@ -435,6 +435,22 @@ class PremiumTransaction:
     price_ton: str
     date: str
 
+@dataclass
+class TopupTransaction:
+    '''Single topup transaction from Ads history.'''
+
+    recipient: str
+    amount: int
+    date: str
+
+    def __repr__(self) -> str:
+        return (
+            f"TopupTransaction("
+            f"recipient='{self.recipient}', "
+            f"amount={self.amount} TON, "
+            f"date='{self.date}'"
+            f")"
+        )
 
 @dataclass
 class ProfileInfo:

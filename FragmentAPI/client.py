@@ -69,6 +69,7 @@ from FragmentAPI.types.results import (
     StarsPrices,
     StarsResult,
     StarsTransaction,
+    TopupTransaction,
     TerminateSessionsResult,
     UsernameInfo,
     UsernamesResult,
@@ -90,6 +91,7 @@ from FragmentAPI.utils.html import (
     parse_stars_history,
     parse_stars_packages,
     parse_stars_price_from_html,
+    parse_topup_history,
 )
 from FragmentAPI.utils.http import (
     build_headers,
@@ -787,6 +789,41 @@ class FragmentClient:
             )
             html = data.get("h", "")
             return parse_premium_history(html)
+        except FragmentBaseError:
+            raise
+        except Exception as exc:
+            raise UnexpectedError(
+                UnexpectedError.UNEXPECTED.format(exc=exc),
+            ) from exc
+            
+    async def get_topup_history(
+        self,
+        sort: str = "asc",
+    ) -> list["TopupTransaction"]:
+        '''
+        Get Telegram Ads topup transaction history.
+
+        Args:
+            sort: "asc" (oldest first) or "desc" (newest first).
+
+        Returns:
+            List of TopupTransaction objects.
+        '''
+        try:
+            from FragmentAPI.types.constants import ADS_HISTORY_PAGE
+            from FragmentAPI.types.results import TopupTransaction
+            from FragmentAPI.utils.html import parse_topup_history
+
+            url = f"{ADS_HISTORY_PAGE}?type=topup&sort={sort}"
+            headers = build_headers(ADS_HISTORY_PAGE)
+            data = await fetch_page_ajax(
+                self.cookies,
+                headers,
+                url,
+                self.timeout,
+            )
+            html = data.get("h", "")
+            return parse_topup_history(html)
         except FragmentBaseError:
             raise
         except Exception as exc:

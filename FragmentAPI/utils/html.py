@@ -638,6 +638,47 @@ def parse_premium_history(html: str) -> list[PremiumTransaction]:
     return transactions
 
 
+def parse_topup_history(html: str) -> list["TopupTransaction"]:
+    '''Parse topup transaction history from Ads page HTML.'''
+    from FragmentAPI.types.results import TopupTransaction
+
+    transactions: list[TopupTransaction] = []
+    tbody_m = re.search(r"<tbody>(.*?)</tbody>", html, re.DOTALL)
+    if not tbody_m:
+        return transactions
+
+    for row_m in TRANSACTION_ROW_RE.finditer(tbody_m.group(1)):
+        row = row_m.group(1)
+        if "<th" in row:
+            continue
+
+        recip_m = re.search(
+            r'<a[^>]+href="https://t\.me/([^"]+)"[^>]*>@([^<]+)</a>',
+            row,
+        )
+        recipient = recip_m.group(2) if recip_m else "ㅤ"
+
+        amount_m = TX_PRICE_RE.search(row)
+        amount = 0
+        if amount_m:
+            try:
+                amount = int(amount_m.group(1).strip().replace(",", ""))
+            except ValueError:
+                pass
+
+        date_m = TX_DATE_RE.search(row)
+        date = date_m.group(1) if date_m else ""
+
+        transactions.append(
+            TopupTransaction(
+                recipient=recipient,
+                amount=amount,
+                date=date,
+            )
+        )
+    return transactions
+
+
 def parse_profile(html: str) -> ProfileInfo:
     '''Parse profile info from profile page HTML.'''
     name_m = PROFILE_NAME_RE.search(html)
