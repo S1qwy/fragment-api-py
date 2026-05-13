@@ -109,7 +109,7 @@ async def _wait_confirmation(
 
         try:
             await wallet.refresh()
-            current_seqno = wallet.seqno
+            current_seqno = await wallet.seqno()
             current_balance = wallet.balance / 1_000_000_000
 
             if (
@@ -213,7 +213,7 @@ async def _run_transaction(
                 try:
                     await wallet.refresh()
 
-                    initial_seqno = wallet.seqno
+                    initial_seqno = await wallet.seqno()
                     initial_balance = wallet.balance / 1_000_000_000
 
                     result = await wallet.transfer(
