@@ -1,3 +1,7 @@
+'''
+Public type exports for Fragment API.
+'''
+
 from FragmentAPI.types.results import (
     AdsTopupResult,
     AuctionInfo,
@@ -8,6 +12,7 @@ from FragmentAPI.types.results import (
     GiftsResult,
     GiveawayPremiumResult,
     GiveawayStarsResult,
+    LoginCodeResult,
     NumberInfo,
     NumbersResult,
     OwnerHistoryEntry,
@@ -21,6 +26,8 @@ from FragmentAPI.types.results import (
     StarsPrices,
     StarsResult,
     StarsTransaction,
+    TerminateSessionsResult,
+    TransactionResult,
     UsernameInfo,
     UsernamesResult,
     WalletInfo,
@@ -28,6 +35,7 @@ from FragmentAPI.types.results import (
 from FragmentAPI.exceptions import (
     ClientError,
     ConfigError,
+    ConfirmationTimeout,
     CookieError,
     FragmentAPIError,
     FragmentBaseError,
@@ -35,6 +43,7 @@ from FragmentAPI.exceptions import (
     OperationError,
     ParseError,
     ProxyError,
+    SeqnoError,
     TransactionError,
     UnexpectedError,
     UserNotFoundError,
@@ -49,6 +58,7 @@ __all__ = [
     "BidResult",
     "ClientError",
     "ConfigError",
+    "ConfirmationTimeout",
     "CookieError",
     "FragmentAPIError",
     "FragmentBaseError",
@@ -58,6 +68,7 @@ __all__ = [
     "GiftsResult",
     "GiveawayPremiumResult",
     "GiveawayStarsResult",
+    "LoginCodeResult",
     "NumberInfo",
     "NumbersResult",
     "OperationError",
@@ -69,12 +80,15 @@ __all__ = [
     "PremiumTransaction",
     "ProfileInfo",
     "ProxyError",
+    "SeqnoError",
     "SessionInfo",
     "StarsPrice",
     "StarsPrices",
     "StarsResult",
     "StarsTransaction",
+    "TerminateSessionsResult",
     "TransactionError",
+    "TransactionResult",
     "UnexpectedError",
     "UsernameInfo",
     "UsernamesResult",
