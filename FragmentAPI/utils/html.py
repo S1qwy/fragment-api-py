@@ -19,6 +19,7 @@ from FragmentAPI.types.results import (
     SessionInfo,
     StarsPrice,
     StarsTransaction,
+    TelegramAccount,
     TopupTransaction,
 )
 
@@ -889,6 +890,34 @@ def parse_my_assets(html: str, item_type: str) -> tuple[list["MyAsset"], int]:
             )
 
     return items, total_count
+    
+    
+def parse_assign_accounts(html: str) -> tuple[list["TelegramAccount"], bool]:
+    '''Parse available Telegram accounts from assign popup HTML.'''
+
+    accounts: list[TelegramAccount] = []
+    can_disable = bool(re.search(r'class="tm-assign-account-link.*?Don’t display', html))
+
+    account_pattern = re.compile(
+        r'<label[^>]*class="[^"]*tm-assign-account-item[^"]*"[^>]*>.*?'
+        r'<input[^>]*name="assign_to"[^>]*value="([^"]+)".*?'
+        r'<img[^>]*src="([^"]+)".*?'
+        r'<div class="tm-assign-account-name">([^<]+)</div>.*?'
+        r'<div class="tm-assign-account-desc">([^<]+)</div>',
+        re.DOTALL,
+    )
+
+    for match in account_pattern.finditer(html):
+        accounts.append(
+            TelegramAccount(
+                id=match.group(1),
+                photo_url=match.group(2),
+                name=match.group(3).strip(),
+                type=match.group(4).strip(),
+            )
+        )
+
+    return accounts, can_disable
 
 
 def parse_sessions(html: str) -> list[SessionInfo]:

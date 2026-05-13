@@ -5,6 +5,7 @@ Public type exports for Fragment API.
 from FragmentAPI.types.results import (
     AdsTopupResult,
     AssignResult,
+    AssignAccountsResult,
     AuctionInfo,
     BidHistoryEntry,
     BidResult,
@@ -34,6 +35,7 @@ from FragmentAPI.types.results import (
     StarsPrices,
     StarsResult,
     StarsTransaction,
+    TelegramAccount,
     TerminateSessionsResult,
     TopupTransaction,
     TransactionResult,
@@ -63,6 +65,7 @@ from FragmentAPI.exceptions import (
 __all__ = [
     "AdsTopupResult",
     "AssignResult",
+    "AssignAccountsResult",
     "AuctionInfo",
     "BidHistoryEntry",
     "BidResult",
@@ -92,6 +95,7 @@ __all__ = [
     "StarsPrices",
     "StarsResult",
     "StarsTransaction",
+    "TelegramAccount",
     "TerminateSessionsResult",
     "TopupTransaction",
     "TransactionResult",

@@ -577,6 +577,30 @@ class MyAssetsResult:
 
 
 @dataclass
+class TelegramAccount:
+    '''Telegram account available for assignment.'''
+
+    id: str
+    name: str
+    type: str
+    photo_url: str | None = None
+
+    def __repr__(self) -> str:
+        return f"TelegramAccount(name='{self.name}', type='{self.type}')"
+
+
+@dataclass
+class AssignAccountsResult:
+    '''Result of getting available Telegram accounts for assignment.'''
+
+    accounts: list[TelegramAccount]
+    can_disable: bool
+
+    def __repr__(self) -> str:
+        return f"AssignAccountsResult(accounts={len(self.accounts)}, can_disable={self.can_disable})"
+
+
+@dataclass
 class AssignResult:
     '''Result of assigning asset to Telegram account.'''
 

@@ -55,6 +55,7 @@ from FragmentAPI.types.constants import (
 from FragmentAPI.types.results import (
     AdsTopupResult,
     AssignResult,
+    AssignAccountsResult,
     BidResult,
     GiftInfo,
     GiftsResult,
@@ -63,7 +64,6 @@ from FragmentAPI.types.results import (
     LoginCodeResult,
     MyAssetsResult,
     MyBidsResult,
-    MyAsset,
     NftTransferRecipient,
     NftTransferRequest,
     NumberInfo,
@@ -86,6 +86,7 @@ from FragmentAPI.types.results import (
 )
 from FragmentAPI.utils.auth import authenticate
 from FragmentAPI.utils.html import (
+    parse_assign_accounts,
     parse_auction_info,
     parse_bid_history,
     parse_gift_attributes,
@@ -966,7 +967,49 @@ class FragmentClient:
             raise UnexpectedError(
                 UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
+    
+    async def get_assign_accounts(
+        self,
+        item_type: int,
+        slug: str,
+    ) -> "AssignAccountsResult":
+        '''
+        Get list of Telegram accounts available for assignment.
 
+        Args:
+            item_type: 1 (username), 5 (gift).
+            slug: Item identifier.
+
+        Returns:
+            AssignAccountsResult with accounts list and can_disable flag.
+        '''
+        try:
+
+            url = f"{FRAGMENT_BASE_URL}/" + (
+                f"username/{slug}" if item_type == 1 else f"gift/{slug}"
+            )
+            headers = build_headers(url)
+            data = await fetch_page_ajax(
+                self.cookies,
+                headers,
+                url,
+                self.timeout,
+            )
+
+            html = data.get("h", "")
+            accounts, can_disable = parse_assign_accounts(html)
+
+            return AssignAccountsResult(
+                accounts=accounts,
+                can_disable=can_disable,
+            )
+        except FragmentBaseError:
+            raise
+        except Exception as exc:
+            raise UnexpectedError(
+                UnexpectedError.UNEXPECTED.format(exc=exc),
+            ) from exc
+    
     async def assign_to_telegram(
         self,
         item_type: int,
