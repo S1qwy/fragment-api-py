@@ -1,16 +1,25 @@
 '''
-Constants and configuration for Fragment API library
+Constants and configuration for Fragment API library.
 '''
 
 from __future__ import annotations
 
 import json
-from typing import Any, Literal, get_args
+from typing import (
+    Any,
+    Literal,
+    get_args,
+)
 
-from tonutils.contracts.wallet import WalletV4R2, WalletV5R1
+from tonutils.contracts.wallet import (
+    WalletV4R2,
+    WalletV5R1,
+)
 
 WalletVersionType = Literal["V4R2", "V5R1"]
-SUPPORTED_WALLET_VERSIONS: frozenset[str] = frozenset(get_args(WalletVersionType))
+SUPPORTED_WALLET_VERSIONS: frozenset[str] = frozenset(
+    get_args(WalletVersionType),
+)
 
 WALLET_CLASSES: dict[str, Any] = {
     "V4R2": WalletV4R2,
@@ -20,6 +29,9 @@ WALLET_CLASSES: dict[str, Any] = {
 MIN_TON_BALANCE: float = 0.01
 
 DEFAULT_TIMEOUT: float = 30.0
+
+CONFIRMATION_INTERVAL: float = 3.0
+CONFIRMATION_MAX_ATTEMPTS: int = 40
 
 REQUIRED_COOKIE_KEYS: tuple[str, ...] = (
     "stel_ssid",
@@ -61,8 +73,14 @@ DEVICE_FINGERPRINT: str = json.dumps(
         "maxProtocolVersion": 2,
         "features": [
             "SendTransaction",
-            {"name": "SignData", "types": ["text", "binary", "cell"]},
-            {"name": "SendTransaction", "maxMessages": 255},
+            {
+                "name": "SignData",
+                "types": ["text", "binary", "cell"],
+            },
+            {
+                "name": "SendTransaction",
+                "maxMessages": 255,
+            },
         ],
     },
     separators=(",", ":"),
