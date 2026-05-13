@@ -1,5 +1,7 @@
 '''
-Fragment API Python Library v5.0.0
+Fragment API Python Library dev
+
+Async-only client for Fragment.com API.
 '''
 
 from FragmentAPI.client import FragmentClient
@@ -7,6 +9,7 @@ from FragmentAPI.types import (
     AdsTopupResult,
     AuctionInfo,
     BidHistoryEntry,
+    BidResult,
     ConfigError,
     CookieError,
     FragmentAPIError,
@@ -17,6 +20,7 @@ from FragmentAPI.types import (
     GiftsResult,
     GiveawayPremiumResult,
     GiveawayStarsResult,
+    LoginCodeResult,
     NumberInfo,
     NumbersResult,
     OperationError,
@@ -33,6 +37,7 @@ from FragmentAPI.types import (
     StarsPrices,
     StarsResult,
     StarsTransaction,
+    TerminateSessionsResult,
     TransactionError,
     UnexpectedError,
     UsernameInfo,
@@ -43,7 +48,7 @@ from FragmentAPI.types import (
     WalletInfo,
 )
 
-__version__ = "5.0.0"
+__version__ = "dev"
 __author__ = "S1qwy"
 __email__ = "S1qwy@internet.ru"
 
@@ -53,6 +58,7 @@ __all__ = [
     "AdsTopupResult",
     "AuctionInfo",
     "BidHistoryEntry",
+    "BidResult",
     "ConfigError",
     "CookieError",
     "FragmentAPIError",
@@ -63,6 +69,7 @@ __all__ = [
     "GiftsResult",
     "GiveawayPremiumResult",
     "GiveawayStarsResult",
+    "LoginCodeResult",
     "NumberInfo",
     "NumbersResult",
     "OperationError",
@@ -79,6 +86,7 @@ __all__ = [
     "StarsPrices",
     "StarsResult",
     "StarsTransaction",
+    "TerminateSessionsResult",
     "TransactionError",
     "UnexpectedError",
     "UsernameInfo",
