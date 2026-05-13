@@ -642,8 +642,7 @@ def parse_premium_history(html: str) -> list[PremiumTransaction]:
 
 def parse_topup_history(html: str) -> list["TopupTransaction"]:
     '''Parse topup transaction history from Ads page HTML.'''
-    from FragmentAPI.types.results import TopupTransaction
-
+    
     transactions: list[TopupTransaction] = []
     tbody_m = re.search(r"<tbody>(.*?)</tbody>", html, re.DOTALL)
     if not tbody_m:
@@ -731,76 +730,77 @@ def parse_profile(html: str) -> ProfileInfo:
 
 def parse_my_bids(html: str, item_type: str) -> tuple[list["MyBid"], int]:
     '''Parse My Bid History HTML into structured bid objects.'''
-    
+
     items: list[MyBid] = []
-    tbody_m = re.search(r"<tbody[^>]*>(.*?)</tbody>", html, re.DOTALL)
+    
+    total_count = 0
+    tab_pattern = r'<a href="/my/bids\?type={}"[^>]*>.*?<span[^>]*>(\d+)</span>'.format(item_type if item_type != "usernames" else "")
+    if item_type == "usernames":
+        tab_pattern = r'<a href="/my/bids"[^>]*>.*?Usernames.*?<span[^>]*>(\d+)</span>'
+    
+    tab_match = re.search(tab_pattern, html, re.DOTALL)
+    if tab_match:
+        total_count = int(tab_match.group(1))
 
-    if not tbody_m:
-        return items, 0
-
-    total_match = re.search(r'tm-section-tab-counter[^>]*>(\d+)</span>', html)
-    total_count = int(total_match.group(1)) if total_match else 0
-
-    for row_m in TRANSACTION_ROW_RE.finditer(tbody_m.group(1)):
-        row = row_m.group(1)
-        if "<th" in row:
-            continue
-
+    rows = re.findall(r'<tr[^>]*class="[^"]*tm-row-selectable[^"]*"[^>]*>(.*?)</tr>', html, re.DOTALL)
+    
+    for row in rows:
         if item_type == "usernames":
-            href_m = re.search(r'href="/(username/[^"]+)"', row)
-            slug = href_m.group(1) if href_m else ""
-
-            name_m = re.search(r'<div class="table-cell-value tm-value">@([^<]+)</div>', row)
-            name = f"@{name_m.group(1)}" if name_m else slug
-
+            href_match = re.search(r'href="/(username/[^"]+)"', row)
+            slug = href_match.group(1) if href_match else ""
+            
+            name_match = re.search(r'<div class="table-cell-value tm-value">@([^<]+)</div>', row)
+            name = f"@{name_match.group(1)}" if name_match else slug
+            
+            desc_match = re.search(r'<div class="table-cell-desc tm-nowrap">([^<]+)</div>', row)
+            description = desc_match.group(1).strip() if desc_match else None
             image_url = None
-            desc_m = re.search(r'<div class="table-cell-desc tm-nowrap">([^<]+)</div>', row)
-            description = desc_m.group(1).strip() if desc_m else None
 
         elif item_type == "gifts":
-            href_m = re.search(r'href="(/gift/[^"]+)"', row)
-            slug = href_m.group(1) if href_m else ""
-
-            name_m = re.search(r'<div class="table-cell-value tm-value">([^<]+)</div>', row)
-            name = name_m.group(1).strip() if name_m else slug
-
-            img_m = re.search(r'<img src="([^"]+)"', row)
-            image_url = img_m.group(1) if img_m else None
-
-            desc_m = re.search(r'<div class="table-cell-desc tm-nowrap">([^<]+)</div>', row)
-            description = desc_m.group(1).strip() if desc_m else None
+            href_match = re.search(r'href="(/gift/[^"]+)"', row)
+            slug = href_match.group(1) if href_match else ""
+            
+            name_match = re.search(r'<div class="table-cell-value tm-value">([^<]+)</div>', row)
+            name = name_match.group(1).strip() if name_match else slug
+            
+            img_match = re.search(r'<img src="([^"]+)"', row)
+            image_url = img_match.group(1) if img_match else None
+            
+            desc_match = re.search(r'<div class="table-cell-desc tm-nowrap">([^<]+)</div>', row)
+            description = desc_match.group(1).strip() if desc_match else None
 
         else:
-            href_m = re.search(r'href="/(number/[^"]+)"', row)
-            slug = href_m.group(1) if href_m else ""
-
-            name_m = re.search(r'<div class="table-cell-value tm-value">\+?([^<]+)</div>', row)
-            name = name_m.group(1).strip() if name_m else slug
-
+            href_match = re.search(r'href="/(number/[^"]+)"', row)
+            slug = href_match.group(1) if href_match else ""
+            
+            name_match = re.search(r'<div class="table-cell-value tm-value">\+?([^<]+)</div>', row)
+            name = name_match.group(1).strip() if name_match else slug
+            
             image_url = None
             description = None
 
-        bid_m = TX_PRICE_RE.search(row)
-        bid = float(bid_m.group(1).strip().replace(",", "")) if bid_m else 0.0
+        bid_match = re.search(r'icon-before\s+icon-ton[^>]*>\s*([0-9.]+)\s*<', row)
+        bid = float(bid_match.group(1).strip()) if bid_match else 0.0
 
-        date_m = TX_DATE_RE.search(row)
-        date = date_m.group(1) if date_m else ""
+        date_match = re.search(r'datetime="([^"]+)"', row)
+        date = date_match.group(1) if date_match else ""
 
-        status_m = re.search(r'tm-status-([a-z]+)[^>]*>([^<]+)</div>', row)
-        status = status_m.group(2).strip() if status_m else "Unknown"
+        status_match = re.search(r'tm-status-([a-z]+)[^>]*>([^<]+)</div>', row)
+        status = status_match.group(2).strip() if status_match else "Unknown"
 
-        items.append(
-            MyBid(
-                item_type=item_type,
-                slug=slug,
-                name=name,
-                bid=bid,
-                status=status,
-                date=date,
-                image_url=image_url,
-                description=description,
+        if slug:
+            items.append(
+                MyBid(
+                    item_type=item_type,
+                    slug=slug,
+                    name=name,
+                    bid=bid,
+                    status=status,
+                    date=date,
+                    image_url=image_url,
+                    description=description,
+                )
             )
-        )
 
     return items, total_count
 
