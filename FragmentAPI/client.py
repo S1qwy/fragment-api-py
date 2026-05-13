@@ -1,12 +1,18 @@
 '''
-Synchronous Fragment API client with all methods
+Async Fragment API client with seqno/balance confirmation and confirmReq.
+
+Single async client for Fragment.com API.
+All sync code removed. Uses httpx.AsyncClient throughout.
 '''
 
 from __future__ import annotations
 
 import json
 import re
-from typing import Any, cast
+from typing import (
+    Any,
+    cast,
+)
 
 import httpx
 
@@ -17,29 +23,29 @@ from FragmentAPI.exceptions import (
     FragmentBaseError,
     UnexpectedError,
 )
-from FragmentAPI.methods.giveaway_premium import giveaway_premium_sync
-from FragmentAPI.methods.giveaway_stars import giveaway_stars_sync
-from FragmentAPI.methods.place_bid import place_bid_sync
-from FragmentAPI.methods.purchase_premium import purchase_premium_sync
-from FragmentAPI.methods.purchase_stars import purchase_stars_sync
+from FragmentAPI.methods.giveaway_premium import giveaway_premium
+from FragmentAPI.methods.giveaway_stars import giveaway_stars
+from FragmentAPI.methods.place_bid import place_bid
+from FragmentAPI.methods.purchase_premium import purchase_premium
+from FragmentAPI.methods.purchase_stars import purchase_stars
 from FragmentAPI.methods.search import (
-    search_gifts_sync,
-    search_numbers_sync,
-    search_usernames_sync,
+    search_gifts,
+    search_numbers,
+    search_usernames,
 )
-from FragmentAPI.methods.topup_ton import topup_ton_sync
+from FragmentAPI.methods.topup_ton import topup_ton
 from FragmentAPI.types.constants import (
     DEFAULT_TIMEOUT,
     FRAGMENT_BASE_URL,
-    NUMBERS_PAGE,
     GIFTS_PAGE,
-    PREMIUM_PAGE,
+    NUMBERS_PAGE,
     PREMIUM_HISTORY_PAGE,
+    PREMIUM_PAGE,
     PROFILE_PAGE,
     REQUIRED_COOKIE_KEYS,
     SESSIONS_PAGE,
-    STARS_PAGE,
     STARS_HISTORY_PAGE,
+    STARS_PAGE,
     SUPPORTED_WALLET_VERSIONS,
     TONAPI_DEFAULT_KEY,
     WalletVersionType,
@@ -51,6 +57,7 @@ from FragmentAPI.types.results import (
     GiftsResult,
     GiveawayPremiumResult,
     GiveawayStarsResult,
+    LoginCodeResult,
     NumberInfo,
     NumbersResult,
     PremiumPrices,
@@ -62,11 +69,12 @@ from FragmentAPI.types.results import (
     StarsPrices,
     StarsResult,
     StarsTransaction,
+    TerminateSessionsResult,
     UsernameInfo,
     UsernamesResult,
     WalletInfo,
 )
-from FragmentAPI.utils.auth import authenticate_sync
+from FragmentAPI.utils.auth import authenticate
 from FragmentAPI.utils.html import (
     parse_auction_info,
     parse_bid_history,
@@ -85,15 +93,45 @@ from FragmentAPI.utils.html import (
 )
 from FragmentAPI.utils.http import (
     build_headers,
-    fetch_fragment_hash_sync,
-    fetch_page_ajax_sync,
-    post_FragmentAPI_sync,
+    fetch_fragment_hash,
+    fetch_page_ajax,
+    post_FragmentAPI,
 )
-from FragmentAPI.utils.wallet import fetch_wallet_info_sync
+from FragmentAPI.utils.wallet import (
+    build_account_info,
+    fetch_wallet_info,
+)
 
 
 class FragmentClient:
-    '''Synchronous client for the Fragment.com API.'''
+    '''
+    Async client for the Fragment.com API.
+
+    All operations are async/await.
+    Supports seqno/balance transaction confirmation and confirmReq.
+
+    Args:
+        seed: 24-word mnemonic phrase for the TON wallet.
+        cookies: Fragment session cookies as a dict or JSON string.
+        api_key: API key for TON blockchain interactions (optional).
+        wallet_version: Wallet contract version — "V4R2" or "V5R1" (default).
+        timeout: HTTP request timeout in seconds. Defaults to 30.0.
+
+    Raises:
+        ConfigError: If seed or wallet_version are missing or invalid.
+        CookieError: If cookies cannot be parsed or are missing required keys.
+
+    Example::
+
+        async with FragmentClient(
+            seed="word1 word2 ...",
+            cookies={"stel_ssid": "...", "stel_dt": "...", ...},
+        ) as client:
+            wallet = await client.get_wallet()
+            print(wallet)
+            result = await client.purchase_stars("@username", 500)
+            print(result.transaction_id)
+    '''
 
     def __init__(
         self,
@@ -110,34 +148,40 @@ class FragmentClient:
         ]
         if missing:
             raise ConfigError(
-                ConfigError.MISSING_PARAMS.format(keys=", ".join(missing))
+                ConfigError.MISSING_PARAMS.format(
+                    keys=", ".join(missing),
+                )
             )
 
         word_count = len(seed.split())
         if word_count not in (12, 18, 24):
             raise ConfigError(
-                ConfigError.BAD_MNEMONIC.format(count=word_count)
+                ConfigError.BAD_MNEMONIC.format(
+                    count=word_count,
+                )
             )
 
         if api_key and len(api_key.strip()) < 48:
             raise ConfigError(
-                ConfigError.BAD_API_KEY.format(length=len(api_key.strip()))
+                ConfigError.BAD_API_KEY.format(
+                    length=len(api_key.strip()),
+                )
             )
 
         if isinstance(cookies, str):
             cookies_str = cookies.strip()
-            if cookies_str.startswith('{'):
+            if cookies_str.startswith("{"):
                 try:
                     cookies = json.loads(cookies_str)
                 except Exception as exc:
                     raise CookieError(
-                        CookieError.PARSE_FAILED.format(exc=exc)
+                        CookieError.PARSE_FAILED.format(exc=exc),
                     ) from exc
             else:
-                parsed_cookies = {}
-                for item in cookies_str.split(';'):
-                    if '=' in item:
-                        k, v = item.strip().split('=', 1)
+                parsed_cookies: dict[str, str] = {}
+                for item in cookies_str.split(";"):
+                    if "=" in item:
+                        k, v = item.strip().split("=", 1)
                         parsed_cookies[k] = v
                 cookies = parsed_cookies
 
@@ -148,7 +192,9 @@ class FragmentClient:
         ]
         if missing_keys:
             raise CookieError(
-                CookieError.MISSING_KEYS.format(keys=", ".join(missing_keys))
+                CookieError.MISSING_KEYS.format(
+                    keys=", ".join(missing_keys),
+                )
             )
 
         version = wallet_version.strip().upper()
@@ -166,125 +212,220 @@ class FragmentClient:
         self.wallet_version: WalletVersionType = version  # type: ignore[assignment]
         self.timeout: float = timeout
 
-    def __enter__(self) -> "FragmentClient":
+    async def __aenter__(self) -> "FragmentClient":
         return self
 
-    def __exit__(self, *_: object) -> None:
+    async def __aexit__(self, *_: object) -> None:
         pass
 
     def __repr__(self) -> str:
         return (
-            f"FragmentClient(wallet_version='{self.wallet_version}', "
-            f"cookies={len(self.cookies)} keys)"
+            f"FragmentClient("
+            f"wallet_version='{self.wallet_version}', "
+            f"cookies={len(self.cookies)} keys"
+            f")"
         )
 
     @staticmethod
-    def authenticate(
+    async def authenticate(
         seed: str,
         wallet_version: str = "V4R2",
         telegram_auth_data: str | None = None,
         telegram_phone: str | None = None,
         timeout: float = DEFAULT_TIMEOUT,
     ) -> dict[str, str]:
-        '''Authenticate with Fragment and return session cookies.'''
-        return authenticate_sync(seed, wallet_version, telegram_auth_data, telegram_phone, timeout)
+        '''
+        Authenticate with Fragment and return session cookies.
+        '''
+        return await authenticate(
+            seed,
+            wallet_version,
+            telegram_auth_data,
+            telegram_phone,
+            timeout,
+        )
 
-    def purchase_premium(
+    async def purchase_premium(
         self,
         username: str,
         months: int,
         show_sender: bool = True,
         payment_method: str = "ton",
     ) -> PremiumResult:
-        '''Gift Telegram Premium to a user.'''
-        return purchase_premium_sync(self, username, months, show_sender, payment_method)
+        '''
+        Gift Telegram Premium to a user.
 
-    def purchase_stars(
+        Args:
+            username: Recipient Telegram username (with or without @).
+            months: Duration — 3, 6, or 12.
+            show_sender: Show your name as the sender.
+            payment_method: "ton" or "usdt_ton".
+
+        Returns:
+            PremiumResult with transaction_id, username, and amount.
+        '''
+        return await purchase_premium(
+            self,
+            username,
+            months,
+            show_sender,
+            payment_method,
+        )
+
+    async def purchase_stars(
         self,
         username: str,
         amount: int,
         show_sender: bool = True,
         payment_method: str = "ton",
     ) -> StarsResult:
-        '''Send Telegram Stars to a user.'''
-        return purchase_stars_sync(self, username, amount, show_sender, payment_method)
+        '''
+        Send Telegram Stars to a user.
 
-    def topup_ton(
+        Args:
+            username: Recipient Telegram username (with or without @).
+            amount: Number of stars — integer from 50 to 10_000_000.
+            show_sender: Show your name as the gift sender.
+            payment_method: "ton" or "usdt_ton".
+
+        Returns:
+            StarsResult with transaction_id, username, and amount.
+        '''
+        return await purchase_stars(
+            self,
+            username,
+            amount,
+            show_sender,
+            payment_method,
+        )
+
+    async def topup_ton(
         self,
         username: str,
         amount: int,
         show_sender: bool = True,
     ) -> AdsTopupResult:
-        '''Top up TON to a recipient Telegram Ads balance.'''
-        return topup_ton_sync(self, username, amount, show_sender)
+        '''
+        Top up TON to a recipient Telegram Ads balance.
 
-    def giveaway_stars(
+        Args:
+            username: Recipient Telegram username.
+            amount: Amount in TON — integer from 1 to 1_000_000_000.
+            show_sender: Show your name as the sender.
+
+        Returns:
+            AdsTopupResult with transaction_id, username, and amount.
+        '''
+        return await topup_ton(
+            self,
+            username,
+            amount,
+            show_sender,
+        )
+
+    async def giveaway_stars(
         self,
         channel: str,
         winners: int,
         amount: int,
         payment_method: str = "ton",
     ) -> GiveawayStarsResult:
-        '''Run a Telegram Stars giveaway for a channel.'''
-        return giveaway_stars_sync(self, channel, winners, amount, payment_method)
+        '''
+        Run a Telegram Stars giveaway for a channel.
+        '''
+        return await giveaway_stars(
+            self,
+            channel,
+            winners,
+            amount,
+            payment_method,
+        )
 
-    def giveaway_premium(
+    async def giveaway_premium(
         self,
         channel: str,
         winners: int,
         months: int = 3,
         payment_method: str = "ton",
     ) -> GiveawayPremiumResult:
-        '''Run a Telegram Premium giveaway for a channel.'''
-        return giveaway_premium_sync(self, channel, winners, months, payment_method)
+        '''
+        Run a Telegram Premium giveaway for a channel.
+        '''
+        return await giveaway_premium(
+            self,
+            channel,
+            winners,
+            months,
+            payment_method,
+        )
 
-    def place_bid(
+    async def place_bid(
         self,
         item_type: int,
         slug: str,
         bid: int,
     ) -> BidResult:
-        '''Place a bid or buy-now on a Fragment marketplace item.
+        '''
+        Place a bid or buy-now on a Fragment marketplace item.
 
         Args:
-            item_type: Item type - 1 (username), 3 (number), 5 (gift).
-            slug: Item identifier (username without @, number without +, gift slug).
-            bid: Bid amount in TON (integer). Must be >= minimum bid or == buy-now price.
+            item_type: 1 (username), 3 (number), 5 (gift).
+            slug: Item identifier.
+            bid: Bid amount in TON (integer).
 
         Returns:
-            BidResult with transaction_id, item_type, slug, bid, and confirm info.
+            BidResult with transaction details.
         '''
-        return place_bid_sync(self, item_type, slug, bid)
+        return await place_bid(
+            self,
+            item_type,
+            slug,
+            bid,
+        )
 
-    def get_wallet(self) -> WalletInfo:
-        '''Return the address, state, TON and USDT balance of the wallet.'''
-        return fetch_wallet_info_sync(self)
+    async def get_wallet(self) -> WalletInfo:
+        '''
+        Return address, state, TON and USDT balance of the wallet.
+        '''
+        return await fetch_wallet_info(self)
 
-    def search_usernames(
+    async def search_usernames(
         self,
         query: str = "",
         sort: str | None = None,
         filter: str | None = None,
         offset_id: str | None = None,
     ) -> UsernamesResult:
-        '''Search Fragment marketplace for Telegram usernames.'''
-        return search_usernames_sync(
-            self, query, sort=sort, filter=filter, offset_id=offset_id
+        '''
+        Search Fragment marketplace for Telegram usernames.
+        '''
+        return await search_usernames(
+            self,
+            query,
+            sort=sort,
+            filter=filter,
+            offset_id=offset_id,
         )
 
-    def search_numbers(
+    async def search_numbers(
         self,
         query: str = "",
         sort: str | None = None,
         filter: str | None = None,
         offset_id: str | None = None,
     ) -> NumbersResult:
-        '''Search Fragment marketplace for anonymous Telegram numbers.'''
-        return search_numbers_sync(
-            self, query, sort=sort, filter=filter, offset_id=offset_id
+        '''
+        Search Fragment marketplace for anonymous Telegram numbers.
+        '''
+        return await search_numbers(
+            self,
+            query,
+            sort=sort,
+            filter=filter,
+            offset_id=offset_id,
         )
 
-    def search_gifts(
+    async def search_gifts(
         self,
         query: str = "",
         collection: str | None = None,
@@ -294,19 +435,36 @@ class FragmentClient:
         attr: dict[str, list[str]] | None = None,
         offset: int | None = None,
     ) -> GiftsResult:
-        '''Search Fragment gifts marketplace.'''
-        return search_gifts_sync(
-            self, query,
-            collection=collection, sort=sort, filter=filter,
-            view=view, attr=attr, offset=offset,
+        '''
+        Search Fragment gifts marketplace.
+        '''
+        return await search_gifts(
+            self,
+            query,
+            collection=collection,
+            sort=sort,
+            filter=filter,
+            view=view,
+            attr=attr,
+            offset=offset,
         )
 
-    def get_username_info(self, username: str) -> UsernameInfo:
-        '''Get detailed information about a Fragment username.'''
+    async def get_username_info(
+        self,
+        username: str,
+    ) -> UsernameInfo:
+        '''
+        Get detailed information about a Fragment username.
+        '''
         try:
             url = f"{FRAGMENT_BASE_URL}/username/{username.lstrip('@')}"
             headers = build_headers(url)
-            data = fetch_page_ajax_sync(self.cookies, headers, url, self.timeout)
+            data = await fetch_page_ajax(
+                self.cookies,
+                headers,
+                url,
+                self.timeout,
+            )
 
             html = data.get("h", "")
             state = data.get("s", {})
@@ -316,11 +474,17 @@ class FragmentClient:
             bids, bid_offset = parse_bid_history(html)
             owners, owner_offset = parse_owner_history(html)
 
-            timer_m = re.search(r'class="tm-countdown-timer"[^>]*datetime="([^"]+)"', html)
+            timer_m = re.search(
+                r'class="tm-countdown-timer"[^>]*datetime="([^"]+)"',
+                html,
+            )
             auction_end = timer_m.group(1) if timer_m else None
 
             owner_wallet = parse_sold_owner(html)
-            purchased_m = re.search(r'Purchased on\s*<time[^>]+datetime="([^"]+)"', html)
+            purchased_m = re.search(
+                r'Purchased on\s*<time[^>]+datetime="([^"]+)"',
+                html,
+            )
             purchased_date = purchased_m.group(1) if purchased_m else None
 
             return UsernameInfo(
@@ -341,31 +505,47 @@ class FragmentClient:
             raise
         except Exception as exc:
             raise UnexpectedError(
-                UnexpectedError.UNEXPECTED.format(exc=exc)
+                UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
 
-    def get_number_info(self, number: str) -> NumberInfo:
-        '''Get detailed information about a Fragment number.'''
+    async def get_number_info(
+        self,
+        number: str,
+    ) -> NumberInfo:
+        '''
+        Get detailed information about a Fragment number.
+        '''
         try:
             clean = number.replace("+", "").replace(" ", "").replace("-", "")
             url = f"{FRAGMENT_BASE_URL}/number/{clean}"
             headers = build_headers(url)
-            data = fetch_page_ajax_sync(self.cookies, headers, url, self.timeout)
+            data = await fetch_page_ajax(
+                self.cookies,
+                headers,
+                url,
+                self.timeout,
+            )
 
             html = data.get("h", "")
             state = data.get("s", {})
 
             status = parse_item_status(html)
-            restricted = bool(re.search(r'tm-status-restricted', html))
+            restricted = bool(re.search(r"tm-status-restricted", html))
             auction = parse_auction_info(html)
             bids, bid_offset = parse_bid_history(html)
             owners, owner_offset = parse_owner_history(html)
 
-            timer_m = re.search(r'class="tm-countdown-timer"[^>]*datetime="([^"]+)"', html)
+            timer_m = re.search(
+                r'class="tm-countdown-timer"[^>]*datetime="([^"]+)"',
+                html,
+            )
             auction_end = timer_m.group(1) if timer_m else None
 
             owner_wallet = parse_sold_owner(html)
-            purchased_m = re.search(r'Purchased on\s*<time[^>]+datetime="([^"]+)"', html)
+            purchased_m = re.search(
+                r'Purchased on\s*<time[^>]+datetime="([^"]+)"',
+                html,
+            )
             purchased_date = purchased_m.group(1) if purchased_m else None
 
             return NumberInfo(
@@ -388,15 +568,25 @@ class FragmentClient:
             raise
         except Exception as exc:
             raise UnexpectedError(
-                UnexpectedError.UNEXPECTED.format(exc=exc)
+                UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
 
-    def get_gift_info(self, slug: str) -> GiftInfo:
-        '''Get detailed information about a Fragment gift.'''
+    async def get_gift_info(
+        self,
+        slug: str,
+    ) -> GiftInfo:
+        '''
+        Get detailed information about a Fragment gift.
+        '''
         try:
             url = f"{FRAGMENT_BASE_URL}/gift/{slug}"
             headers = build_headers(url)
-            data = fetch_page_ajax_sync(self.cookies, headers, url, self.timeout)
+            data = await fetch_page_ajax(
+                self.cookies,
+                headers,
+                url,
+                self.timeout,
+            )
 
             html = data.get("h", "")
             state = data.get("s", {})
@@ -408,17 +598,29 @@ class FragmentClient:
             attributes = parse_gift_attributes(html)
             issued = parse_gift_issued(html)
 
-            timer_m = re.search(r'class="tm-countdown-timer"[^>]*datetime="([^"]+)"', html)
+            timer_m = re.search(
+                r'class="tm-countdown-timer"[^>]*datetime="([^"]+)"',
+                html,
+            )
             auction_end = timer_m.group(1) if timer_m else None
 
             owner_wallet = parse_sold_owner(html)
-            purchased_m = re.search(r'Purchased on\s*<time[^>]+datetime="([^"]+)"', html)
+            purchased_m = re.search(
+                r'Purchased on\s*<time[^>]+datetime="([^"]+)"',
+                html,
+            )
             purchased_date = purchased_m.group(1) if purchased_m else None
 
-            image_m = re.search(r'<img\s+src="(https://nft\.fragment\.com/gift/[^"]+)"', html)
+            image_m = re.search(
+                r'<img\s+src="(https://nft\.fragment\.com/gift/[^"]+)"',
+                html,
+            )
             image_url = image_m.group(1) if image_m else None
 
-            sticker_m = re.search(r'srcset="(https://nft\.fragment\.com/gift/[^"]+\.tgs)"', html)
+            sticker_m = re.search(
+                r'srcset="(https://nft\.fragment\.com/gift/[^"]+\.tgs)"',
+                html,
+            )
             sticker_url = sticker_m.group(1) if sticker_m else None
 
             return GiftInfo(
@@ -444,14 +646,21 @@ class FragmentClient:
             raise
         except Exception as exc:
             raise UnexpectedError(
-                UnexpectedError.UNEXPECTED.format(exc=exc)
+                UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
 
-    def get_stars_prices(self) -> StarsPrices:
-        '''Get all available Telegram Stars package prices.'''
+    async def get_stars_prices(self) -> StarsPrices:
+        '''
+        Get all available Telegram Stars package prices.
+        '''
         try:
             headers = build_headers(STARS_PAGE)
-            data = fetch_page_ajax_sync(self.cookies, headers, STARS_PAGE, self.timeout)
+            data = await fetch_page_ajax(
+                self.cookies,
+                headers,
+                STARS_PAGE,
+                self.timeout,
+            )
             html = data.get("h", "")
             state = data.get("s", {})
             packages = parse_stars_packages(html)
@@ -463,21 +672,32 @@ class FragmentClient:
             raise
         except Exception as exc:
             raise UnexpectedError(
-                UnexpectedError.UNEXPECTED.format(exc=exc)
+                UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
 
-    def get_stars_price(self, quantity: int) -> StarsPrice:
-        '''Get price for a specific quantity of Telegram Stars.'''
+    async def get_stars_price(
+        self,
+        quantity: int,
+    ) -> StarsPrice:
+        '''
+        Get price for a specific quantity of Telegram Stars.
+        '''
         try:
             headers = build_headers(STARS_PAGE)
-            fragment_hash = fetch_fragment_hash_sync(
-                self.cookies, headers, STARS_PAGE, self.timeout
+            fragment_hash = await fetch_fragment_hash(
+                self.cookies,
+                headers,
+                STARS_PAGE,
+                self.timeout,
             )
-            with httpx.Client(
-                cookies=self.cookies, timeout=self.timeout
+            async with httpx.AsyncClient(
+                cookies=self.cookies,
+                timeout=self.timeout,
             ) as session:
-                result = post_FragmentAPI_sync(
-                    session, fragment_hash, headers,
+                result = await post_FragmentAPI(
+                    session,
+                    fragment_hash,
+                    headers,
                     {
                         "stars": "0",
                         "quantity": str(quantity),
@@ -495,14 +715,21 @@ class FragmentClient:
             raise
         except Exception as exc:
             raise UnexpectedError(
-                UnexpectedError.UNEXPECTED.format(exc=exc)
+                UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
 
-    def get_premium_prices(self) -> PremiumPrices:
-        '''Get Telegram Premium subscription prices.'''
+    async def get_premium_prices(self) -> PremiumPrices:
+        '''
+        Get Telegram Premium subscription prices.
+        '''
         try:
             headers = build_headers(PREMIUM_PAGE)
-            data = fetch_page_ajax_sync(self.cookies, headers, PREMIUM_PAGE, self.timeout)
+            data = await fetch_page_ajax(
+                self.cookies,
+                headers,
+                PREMIUM_PAGE,
+                self.timeout,
+            )
             html = data.get("h", "")
             state = data.get("s", {})
             options = parse_premium_options(html)
@@ -514,44 +741,71 @@ class FragmentClient:
             raise
         except Exception as exc:
             raise UnexpectedError(
-                UnexpectedError.UNEXPECTED.format(exc=exc)
+                UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
 
-    def get_stars_history(self, sort: str = "desc") -> list[StarsTransaction]:
-        '''Get Telegram Stars transaction history.'''
+    async def get_stars_history(
+        self,
+        sort: str = "desc",
+    ) -> list[StarsTransaction]:
+        '''
+        Get Telegram Stars transaction history.
+        '''
         try:
             url = f"{STARS_HISTORY_PAGE}?sort={sort}"
             headers = build_headers(STARS_HISTORY_PAGE)
-            data = fetch_page_ajax_sync(self.cookies, headers, url, self.timeout)
+            data = await fetch_page_ajax(
+                self.cookies,
+                headers,
+                url,
+                self.timeout,
+            )
             html = data.get("h", "")
             return parse_stars_history(html)
         except FragmentBaseError:
             raise
         except Exception as exc:
             raise UnexpectedError(
-                UnexpectedError.UNEXPECTED.format(exc=exc)
+                UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
 
-    def get_premium_history(self, sort: str = "desc") -> list[PremiumTransaction]:
-        '''Get Telegram Premium transaction history.'''
+    async def get_premium_history(
+        self,
+        sort: str = "desc",
+    ) -> list[PremiumTransaction]:
+        '''
+        Get Telegram Premium transaction history.
+        '''
         try:
             url = f"{PREMIUM_HISTORY_PAGE}?sort={sort}"
             headers = build_headers(PREMIUM_HISTORY_PAGE)
-            data = fetch_page_ajax_sync(self.cookies, headers, url, self.timeout)
+            data = await fetch_page_ajax(
+                self.cookies,
+                headers,
+                url,
+                self.timeout,
+            )
             html = data.get("h", "")
             return parse_premium_history(html)
         except FragmentBaseError:
             raise
         except Exception as exc:
             raise UnexpectedError(
-                UnexpectedError.UNEXPECTED.format(exc=exc)
+                UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
 
-    def get_profile(self) -> ProfileInfo:
-        '''Get Fragment account profile information.'''
+    async def get_profile(self) -> ProfileInfo:
+        '''
+        Get Fragment account profile information.
+        '''
         try:
             headers = build_headers(PROFILE_PAGE)
-            data = fetch_page_ajax_sync(self.cookies, headers, PROFILE_PAGE, self.timeout)
+            data = await fetch_page_ajax(
+                self.cookies,
+                headers,
+                PROFILE_PAGE,
+                self.timeout,
+            )
             html = data.get("h", "")
             js = data.get("j", "")
             return parse_profile(html + js)
@@ -559,35 +813,53 @@ class FragmentClient:
             raise
         except Exception as exc:
             raise UnexpectedError(
-                UnexpectedError.UNEXPECTED.format(exc=exc)
+                UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
 
-    def get_sessions(self) -> list[SessionInfo]:
-        '''Get active Fragment sessions.'''
+    async def get_sessions(self) -> list[SessionInfo]:
+        '''
+        Get active Fragment sessions.
+        '''
         try:
             headers = build_headers(SESSIONS_PAGE)
-            data = fetch_page_ajax_sync(self.cookies, headers, SESSIONS_PAGE, self.timeout)
+            data = await fetch_page_ajax(
+                self.cookies,
+                headers,
+                SESSIONS_PAGE,
+                self.timeout,
+            )
             html = data.get("h", "")
             return parse_sessions(html)
         except FragmentBaseError:
             raise
         except Exception as exc:
             raise UnexpectedError(
-                UnexpectedError.UNEXPECTED.format(exc=exc)
+                UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
 
-    def terminate_session(self, session_id: str) -> bool:
-        '''Terminate a Fragment session by ID.'''
+    async def terminate_session(
+        self,
+        session_id: str,
+    ) -> bool:
+        '''
+        Terminate a Fragment session by ID.
+        '''
         try:
             headers = build_headers(SESSIONS_PAGE)
-            fragment_hash = fetch_fragment_hash_sync(
-                self.cookies, headers, SESSIONS_PAGE, self.timeout
+            fragment_hash = await fetch_fragment_hash(
+                self.cookies,
+                headers,
+                SESSIONS_PAGE,
+                self.timeout,
             )
-            with httpx.Client(
-                cookies=self.cookies, timeout=self.timeout
+            async with httpx.AsyncClient(
+                cookies=self.cookies,
+                timeout=self.timeout,
             ) as session:
-                result = post_FragmentAPI_sync(
-                    session, fragment_hash, headers,
+                result = await post_FragmentAPI(
+                    session,
+                    fragment_hash,
+                    headers,
                     {
                         "session_id": session_id,
                         "method": "tonTerminateSession",
@@ -598,30 +870,41 @@ class FragmentClient:
             raise
         except Exception as exc:
             raise UnexpectedError(
-                UnexpectedError.UNEXPECTED.format(exc=exc)
+                UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
 
-    def get_orders_history(
+    async def get_orders_history(
         self,
         item_type: int,
         username: str,
         offset_id: str,
     ) -> dict[str, Any]:
-        '''Load more bid/orders history for an item.'''
+        '''
+        Load more bid/orders history for an item.
+        '''
         try:
-            url = f"{FRAGMENT_BASE_URL}/username/{username}" if item_type == 1 else (
-                f"{FRAGMENT_BASE_URL}/number/{username}" if item_type == 3 else
-                f"{FRAGMENT_BASE_URL}/gift/{username}"
-            )
+            if item_type == 1:
+                url = f"{FRAGMENT_BASE_URL}/username/{username}"
+            elif item_type == 3:
+                url = f"{FRAGMENT_BASE_URL}/number/{username}"
+            else:
+                url = f"{FRAGMENT_BASE_URL}/gift/{username}"
+
             headers = build_headers(url)
-            fragment_hash = fetch_fragment_hash_sync(
-                self.cookies, headers, url, self.timeout
+            fragment_hash = await fetch_fragment_hash(
+                self.cookies,
+                headers,
+                url,
+                self.timeout,
             )
-            with httpx.Client(
-                cookies=self.cookies, timeout=self.timeout
+            async with httpx.AsyncClient(
+                cookies=self.cookies,
+                timeout=self.timeout,
             ) as session:
-                result = post_FragmentAPI_sync(
-                    session, fragment_hash, headers,
+                result = await post_FragmentAPI(
+                    session,
+                    fragment_hash,
+                    headers,
                     {
                         "type": str(item_type),
                         "username": username,
@@ -634,30 +917,41 @@ class FragmentClient:
             raise
         except Exception as exc:
             raise UnexpectedError(
-                UnexpectedError.UNEXPECTED.format(exc=exc)
+                UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
 
-    def get_owners_history(
+    async def get_owners_history(
         self,
         item_type: int,
         username: str,
         offset_id: str,
     ) -> dict[str, Any]:
-        '''Load more ownership history for an item.'''
+        '''
+        Load more ownership history for an item.
+        '''
         try:
-            url = f"{FRAGMENT_BASE_URL}/username/{username}" if item_type == 1 else (
-                f"{FRAGMENT_BASE_URL}/number/{username}" if item_type == 3 else
-                f"{FRAGMENT_BASE_URL}/gift/{username}"
-            )
+            if item_type == 1:
+                url = f"{FRAGMENT_BASE_URL}/username/{username}"
+            elif item_type == 3:
+                url = f"{FRAGMENT_BASE_URL}/number/{username}"
+            else:
+                url = f"{FRAGMENT_BASE_URL}/gift/{username}"
+
             headers = build_headers(url)
-            fragment_hash = fetch_fragment_hash_sync(
-                self.cookies, headers, url, self.timeout
+            fragment_hash = await fetch_fragment_hash(
+                self.cookies,
+                headers,
+                url,
+                self.timeout,
             )
-            with httpx.Client(
-                cookies=self.cookies, timeout=self.timeout
+            async with httpx.AsyncClient(
+                cookies=self.cookies,
+                timeout=self.timeout,
             ) as session:
-                result = post_FragmentAPI_sync(
-                    session, fragment_hash, headers,
+                result = await post_FragmentAPI(
+                    session,
+                    fragment_hash,
+                    headers,
                     {
                         "type": str(item_type),
                         "username": username,
@@ -670,40 +964,120 @@ class FragmentClient:
             raise
         except Exception as exc:
             raise UnexpectedError(
-                UnexpectedError.UNEXPECTED.format(exc=exc)
+                UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
-    
-    def get_login_code(self, number: str) -> LoginCodeResult:
-        '''Fetch the current pending login code for an anonymous number.'''
-        from FragmentAPI.methods.anonymous_number import get_login_code_sync
-        return get_login_code_sync(self, number)
 
-    def toggle_login_codes(self, number: str, can_receive: bool) -> None:
-        '''Enable or disable login code delivery for an anonymous number.'''
-        from FragmentAPI.methods.anonymous_number import toggle_login_codes_sync
-        return toggle_login_codes_sync(self, number, can_receive)
+    async def get_login_code(
+        self,
+        number: str,
+    ) -> LoginCodeResult:
+        '''
+        Fetch the current pending login code for an anonymous number.
+        '''
+        from FragmentAPI.methods.anonymous_number import get_login_code
+        return await get_login_code(self, number)
 
-    def terminate_sessions(self, number: str) -> TerminateSessionsResult:
-        '''Terminate all active Telegram sessions for an anonymous number.'''
-        from FragmentAPI.methods.anonymous_number import terminate_sessions_sync
-        return terminate_sessions_sync(self, number)
-    
-    def call(
+    async def toggle_login_codes(
+        self,
+        number: str,
+        can_receive: bool,
+    ) -> None:
+        '''
+        Enable or disable login code delivery for an anonymous number.
+        '''
+        from FragmentAPI.methods.anonymous_number import toggle_login_codes
+        return await toggle_login_codes(self, number, can_receive)
+
+    async def terminate_sessions(
+        self,
+        number: str,
+    ) -> TerminateSessionsResult:
+        '''
+        Terminate all active Telegram sessions for an anonymous number.
+        '''
+        from FragmentAPI.methods.anonymous_number import terminate_sessions
+        return await terminate_sessions(self, number)
+
+    async def confirm_request(
+        self,
+        req_id: str,
+        boc: str,
+        referer: str = "stars/buy",
+    ) -> dict[str, Any]:
+        '''
+        Send confirmReq to Fragment after broadcasting a TON transaction.
+
+        Notifies Fragment that the transaction BOC has been sent,
+        which speeds up Stars/Premium delivery from ~30s to ~5s.
+
+        Args:
+            req_id: Request ID from initBuyStarsRequest or similar.
+            boc: Signed transaction BOC in base64 format.
+            referer: Fragment page path for the referer header.
+
+        Returns:
+            Raw Fragment API response dict.
+        '''
+        try:
+            page_url = f"{FRAGMENT_BASE_URL}/{referer}"
+            headers = build_headers(page_url)
+            fragment_hash = await fetch_fragment_hash(
+                self.cookies,
+                headers,
+                page_url,
+                self.timeout,
+            )
+            async with httpx.AsyncClient(
+                cookies=self.cookies,
+                timeout=self.timeout,
+            ) as session:
+                return await post_FragmentAPI(
+                    session,
+                    fragment_hash,
+                    headers,
+                    {
+                        "method": "confirmReq",
+                        "id": str(req_id),
+                        "boc": boc,
+                    },
+                )
+        except FragmentBaseError:
+            raise
+        except Exception as exc:
+            raise UnexpectedError(
+                UnexpectedError.UNEXPECTED.format(exc=exc),
+            ) from exc
+
+    async def call(
         self,
         method: str,
         data: dict[str, Any] | None = None,
         *,
         page_url: str = FRAGMENT_BASE_URL,
     ) -> dict[str, Any]:
-        '''Send a raw request to the Fragment API.'''
+        '''
+        Send a raw request to the Fragment API.
+
+        Args:
+            method: Fragment API method name.
+            data: Additional form-data fields.
+            page_url: Fragment page URL for API hash derivation.
+
+        Returns:
+            Raw parsed JSON response as dict.
+        '''
         headers = build_headers(page_url)
-        with httpx.Client(
-            cookies=self.cookies, timeout=self.timeout
+        async with httpx.AsyncClient(
+            cookies=self.cookies,
+            timeout=self.timeout,
         ) as session:
-            fragment_hash = fetch_fragment_hash_sync(
-                self.cookies, headers, page_url, self.timeout
+            fragment_hash = await fetch_fragment_hash(
+                self.cookies,
+                headers,
+                page_url,
+                self.timeout,
             )
-            return post_FragmentAPI_sync(
+            return await post_FragmentAPI(
                 session,
                 fragment_hash,
                 headers,
