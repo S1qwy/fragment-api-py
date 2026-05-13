@@ -12,6 +12,7 @@ from FragmentAPI.types.results import (
     BidHistoryEntry,
     GiftAttribute,
     MyBid,
+    MyAsset,
     OwnerHistoryEntry,
     PremiumPriceOption,
     PremiumTransaction,
@@ -808,11 +809,9 @@ def parse_my_bids(html: str, item_type: str) -> tuple[list["MyBid"], int]:
 
 def parse_my_assets(html: str, item_type: str) -> tuple[list["MyAsset"], int]:
     '''Parse My Assets HTML into structured asset objects.'''
-    from FragmentAPI.types.results import MyAsset
 
     items: list[MyAsset] = []
 
-    tab_counter_pattern = r'<a href="/my/{}"[^>]*>.*?<span[^>]*>(\d+)</span>'
     if item_type == "usernames":
         tab_pattern = r'<a href="/my/usernames"[^>]*>.*?Usernames.*?<span[^>]*>(\d+)</span>'
     elif item_type == "gifts":
@@ -831,6 +830,28 @@ def parse_my_assets(html: str, item_type: str) -> tuple[list["MyAsset"], int]:
 
     rows = re.findall(r'<tr[^>]*class="[^"]*tm-row-selectable[^"]*"[^>]*>(.*?)</tr>', tbody_m.group(1), re.DOTALL)
 
+    assign_popup_match = re.search(
+        r'<div[^>]*class="[^"]*popup-container[^"]*js-assign-popup[^"]*"[^>]*>'
+        r'(.*?)</div>\s*</div>\s*</div>',
+        html,
+        re.DOTALL,
+    )
+    assign_popup_html = assign_popup_match.group(1) if assign_popup_match else ""
+
+    assign_name_map = {}
+    if assign_popup_html:
+        label_pattern = re.compile(
+            r'<label[^>]*class="[^"]*tm-assign-account-item[^"]*"[^>]*>'
+            r'(.*?)</label>',
+            re.DOTALL,
+        )
+        for label_match in label_pattern.finditer(assign_popup_html):
+            label_html = label_match.group(1)
+            value_match = re.search(r'value="([^"]+)"', label_html)
+            name_match = re.search(r'tm-assign-account-name">([^<]+)</div>', label_html)
+            if value_match and name_match:
+                assign_name_map[value_match.group(1)] = name_match.group(1).strip()
+
     for row in rows:
         if item_type == "usernames":
             href_match = re.search(r'href="/(username/[^"]+)"', row)
@@ -839,17 +860,16 @@ def parse_my_assets(html: str, item_type: str) -> tuple[list["MyAsset"], int]:
             name_match = re.search(r'<div class="table-cell-value tm-value">@([^<]+)</div>', row)
             name = f"@{name_match.group(1)}" if name_match else slug
 
-            desc_match = re.search(r'<div class="table-cell-desc tm-nowrap">([^<]+)</div>', row)
-            description = desc_match.group(1).strip() if desc_match else None
+            description = None
             image_url = None
 
-            assign_match = re.search(r'data-assigned-to="([^"]+)"', row)
-            assigned_to = assign_match.group(1) if assign_match else None
-            assigned_name = None
+            assigned_to_match = re.search(r'data-assigned-to="([^"]+)"', row)
+            assigned_to = assigned_to_match.group(1) if assigned_to_match else None
+            assigned_name = assign_name_map.get(assigned_to) if assigned_to else None
 
         elif item_type == "gifts":
-            href_match = re.search(r'href="(/gift/[^"]+)"', row)
-            slug = href_match.group(1) if href_match else ""
+            href_match = re.search(r'href="(/gift/[^"?]+)', row)
+            slug = href_match.group(1).lstrip("/") if href_match else ""
 
             name_match = re.search(r'<div class="table-cell-value tm-value">([^<]+)</div>', row)
             name = name_match.group(1).strip() if name_match else slug
@@ -860,12 +880,13 @@ def parse_my_assets(html: str, item_type: str) -> tuple[list["MyAsset"], int]:
             desc_match = re.search(r'<div class="table-cell-desc tm-nowrap">([^<]+)</div>', row)
             description = desc_match.group(1).strip() if desc_match else None
 
-            assign_match = re.search(r'class="js-assigned-to">([^<]+)</span>', row)
-            assigned_name = assign_match.group(1).strip() if assign_match else "Wallet"
-            assigned_to = None
+            assigned_to_match = re.search(r'data-assigned-to="([^"]+)"', row)
+            assigned_to = assigned_to_match.group(1) if assigned_to_match else None
+            assigned_name_match = re.search(r'<span class="js-assigned-to">([^<]+)</span>', row)
+            assigned_name = assigned_name_match.group(1).strip() if assigned_name_match else "Wallet"
 
         else:
-            href_match = re.search(r'href="(/number/[^"]+)"', row)
+            href_match = re.search(r'href="/(number/[^"]+)"', row)
             slug = href_match.group(1) if href_match else ""
 
             name_match = re.search(r'<div class="table-cell-value tm-value">\+?([^<]+)</div>', row)
@@ -896,24 +917,51 @@ def parse_assign_accounts(html: str) -> tuple[list["TelegramAccount"], bool]:
     '''Parse available Telegram accounts from assign popup HTML.'''
 
     accounts: list[TelegramAccount] = []
-    can_disable = bool(re.search(r'class="tm-assign-account-link.*?Don’t display', html))
+    can_disable = False
 
-    account_pattern = re.compile(
-        r'<label[^>]*class="[^"]*tm-assign-account-item[^"]*"[^>]*>.*?'
-        r'<input[^>]*name="assign_to"[^>]*value="([^"]+)".*?'
-        r'<img[^>]*src="([^"]+)".*?'
-        r'<div class="tm-assign-account-name">([^<]+)</div>.*?'
-        r'<div class="tm-assign-account-desc">([^<]+)</div>',
+    assign_popup_match = re.search(
+        r'<div[^>]*class="[^"]*popup-container[^"]*js-assign-popup[^"]*"[^>]*>'
+        r'(.*?)</div>\s*</div>\s*</div>',
+        html,
         re.DOTALL,
     )
 
-    for match in account_pattern.finditer(html):
+    if not assign_popup_match:
+        return accounts, can_disable
+
+    popup_html = assign_popup_match.group(1)
+    can_disable = bool(re.search(r'Don’t display on Telegram', popup_html))
+
+    label_pattern = re.compile(
+        r'<label[^>]*class="[^"]*tm-assign-account-item[^"]*"[^>]*>'
+        r'(.*?)</label>',
+        re.DOTALL,
+    )
+
+    for label_match in label_pattern.finditer(popup_html):
+        label_html = label_match.group(1)
+
+        value_match = re.search(r'value="([^"]+)"', label_html)
+        if not value_match:
+            continue
+
+        account_id = value_match.group(1)
+
+        name_match = re.search(r'tm-assign-account-name">([^<]+)</div>', label_html)
+        name = name_match.group(1).strip() if name_match else "Unknown"
+
+        type_match = re.search(r'tm-assign-account-desc">([^<]+)</div>', label_html)
+        acc_type = type_match.group(1).strip() if type_match else "Unknown"
+
+        img_match = re.search(r'<img[^>]*src="([^"]+)"', label_html)
+        photo_url = img_match.group(1) if img_match else None
+
         accounts.append(
             TelegramAccount(
-                id=match.group(1),
-                photo_url=match.group(2),
-                name=match.group(3).strip(),
-                type=match.group(4).strip(),
+                id=account_id,
+                name=name,
+                type=acc_type,
+                photo_url=photo_url,
             )
         )
 

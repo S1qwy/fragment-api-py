@@ -37,9 +37,13 @@ from FragmentAPI.methods.topup_ton import topup_ton
 from FragmentAPI.types.constants import (
     ADS_HISTORY_PAGE,
     DEFAULT_TIMEOUT,
+    DEVICE_FINGERPRINT,
     FRAGMENT_BASE_URL,
     GIFTS_PAGE,
     MY_BIDS_PAGE,
+    MY_GIFTS_PAGE,
+    MY_NUMBERS_PAGE,
+    MY_USERNAMES_PAGE,
     NUMBERS_PAGE,
     PREMIUM_HISTORY_PAGE,
     PREMIUM_PAGE,
@@ -78,8 +82,10 @@ from FragmentAPI.types.results import (
     StarsPrices,
     StarsResult,
     StarsTransaction,
+    TelegramAccount,
     TerminateSessionsResult,
     TopupTransaction,
+    TransactionResult,
     UsernameInfo,
     UsernamesResult,
     WalletInfo,
@@ -113,6 +119,7 @@ from FragmentAPI.utils.http import (
 )
 from FragmentAPI.utils.wallet import (
     build_account_info,
+    execute_transaction,
     fetch_wallet_info,
 )
 
@@ -984,10 +991,12 @@ class FragmentClient:
             AssignAccountsResult with accounts list and can_disable flag.
         '''
         try:
+            
+            if item_type == 1:
+                url = MY_USERNAMES_PAGE
+            else:
+                url = MY_GIFTS_PAGE
 
-            url = f"{FRAGMENT_BASE_URL}/" + (
-                f"username/{slug}" if item_type == 1 else f"gift/{slug}"
-            )
             headers = build_headers(url)
             data = await fetch_page_ajax(
                 self.cookies,
