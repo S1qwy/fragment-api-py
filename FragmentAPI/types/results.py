@@ -1,11 +1,46 @@
 '''
-Result dataclasses for Fragment API operations
+Result dataclasses for Fragment API operations.
 '''
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import (
+    dataclass,
+    field,
+)
 from typing import Any
+
+
+@dataclass
+class TransactionResult:
+    '''
+    Result of a TON transaction with confirmation details.
+
+    tx_hash: Normalized transaction hash.
+    boc: Signed transaction BOC in base64 (for confirmReq).
+    seqno_before: Wallet seqno before the transaction.
+    seqno_after: Wallet seqno after confirmation (or None).
+    balance_before: TON balance before the transaction.
+    balance_after: TON balance after confirmation (or None).
+    confirmed: Whether seqno incremented and balance decreased.
+    '''
+
+    tx_hash: str
+    boc: str | None = None
+    seqno_before: int | None = None
+    seqno_after: int | None = None
+    balance_before: float | None = None
+    balance_after: float | None = None
+    confirmed: bool = False
+
+    def __repr__(self) -> str:
+        return (
+            f"TransactionResult("
+            f"tx='{self.tx_hash[:16]}...', "
+            f"confirmed={self.confirmed}, "
+            f"seqno={self.seqno_before}->{self.seqno_after}"
+            f")"
+        )
 
 
 @dataclass
@@ -19,9 +54,12 @@ class WalletInfo:
 
     def __repr__(self) -> str:
         return (
-            f"WalletInfo(address='{self.address}', "
-            f"state='{self.state}', balance_ton={self.balance_ton}, "
-            f"balance_usdt={self.balance_usdt})"
+            f"WalletInfo("
+            f"address='{self.address}', "
+            f"state='{self.state}', "
+            f"balance_ton={self.balance_ton}, "
+            f"balance_usdt={self.balance_usdt}"
+            f")"
         )
 
 
@@ -36,9 +74,12 @@ class PremiumResult:
 
     def __repr__(self) -> str:
         return (
-            f"PremiumResult(username='{self.username}', "
-            f"amount={self.amount} months, payment='{self.payment_method}', "
-            f"tx='{self.transaction_id}')"
+            f"PremiumResult("
+            f"username='{self.username}', "
+            f"amount={self.amount} months, "
+            f"payment='{self.payment_method}', "
+            f"tx='{self.transaction_id}'"
+            f")"
         )
 
 
@@ -53,9 +94,12 @@ class StarsResult:
 
     def __repr__(self) -> str:
         return (
-            f"StarsResult(username='{self.username}', "
-            f"amount={self.amount} stars, payment='{self.payment_method}', "
-            f"tx='{self.transaction_id}')"
+            f"StarsResult("
+            f"username='{self.username}', "
+            f"amount={self.amount} stars, "
+            f"payment='{self.payment_method}', "
+            f"tx='{self.transaction_id}'"
+            f")"
         )
 
 
@@ -69,8 +113,11 @@ class AdsTopupResult:
 
     def __repr__(self) -> str:
         return (
-            f"AdsTopupResult(username='{self.username}', "
-            f"amount={self.amount} TON, tx='{self.transaction_id}')"
+            f"AdsTopupResult("
+            f"username='{self.username}', "
+            f"amount={self.amount} TON, "
+            f"tx='{self.transaction_id}'"
+            f")"
         )
 
 
@@ -86,9 +133,13 @@ class GiveawayStarsResult:
 
     def __repr__(self) -> str:
         return (
-            f"GiveawayStarsResult(channel='{self.channel}', "
-            f"winners={self.winners}, amount={self.amount} stars, "
-            f"payment='{self.payment_method}', tx='{self.transaction_id}')"
+            f"GiveawayStarsResult("
+            f"channel='{self.channel}', "
+            f"winners={self.winners}, "
+            f"amount={self.amount} stars, "
+            f"payment='{self.payment_method}', "
+            f"tx='{self.transaction_id}'"
+            f")"
         )
 
 
@@ -104,9 +155,117 @@ class GiveawayPremiumResult:
 
     def __repr__(self) -> str:
         return (
-            f"GiveawayPremiumResult(channel='{self.channel}', "
-            f"winners={self.winners}, amount={self.amount} months, "
-            f"payment='{self.payment_method}', tx='{self.transaction_id}')"
+            f"GiveawayPremiumResult("
+            f"channel='{self.channel}', "
+            f"winners={self.winners}, "
+            f"amount={self.amount} months, "
+            f"payment='{self.payment_method}', "
+            f"tx='{self.transaction_id}'"
+            f")"
+        )
+
+
+@dataclass
+class NftWithdrawalInitResult:
+    '''Result of NFT withdrawal initialization.'''
+
+    ok: bool
+    confirm_message: str | None = None
+    confirm_button: str | None = None
+    confirm_hash: str | None = None
+    error: str | None = None
+
+    def __repr__(self) -> str:
+        if self.error:
+            return f"NftWithdrawalInitResult(ok=False, error='{self.error}')"
+        return (
+            f"NftWithdrawalInitResult("
+            f"ok=True, "
+            f"confirm_hash='{self.confirm_hash}', "
+            f"button='{self.confirm_button}'"
+            f")"
+        )
+
+
+@dataclass
+class NftWithdrawalConfirmResult:
+    '''Result of NFT withdrawal confirmation.'''
+
+    ok: bool
+    need_update: bool
+    mode: str
+    html: str | None = None
+    error: str | None = None
+
+    def __repr__(self) -> str:
+        if self.error:
+            return f"NftWithdrawalConfirmResult(ok=False, error='{self.error}')"
+        return (
+            f"NftWithdrawalConfirmResult("
+            f"ok={self.ok}, "
+            f"mode='{self.mode}', "
+            f"need_update={self.need_update}"
+            f")"
+        )
+
+
+@dataclass
+class StarsWithdrawalState:
+    '''Stars withdrawal state from Fragment page.'''
+
+    transaction: str
+    withdrawal_data: str
+
+    def __repr__(self) -> str:
+        return (
+            f"StarsWithdrawalState("
+            f"transaction='{self.transaction[:16]}...', "
+            f"withdrawal_data='{self.withdrawal_data[:16]}...'"
+            f")"
+        )
+
+
+@dataclass
+class StarsWithdrawalInitResult:
+    '''Result of Stars withdrawal initialization.'''
+
+    ok: bool
+    confirm_message: str | None = None
+    confirm_button: str | None = None
+    confirm_hash: str | None = None
+    error: str | None = None
+
+    def __repr__(self) -> str:
+        if self.error:
+            return f"StarsWithdrawalInitResult(ok=False, error='{self.error}')"
+        return (
+            f"StarsWithdrawalInitResult("
+            f"ok=True, "
+            f"confirm_hash='{self.confirm_hash}', "
+            f"button='{self.confirm_button}'"
+            f")"
+        )
+
+
+@dataclass
+class StarsWithdrawalConfirmResult:
+    '''Result of Stars withdrawal confirmation.'''
+
+    ok: bool
+    need_update: bool
+    mode: str
+    html: str | None = None
+    error: str | None = None
+
+    def __repr__(self) -> str:
+        if self.error:
+            return f"StarsWithdrawalConfirmResult(ok=False, error='{self.error}')"
+        return (
+            f"StarsWithdrawalConfirmResult("
+            f"ok={self.ok}, "
+            f"mode='{self.mode}', "
+            f"need_update={self.need_update}"
+            f")"
         )
 
 
@@ -125,8 +284,12 @@ class BidResult:
         type_names = {1: "username", 3: "number", 5: "gift"}
         t = type_names.get(self.item_type, str(self.item_type))
         return (
-            f"BidResult(type='{t}', slug='{self.slug}', "
-            f"bid={self.bid} TON, tx='{self.transaction_id}')"
+            f"BidResult("
+            f"type='{t}', "
+            f"slug='{self.slug}', "
+            f"bid={self.bid} TON, "
+            f"tx='{self.transaction_id}'"
+            f")"
         )
 
 
@@ -139,8 +302,10 @@ class UsernamesResult:
 
     def __repr__(self) -> str:
         return (
-            f"UsernamesResult(items={len(self.items)}, "
-            f"next_offset_id={self.next_offset_id!r})"
+            f"UsernamesResult("
+            f"items={len(self.items)}, "
+            f"next_offset_id={self.next_offset_id!r}"
+            f")"
         )
 
 
@@ -153,8 +318,10 @@ class NumbersResult:
 
     def __repr__(self) -> str:
         return (
-            f"NumbersResult(items={len(self.items)}, "
-            f"next_offset_id={self.next_offset_id!r})"
+            f"NumbersResult("
+            f"items={len(self.items)}, "
+            f"next_offset_id={self.next_offset_id!r}"
+            f")"
         )
 
 
@@ -167,8 +334,10 @@ class GiftsResult:
 
     def __repr__(self) -> str:
         return (
-            f"GiftsResult(items={len(self.items)}, "
-            f"next_offset={self.next_offset!r})"
+            f"GiftsResult("
+            f"items={len(self.items)}, "
+            f"next_offset={self.next_offset!r}"
+            f")"
         )
 
 
@@ -220,8 +389,12 @@ class UsernameInfo:
 
     def __repr__(self) -> str:
         return (
-            f"UsernameInfo(username='@{self.username}', status='{self.status}', "
-            f"bids={len(self.bid_history)}, owners={len(self.owner_history)})"
+            f"UsernameInfo("
+            f"username='@{self.username}', "
+            f"status='{self.status}', "
+            f"bids={len(self.bid_history)}, "
+            f"owners={len(self.owner_history)}"
+            f")"
         )
 
 
@@ -246,8 +419,11 @@ class NumberInfo:
 
     def __repr__(self) -> str:
         return (
-            f"NumberInfo(number='{self.display_number}', status='{self.status}', "
-            f"restricted={self.restricted})"
+            f"NumberInfo("
+            f"number='{self.display_number}', "
+            f"status='{self.status}', "
+            f"restricted={self.restricted}"
+            f")"
         )
 
 
@@ -284,8 +460,11 @@ class GiftInfo:
 
     def __repr__(self) -> str:
         return (
-            f"GiftInfo(name='{self.name}', status='{self.status}', "
-            f"attrs={len(self.attributes)})"
+            f"GiftInfo("
+            f"name='{self.name}', "
+            f"status='{self.status}', "
+            f"attrs={len(self.attributes)}"
+            f")"
         )
 
 
@@ -306,7 +485,12 @@ class StarsPrices:
     ton_rate: float
 
     def __repr__(self) -> str:
-        return f"StarsPrices(packages={len(self.packages)}, ton_rate={self.ton_rate})"
+        return (
+            f"StarsPrices("
+            f"packages={len(self.packages)}, "
+            f"ton_rate={self.ton_rate}"
+            f")"
+        )
 
 
 @dataclass
@@ -328,7 +512,12 @@ class PremiumPrices:
     ton_rate: float
 
     def __repr__(self) -> str:
-        return f"PremiumPrices(options={len(self.options)}, ton_rate={self.ton_rate})"
+        return (
+            f"PremiumPrices("
+            f"options={len(self.options)}, "
+            f"ton_rate={self.ton_rate}"
+            f")"
+        )
 
 
 @dataclass
@@ -350,6 +539,22 @@ class PremiumTransaction:
     price_ton: str
     date: str
 
+@dataclass
+class TopupTransaction:
+    '''Single topup transaction from Ads history.'''
+
+    recipient: str
+    amount: int
+    date: str
+
+    def __repr__(self) -> str:
+        return (
+            f"TopupTransaction("
+            f"recipient='{self.recipient}', "
+            f"amount={self.amount} TON, "
+            f"date='{self.date}'"
+            f")"
+        )
 
 @dataclass
 class ProfileInfo:
@@ -365,8 +570,11 @@ class ProfileInfo:
 
     def __repr__(self) -> str:
         return (
-            f"ProfileInfo(name='{self.name}', username='@{self.username}', "
-            f"verified={self.identity_verified})"
+            f"ProfileInfo("
+            f"name='{self.name}', "
+            f"username='@{self.username}', "
+            f"verified={self.identity_verified}"
+            f")"
         )
 
 
@@ -382,28 +590,220 @@ class SessionInfo:
 
     def __repr__(self) -> str:
         return (
-            f"SessionInfo(device='{self.device}', location='{self.location}', "
-            f"current={self.is_current})"
+            f"SessionInfo("
+            f"device='{self.device}', "
+            f"location='{self.location}', "
+            f"current={self.is_current}"
+            f")"
         )
-        
-        
+
+
+@dataclass
+class MyBid:
+    '''Single bid entry from My Bid History.'''
+
+    item_type: str
+    slug: str
+    name: str
+    bid: float
+    status: str
+    date: str
+    image_url: str | None = None
+    description: str | None = None
+
+    def __repr__(self) -> str:
+        return (
+            f"MyBid("
+            f"type='{self.item_type}', "
+            f"name='{self.name}', "
+            f"bid={self.bid} TON, "
+            f"status='{self.status}'"
+            f")"
+        )
+
+
+@dataclass
+class MyBidsResult:
+    '''Result of My Bid History query.'''
+
+    items: list[MyBid]
+    ton_rate: float
+    total_count: int
+
+    def __repr__(self) -> str:
+        return (
+            f"MyBidsResult("
+            f"items={len(self.items)}, "
+            f"ton_rate={self.ton_rate}, "
+            f"total={self.total_count}"
+            f")"
+        )
+
+
+@dataclass
+class MyAsset:
+    '''Single asset from My Assets page.'''
+
+    item_type: str
+    slug: str
+    name: str
+    description: str | None = None
+    image_url: str | None = None
+    assigned_to: str | None = None
+    assigned_name: str | None = None
+
+    def __repr__(self) -> str:
+        return (
+            f"MyAsset("
+            f"type='{self.item_type}', "
+            f"name='{self.name}', "
+            f"assigned_to='{self.assigned_name}'"
+            f")"
+        )
+
+
+@dataclass
+class MyAssetsResult:
+    '''Result of My Assets query.'''
+
+    items: list[MyAsset]
+    ton_rate: float
+    total_count: int
+
+    def __repr__(self) -> str:
+        return (
+            f"MyAssetsResult("
+            f"items={len(self.items)}, "
+            f"ton_rate={self.ton_rate}, "
+            f"total={self.total_count}"
+            f")"
+        )
+
+
+@dataclass
+class TelegramAccount:
+    '''Telegram account available for assignment.'''
+
+    id: str
+    name: str
+    type: str
+    photo_url: str | None = None
+
+    def __repr__(self) -> str:
+        return f"TelegramAccount(name='{self.name}', type='{self.type}')"
+
+
+@dataclass
+class AssignAccountsResult:
+    '''Result of getting available Telegram accounts for assignment.'''
+
+    accounts: list[TelegramAccount]
+    can_disable: bool
+
+    def __repr__(self) -> str:
+        return f"AssignAccountsResult(accounts={len(self.accounts)}, can_disable={self.can_disable})"
+
+
+@dataclass
+class AssignResult:
+    '''Result of assigning asset to Telegram account.'''
+
+    ok: bool
+    message: str | None = None
+    need_pay: bool = False
+    req_id: str | None = None
+    amount: str | None = None
+    assign_name: str | None = None
+
+    def __repr__(self) -> str:
+        return (
+            f"AssignResult("
+            f"ok={self.ok}, "
+            f"need_pay={self.need_pay}, "
+            f"message={self.message!r}"
+            f")"
+        )
+
+
+@dataclass
+class StartAuctionResult:
+    '''Result of starting auction or selling asset.'''
+
+    ok: bool
+    req_id: str | None = None
+
+    def __repr__(self) -> str:
+        return f"StartAuctionResult(ok={self.ok}, req_id={self.req_id!r})"
+
+
+@dataclass
+class NftTransferRecipient:
+    '''Recipient info for NFT transfer.'''
+
+    myself: bool
+    recipient: str
+    name: str
+    photo_url: str | None = None
+
+    def __repr__(self) -> str:
+        return (
+            f"NftTransferRecipient("
+            f"myself={self.myself}, "
+            f"name='{self.name}', "
+            f"recipient='{self.recipient[:16]}...'"
+            f")"
+        )
+
+
+@dataclass
+class NftTransferRequest:
+    '''Result of initNftTransferRequest.'''
+
+    req_id: str
+    myself: bool
+    item_title: str
+    content: str
+    button: str
+
+    def __repr__(self) -> str:
+        return (
+            f"NftTransferRequest("
+            f"req_id='{self.req_id}', "
+            f"item_title='{self.item_title}'"
+            f")"
+        )
+
+
 @dataclass
 class LoginCodeResult:
     '''Result of a pending login code request.'''
+
     number: str
     code: str | None
     active_sessions: int
 
     def __repr__(self) -> str:
         code_str = f"'{self.code}'" if self.code else "None"
-        return f"LoginCodeResult(number='{self.number}', code={code_str}, active_sessions={self.active_sessions})"
+        return (
+            f"LoginCodeResult("
+            f"number='{self.number}', "
+            f"code={code_str}, "
+            f"active_sessions={self.active_sessions}"
+            f")"
+        )
 
 
 @dataclass
 class TerminateSessionsResult:
     '''Result of terminating anonymous number sessions.'''
+
     number: str
     message: str | None
 
     def __repr__(self) -> str:
-        return f"TerminateSessionsResult(number='{self.number}', message={self.message!r})"
+        return (
+            f"TerminateSessionsResult("
+            f"number='{self.number}', "
+            f"message={self.message!r}"
+            f")"
+        )
