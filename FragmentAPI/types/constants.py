@@ -70,6 +70,8 @@ MY_ASSETS_PAGE: str = f"{FRAGMENT_BASE_URL}/my/assets"
 MY_USERNAMES_PAGE: str = f"{FRAGMENT_BASE_URL}/my/usernames"
 MY_GIFTS_PAGE: str = f"{FRAGMENT_BASE_URL}/my/gifts"
 MY_NUMBERS_PAGE: str = f"{FRAGMENT_BASE_URL}/my/numbers"
+STARS_WITHDRAW_PAGE: str = f"{FRAGMENT_BASE_URL}/stars/withdraw"
+NFT_WITHDRAW_PAGE: str = f"{FRAGMENT_BASE_URL}/gift/withdraw"
 
 DEVICE_FINGERPRINT: str = json.dumps(
     {

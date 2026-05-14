@@ -44,6 +44,7 @@ from FragmentAPI.types.constants import (
     MY_GIFTS_PAGE,
     MY_NUMBERS_PAGE,
     MY_USERNAMES_PAGE,
+    NFT_WITHDRAW_PAGE,
     NUMBERS_PAGE,
     PREMIUM_HISTORY_PAGE,
     PREMIUM_PAGE,
@@ -52,6 +53,7 @@ from FragmentAPI.types.constants import (
     SESSIONS_PAGE,
     STARS_HISTORY_PAGE,
     STARS_PAGE,
+    STARS_WITHDRAW_PAGE,
     SUPPORTED_WALLET_VERSIONS,
     TONAPI_DEFAULT_KEY,
     WalletVersionType,
@@ -70,6 +72,8 @@ from FragmentAPI.types.results import (
     MyBidsResult,
     NftTransferRecipient,
     NftTransferRequest,
+    NftWithdrawalInitResult,
+    NftWithdrawalConfirmResult,
     NumberInfo,
     NumbersResult,
     PremiumPrices,
@@ -77,12 +81,14 @@ from FragmentAPI.types.results import (
     PremiumTransaction,
     ProfileInfo,
     SessionInfo,
-    StartAuctionResult,
     StarsPrice,
     StarsPrices,
     StarsResult,
     StarsTransaction,
-    TelegramAccount,
+    StarsWithdrawalState,
+    StarsWithdrawalInitResult,
+    StarsWithdrawalConfirmResult,
+    StartAuctionResult,
     TerminateSessionsResult,
     TopupTransaction,
     TransactionResult,
@@ -1533,7 +1539,372 @@ class FragmentClient:
         '''
         from FragmentAPI.methods.anonymous_number import terminate_sessions
         return await terminate_sessions(self, number)
-
+        
+    async def get_nft_withdrawal_state(
+        self,
+        transaction: str,
+    ) -> dict[str, Any]:
+        '''
+        Get NFT withdrawal state from Fragment page.
+    
+        Args:
+            transaction: Transaction ID for withdrawal.
+    
+        Returns:
+            Raw JSON response with state data.
+    
+        Raises:
+            FragmentAPIError: If session expired.
+        '''
+        try:
+            page_url = f"{NFT_WITHDRAW_PAGE}?transaction={transaction}"
+            headers = build_headers(page_url)
+            data = await fetch_page_ajax(
+                self.cookies,
+                headers,
+                page_url,
+                self.timeout,
+            )
+    
+            if data.get("mode") == "done" and "expired" in data.get("html", ""):
+                raise FragmentAPIError(
+                    "NFT withdrawal session has expired. "
+                    "Please start the withdrawal process again."
+                )
+    
+            return data
+    
+        except FragmentBaseError:
+            raise
+        except Exception as exc:
+            raise UnexpectedError(
+                UnexpectedError.UNEXPECTED.format(exc=exc),
+            ) from exc
+    
+    async def init_nft_withdrawal(
+        self,
+        transaction: str,
+        keep_gift: bool = False,
+    ) -> NftWithdrawalInitResult:
+        '''
+        Initialize NFT withdrawal to wallet.
+    
+        Args:
+            transaction: Transaction ID for withdrawal.
+            keep_gift: Whether to keep gift visible in Telegram profile.
+    
+        Returns:
+            NftWithdrawalInitResult with confirm_hash for next step.
+        '''
+        try:
+            wallet_info = await self.get_wallet()
+            wallet_address = wallet_info.address
+    
+            headers = build_headers(FRAGMENT_BASE_URL)
+            fragment_hash = await fetch_fragment_hash(
+                self.cookies,
+                headers,
+                FRAGMENT_BASE_URL,
+                self.timeout,
+            )
+    
+            async with httpx.AsyncClient(
+                cookies=self.cookies,
+                timeout=self.timeout,
+            ) as session:
+                result = await post_FragmentAPI(
+                    session,
+                    fragment_hash,
+                    headers,
+                    {
+                        "method": "initNftWithdrawalRequest",
+                        "transaction": transaction,
+                        "wallet_address": wallet_address,
+                        "keep_gift": "1" if keep_gift else "0",
+                    },
+                )
+    
+            if result.get("error"):
+                return NftWithdrawalInitResult(
+                    ok=False,
+                    error=result["error"],
+                )
+    
+            return NftWithdrawalInitResult(
+                ok=result.get("ok", False),
+                confirm_message=result.get("confirm_message"),
+                confirm_button=result.get("confirm_button"),
+                confirm_hash=result.get("confirm_hash"),
+            )
+    
+        except FragmentBaseError:
+            raise
+        except Exception as exc:
+            raise UnexpectedError(
+                UnexpectedError.UNEXPECTED.format(exc=exc),
+            ) from exc
+    
+    
+    async def confirm_nft_withdrawal(
+        self,
+        transaction: str,
+        confirm_hash: str,
+        keep_gift: bool = False,
+    ) -> NftWithdrawalConfirmResult:
+        '''
+        Confirm NFT withdrawal after user approval.
+    
+        Args:
+            transaction: Transaction ID for withdrawal.
+            confirm_hash: Hash from init_nft_withdrawal response.
+            keep_gift: Whether to keep gift visible in Telegram profile.
+    
+        Returns:
+            NftWithdrawalConfirmResult with processing status.
+        '''
+        try:
+            wallet_info = await self.get_wallet()
+            wallet_address = wallet_info.address
+    
+            headers = build_headers(FRAGMENT_BASE_URL)
+            fragment_hash = await fetch_fragment_hash(
+                self.cookies,
+                headers,
+                FRAGMENT_BASE_URL,
+                self.timeout,
+            )
+    
+            async with httpx.AsyncClient(
+                cookies=self.cookies,
+                timeout=self.timeout,
+            ) as session:
+                result = await post_FragmentAPI(
+                    session,
+                    fragment_hash,
+                    headers,
+                    {
+                        "method": "initNftWithdrawalRequest",
+                        "transaction": transaction,
+                        "wallet_address": wallet_address,
+                        "keep_gift": "1" if keep_gift else "0",
+                        "confirm_hash": confirm_hash,
+                    },
+                )
+    
+            if result.get("error"):
+                return NftWithdrawalConfirmResult(
+                    ok=False,
+                    need_update=False,
+                    mode="error",
+                    error=result["error"],
+                )
+    
+            return NftWithdrawalConfirmResult(
+                ok=result.get("ok", False),
+                need_update=result.get("need_update", False),
+                mode=result.get("mode", "unknown"),
+                html=result.get("html"),
+            )
+    
+        except FragmentBaseError:
+            raise
+        except Exception as exc:
+            raise UnexpectedError(
+                UnexpectedError.UNEXPECTED.format(exc=exc),
+            ) from exc
+    
+    
+    async def get_stars_withdrawal_state(
+        self,
+        transaction: str,
+    ) -> StarsWithdrawalState:
+        '''
+        Get Stars withdrawal state from Fragment page.
+    
+        Args:
+            transaction: Transaction ID for withdrawal.
+    
+        Returns:
+            StarsWithdrawalState with transaction and withdrawal_data.
+    
+        Raises:
+            FragmentAPIError: If session expired or state not found.
+        '''
+        try:
+            page_url = f"{STARS_WITHDRAW_PAGE}?transaction={transaction}"
+            headers = build_headers(page_url)
+            data = await fetch_page_ajax(
+                self.cookies,
+                headers,
+                page_url,
+                self.timeout,
+            )
+    
+            if data.get("mode") == "done" and "expired" in data.get("html", ""):
+                raise FragmentAPIError(
+                    "Stars withdrawal session has expired. "
+                    "Please start the withdrawal process again."
+                )
+    
+            state = data.get("s", {})
+            tx_id = state.get("transaction")
+            withdrawal_data = state.get("withdrawalData")
+    
+            if not tx_id or not withdrawal_data:
+                raise FragmentAPIError(
+                    "Failed to extract transaction or withdrawalData from response."
+                )
+    
+            return StarsWithdrawalState(
+                transaction=tx_id,
+                withdrawal_data=withdrawal_data,
+            )
+    
+        except FragmentBaseError:
+            raise
+        except Exception as exc:
+            raise UnexpectedError(
+                UnexpectedError.UNEXPECTED.format(exc=exc),
+            ) from exc
+    
+    
+    async def init_stars_withdrawal(
+        self,
+        transaction: str,
+        withdrawal_data: str,
+    ) -> StarsWithdrawalInitResult:
+        '''
+        Initialize Stars withdrawal to wallet.
+    
+        Args:
+            transaction: Transaction ID for withdrawal.
+            withdrawal_data: Withdrawal data from get_stars_withdrawal_state.
+    
+        Returns:
+            StarsWithdrawalInitResult with confirm_hash for next step.
+    
+        Raises:
+            FragmentAPIError: If amount changed or wallet address invalid.
+        '''
+        try:
+            wallet_info = await self.get_wallet()
+            wallet_address = wallet_info.address
+    
+            headers = build_headers(FRAGMENT_BASE_URL)
+            fragment_hash = await fetch_fragment_hash(
+                self.cookies,
+                headers,
+                FRAGMENT_BASE_URL,
+                self.timeout,
+            )
+    
+            async with httpx.AsyncClient(
+                cookies=self.cookies,
+                timeout=self.timeout,
+            ) as session:
+                result = await post_FragmentAPI(
+                    session,
+                    fragment_hash,
+                    headers,
+                    {
+                        "method": "initStarsRevenueWithdrawalRequest",
+                        "transaction": transaction,
+                        "wallet_address": wallet_address,
+                        "withdrawal_data": withdrawal_data,
+                    },
+                )
+    
+            if result.get("error"):
+                return StarsWithdrawalInitResult(
+                    ok=False,
+                    error=result["error"],
+                )
+    
+            return StarsWithdrawalInitResult(
+                ok=result.get("ok", False),
+                confirm_message=result.get("confirm_message"),
+                confirm_button=result.get("confirm_button"),
+                confirm_hash=result.get("confirm_hash"),
+            )
+    
+        except FragmentBaseError:
+            raise
+        except Exception as exc:
+            raise UnexpectedError(
+                UnexpectedError.UNEXPECTED.format(exc=exc),
+            ) from exc
+    
+    
+    async def confirm_stars_withdrawal(
+        self,
+        transaction: str,
+        withdrawal_data: str,
+        confirm_hash: str,
+    ) -> StarsWithdrawalConfirmResult:
+        '''
+        Confirm Stars withdrawal after user approval.
+    
+        Args:
+            transaction: Transaction ID for withdrawal.
+            withdrawal_data: Withdrawal data from get_stars_withdrawal_state.
+            confirm_hash: Hash from init_stars_withdrawal response.
+    
+        Returns:
+            StarsWithdrawalConfirmResult with processing status.
+    
+        Raises:
+            FragmentAPIError: If amount changed (retry from get_stars_withdrawal_state).
+        '''
+        try:
+            wallet_info = await self.get_wallet()
+            wallet_address = wallet_info.address
+    
+            headers = build_headers(FRAGMENT_BASE_URL)
+            fragment_hash = await fetch_fragment_hash(
+                self.cookies,
+                headers,
+                FRAGMENT_BASE_URL,
+                self.timeout,
+            )
+    
+            async with httpx.AsyncClient(
+                cookies=self.cookies,
+                timeout=self.timeout,
+            ) as session:
+                result = await post_FragmentAPI(
+                    session,
+                    fragment_hash,
+                    headers,
+                    {
+                        "method": "initStarsRevenueWithdrawalRequest",
+                        "transaction": transaction,
+                        "wallet_address": wallet_address,
+                        "withdrawal_data": withdrawal_data,
+                        "confirm_hash": confirm_hash,
+                    },
+                )
+    
+            if result.get("error"):
+                return StarsWithdrawalConfirmResult(
+                    ok=False,
+                    need_update=False,
+                    mode="error",
+                    error=result["error"],
+                )
+    
+            return StarsWithdrawalConfirmResult(
+                ok=result.get("ok", False),
+                need_update=result.get("need_update", False),
+                mode=result.get("mode", "unknown"),
+                html=result.get("html"),
+            )
+    
+        except FragmentBaseError:
+            raise
+        except Exception as exc:
+            raise UnexpectedError(
+                UnexpectedError.UNEXPECTED.format(exc=exc),
+            ) from exc
     async def confirm_request(
         self,
         req_id: str,

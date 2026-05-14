@@ -42,6 +42,11 @@ from FragmentAPI.types.results import (
     UsernameInfo,
     UsernamesResult,
     WalletInfo,
+    NftWithdrawalInitResult,
+    NftWithdrawalConfirmResult,
+    StarsWithdrawalState,
+    StarsWithdrawalInitResult,
+    StarsWithdrawalConfirmResult,
 )
 from FragmentAPI.exceptions import (
     ClientError,
@@ -102,4 +107,9 @@ __all__ = [
     "UsernameInfo",
     "UsernamesResult",
     "WalletInfo",
+    "NftWithdrawalInitResult",
+    "NftWithdrawalConfirmResult",
+    "StarsWithdrawalState",
+    "StarsWithdrawalInitResult",
+    "StarsWithdrawalConfirmResult",
 ]

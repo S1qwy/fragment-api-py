@@ -166,6 +166,110 @@ class GiveawayPremiumResult:
 
 
 @dataclass
+class NftWithdrawalInitResult:
+    '''Result of NFT withdrawal initialization.'''
+
+    ok: bool
+    confirm_message: str | None = None
+    confirm_button: str | None = None
+    confirm_hash: str | None = None
+    error: str | None = None
+
+    def __repr__(self) -> str:
+        if self.error:
+            return f"NftWithdrawalInitResult(ok=False, error='{self.error}')"
+        return (
+            f"NftWithdrawalInitResult("
+            f"ok=True, "
+            f"confirm_hash='{self.confirm_hash}', "
+            f"button='{self.confirm_button}'"
+            f")"
+        )
+
+
+@dataclass
+class NftWithdrawalConfirmResult:
+    '''Result of NFT withdrawal confirmation.'''
+
+    ok: bool
+    need_update: bool
+    mode: str
+    html: str | None = None
+    error: str | None = None
+
+    def __repr__(self) -> str:
+        if self.error:
+            return f"NftWithdrawalConfirmResult(ok=False, error='{self.error}')"
+        return (
+            f"NftWithdrawalConfirmResult("
+            f"ok={self.ok}, "
+            f"mode='{self.mode}', "
+            f"need_update={self.need_update}"
+            f")"
+        )
+
+
+@dataclass
+class StarsWithdrawalState:
+    '''Stars withdrawal state from Fragment page.'''
+
+    transaction: str
+    withdrawal_data: str
+
+    def __repr__(self) -> str:
+        return (
+            f"StarsWithdrawalState("
+            f"transaction='{self.transaction[:16]}...', "
+            f"withdrawal_data='{self.withdrawal_data[:16]}...'"
+            f")"
+        )
+
+
+@dataclass
+class StarsWithdrawalInitResult:
+    '''Result of Stars withdrawal initialization.'''
+
+    ok: bool
+    confirm_message: str | None = None
+    confirm_button: str | None = None
+    confirm_hash: str | None = None
+    error: str | None = None
+
+    def __repr__(self) -> str:
+        if self.error:
+            return f"StarsWithdrawalInitResult(ok=False, error='{self.error}')"
+        return (
+            f"StarsWithdrawalInitResult("
+            f"ok=True, "
+            f"confirm_hash='{self.confirm_hash}', "
+            f"button='{self.confirm_button}'"
+            f")"
+        )
+
+
+@dataclass
+class StarsWithdrawalConfirmResult:
+    '''Result of Stars withdrawal confirmation.'''
+
+    ok: bool
+    need_update: bool
+    mode: str
+    html: str | None = None
+    error: str | None = None
+
+    def __repr__(self) -> str:
+        if self.error:
+            return f"StarsWithdrawalConfirmResult(ok=False, error='{self.error}')"
+        return (
+            f"StarsWithdrawalConfirmResult("
+            f"ok={self.ok}, "
+            f"mode='{self.mode}', "
+            f"need_update={self.need_update}"
+            f")"
+        )
+
+
+@dataclass
 class BidResult:
     '''Result of a successful bid or buy-now transaction.'''
 
