@@ -17,99 +17,113 @@
 
 ---
 
-**Fragment API Python** — полная автоматизация Fragment.com: покупка Stars/Premium, розыгрыши, маркетплейс, ставки (bid), управление номерами. Sync + Async.
+**Fragment API Python** — complete Fragment.com automation: purchase Stars/Premium, giveaways, marketplace, bids, number management. **Async-only**.
 
-📚 [Документация](https://fragment.s1qwy.ru) | 💬 [Telegram чат](https://t.me/fragment_api_py)
-
----
-
-## Возможности
-
-- **Sync / Async** — `FragmentClient` и `AsyncFragmentClient`
-- **Покупки** — Stars (50–10M), Premium (3/6/12 мес), TON Ads, `payment_method="ton"|"usdt_ton"`
-- **Розыгрыши** — Stars и Premium для каналов
-- **Ставки (Bid)** — `place_bid(item_type=1|3|5, slug, bid)` — если ставка = цене выкупа, покупка моментальна
-- **Маркетплейс** — поиск username, numbers, gifts с фильтрами и пагинацией
-- **Wallet** — V4R2 и V5R1 (W5)
-- **Авто-аутентификация** — получение кук через TON кошелек и Telegram
-- **Anonymous numbers** — управление кодами входа и завершение сессий
-- **Ошибки** — полная иерархия exceptions, неизвестные ошибки просьба [сообщать](https://github.com/S1qwy/fragment-api-py/issues)
+📚 [Documentation](https://fragment.s1qwy.ru) | 💬 [Telegram Chat](https://t.me/fragment_api_py)
 
 ---
 
-## Установка
+## Features
+
+- **Async-only** — `FragmentClient` with full async/await support
+- **Purchases** — Stars (50–10M), Premium (3/6/12 months), TON Ads, `payment_method="ton"|"usdt_ton"`
+- **Giveaways** — Stars and Premium for channels
+- **Bids** — `place_bid(item_type=1|3|5, slug, bid)` — if bid equals buy-now price, purchase is instant
+- **Marketplace** — search usernames, numbers, gifts with filters and pagination
+- **Wallet** — V4R2 and V5R1 (W5) support
+- **Auto-authentication** — obtain cookies via TON wallet and Telegram
+- **Anonymous numbers** — manage login codes and terminate sessions
+- **NFT Management** — withdraw gifts to wallet, transfer to other users
+- **Stars Revenue** — withdraw earned Stars to wallet
+- **Errors** — complete exception hierarchy; report unknown errors via [issues](https://github.com/S1qwy/fragment-api-py/issues)
+
+---
+
+## Installation
 
 ```bash
-pip install fragment-api-py[async]  # sync + async
+pip install fragment-api-py
 ```
 
 ---
 
-## Быстрый старт
+## Quick Start
 
 ```python
+import asyncio
 from FragmentAPI import FragmentClient
 
-client = FragmentClient(
-    seed="24 слова...",
-    cookies={"stel_ssid": "...", "stel_token": "...", ...}
-)
+async def main():
+    client = FragmentClient(
+        seed="24 words...",
+        cookies={"stel_ssid": "...", "stel_token": "...", ...}
+    )
 
-# Инфо кошелька
-w = client.get_wallet()
-print(f"{w.balance_ton} TON, {w.balance_usdt} USDT")
+    # Wallet info
+    w = await client.get_wallet()
+    print(f"{w.balance_ton} TON, {w.balance_usdt} USDT")
 
-# Покупка Stars (USDT)
-client.purchase_stars("@durov", 100, payment_method="usdt_ton")
+    # Purchase Stars (USDT)
+    await client.purchase_stars("@durov", 100, payment_method="usdt_ton")
 
-# Покупка Premium (TON, показать отправителя)
-client.purchase_premium("@durov", 6, show_sender=True)
+    # Purchase Premium (TON, show sender)
+    await client.purchase_premium("@durov", 6, show_sender=True)
 
-# Ставка на username (тип 1)
-client.place_bid(1, "username", bid=150)  # 150 TON
+    # Place bid on username (type 1)
+    await client.place_bid(1, "username", bid=150)  # 150 TON
 
-# Розыгрыш Stars в канале
-client.giveaway_stars("@channel", winners=5, amount=1000)
+    # Stars giveaway in channel
+    await client.giveaway_stars("@channel", winners=5, amount=1000)
 
-# Поиск в маркетплейсе
-items = client.search_usernames("gold", filter="sale")
+    # Search marketplace
+    items = await client.search_usernames("gold", filter="sale")
+
+asyncio.run(main())
 ```
 
-## Авто-получение кук (функция authenticate)
+## Auto-cookie Authentication (authenticate method)
 
 ```python
+import asyncio
 from FragmentAPI import FragmentClient
 
-# Автоматическая аутентификация через TON кошелек и Telegram
-cookies = FragmentClient.authenticate(
-    seed="24 слова...",
-    wallet_version="V5R1",
-    telegram_phone="+71234567890"  # или telegram_auth_data
-)
+async def main():
+    # Automatic authentication via TON wallet and Telegram
+    cookies = await FragmentClient.authenticate(
+        seed="24 words...",
+        wallet_version="V5R1",
+        telegram_phone="+71234567890"  # or telegram_auth_data
+    )
 
-client = FragmentClient(seed="...", cookies=cookies)
+    client = FragmentClient(seed="...", cookies=cookies)
+
+asyncio.run(main())
 ```
 
-## Async пример
+## Async Context Manager
 
 ```python
-from FragmentAPI import AsyncFragmentClient
+import asyncio
+from FragmentAPI import FragmentClient
 
-async with AsyncFragmentClient(seed="...", cookies=...) as client:
-    wallet = await client.get_wallet()
-    result = await client.place_bid(3, "123456789", bid=50)  # номер
+async def main():
+    async with FragmentClient(seed="...", cookies=...) as client:
+        wallet = await client.get_wallet()
+        result = await client.place_bid(3, "123456789", bid=50)  # number
+
+asyncio.run(main())
 ```
 
-## Требования
+## Requirements
 
 - Python 3.10+
-- Куки Fragment: `stel_ssid`, `stel_dt`, `stel_token`, `stel_ton_token`
-- Сид-фраза TON кошелька
+- Fragment cookies: `stel_ssid`, `stel_dt`, `stel_token`, `stel_ton_token`
+- TON wallet seed phrase
 
-## Сообщение об ошибках
+## Reporting Errors
 
-При неизвестной ошибке — создавайте [Issue](https://github.com/S1qwy/fragment-api-py/issues) или пишите в [Telegram чат](https://t.me/fragment_api_py). Это поможет пополнить базу исключений.
+For unknown errors — create an [Issue](https://github.com/S1qwy/fragment-api-py/issues) or message in [Telegram chat](https://t.me/fragment_api_py). This helps expand the exception database.
 
 ---
 
-**Лицензия MIT**
+**MIT License**
