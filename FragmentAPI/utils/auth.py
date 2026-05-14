@@ -17,11 +17,6 @@ from typing import Any
 
 import httpx
 from nacl.signing import SigningKey
-from tonsdk.contract.wallet import (
-    WalletVersionEnum,
-    Wallets,
-)
-from tonsdk.crypto import mnemonic_to_wallet_key
 
 from FragmentAPI.exceptions import (
     FragmentPageError,
@@ -31,16 +26,8 @@ from FragmentAPI.types.constants import (
     BASE_HEADERS,
     DEFAULT_TIMEOUT,
     FRAGMENT_BASE_URL,
+    WALLET_CLASSES,
 )
-
-
-def _get_wallet_enum(version: str) -> WalletVersionEnum:
-    '''Map version string to tonsdk enum.'''
-    mapping = {
-        "V4R2": WalletVersionEnum.v4r2,
-        "V5R1": WalletVersionEnum.v4r2,
-    }
-    return mapping.get(version, WalletVersionEnum.v4r2)
 
 
 def _parse_init_page(html: str) -> tuple[str, str]:
@@ -70,18 +57,19 @@ def _generate_proof(
     wallet_version: str,
     ton_proof_payload: str,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-    '''Generate account_data, device_data, and proof_data for Fragment auth.'''
-    public_key_bytes, private_key_bytes = mnemonic_to_wallet_key(mnemonic)
-
-    wallet_enum = _get_wallet_enum(wallet_version)
-    _, _, _, wallet = Wallets.from_mnemonics(mnemonic, wallet_enum, 0)
-    raw_address = wallet.address.to_string(is_user_friendly=False)
+    
+    wallet_cls = WALLET_CLASSES.get(wallet_version.upper(), WALLET_CLASSES["V5R1"])
+    
+    wallet, pub_key, priv_key, _ = wallet_cls.from_mnemonic(
+        client=None, 
+        mnemonic=" ".join(mnemonic)
+    )
+    
+    raw_address = wallet.address.to_str(is_user_friendly=False)
     workchain, addr_hash_hex = raw_address.split(":")
 
-    state_init_cell = wallet.create_state_init()["state_init"]
-    state_init_b64 = base64.b64encode(
-        state_init_cell.to_boc(False),
-    ).decode("utf-8")
+    state_init_boc = wallet.state_init.serialize().to_boc()
+    state_init_b64 = base64.b64encode(state_init_boc).decode("utf-8")
 
     domain = "fragment.com"
     timestamp = int(time.time())
@@ -101,7 +89,7 @@ def _generate_proof(
     sign_payload = b"\xff\xff" + b"ton-connect" + msg_hash
     final_hash = hashlib.sha256(sign_payload).digest()
 
-    signing_key = SigningKey(private_key_bytes[:32])
+    signing_key = SigningKey(priv_key[:32])
     signature = signing_key.sign(final_hash).signature
     signature_b64 = base64.b64encode(signature).decode("utf-8")
 
@@ -109,7 +97,7 @@ def _generate_proof(
         "address": raw_address,
         "chain": "-239",
         "walletStateInit": state_init_b64,
-        "publicKey": public_key_bytes.hex(),
+        "publicKey": pub_key.hex(),
     }
 
     device_data = {
