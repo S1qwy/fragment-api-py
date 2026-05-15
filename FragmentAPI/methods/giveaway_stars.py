@@ -20,6 +20,7 @@ from FragmentAPI.exceptions import (
 from FragmentAPI.types.constants import (
     DEVICE_FINGERPRINT,
     STARS_GIVEAWAY_PAGE,
+    STARS_GIVEAWAY_PACKAGES,
     VALID_PAYMENT_METHODS,
 )
 from FragmentAPI.types.results import GiveawayStarsResult
@@ -37,6 +38,42 @@ if TYPE_CHECKING:
     from FragmentAPI.client import FragmentClient
 
 
+def _validate_stars_giveaway(
+    amount: int,
+    winners: int,
+) -> None:
+    '''
+    Validate stars giveaway parameters.
+
+    Stars must be one of the fixed packages.
+    Winners = total_stars / 100, capped at 1..max_winners.
+    '''
+    if amount not in STARS_GIVEAWAY_PACKAGES:
+        raise ConfigError(
+            ConfigError.INVALID_GIVEAWAY_PACKAGE.format(
+                amount=amount,
+                packages=", ".join(
+                    str(p) for p in sorted(STARS_GIVEAWAY_PACKAGES)
+                ),
+            )
+        )
+
+    max_winners = amount // 100
+    if max_winners < 1:
+        max_winners = 1
+    if max_winners > 10_000:
+        max_winners = 10_000
+
+    if not isinstance(winners, int) or not (1 <= winners <= max_winners):
+        raise ConfigError(
+            ConfigError.INVALID_GIVEAWAY_WINNERS.format(
+                winners=winners,
+                max_winners=max_winners,
+                amount=amount,
+            )
+        )
+
+
 async def giveaway_stars(
     client: "FragmentClient",
     channel: str,
@@ -50,15 +87,14 @@ async def giveaway_stars(
     Args:
         client: Authenticated FragmentClient instance.
         channel: Channel username.
-        winners: Number of winners (1-5).
-        amount: Total stars amount.
+        winners: Number of winners (1 to amount // 100, max 10000).
+        amount: Total stars — must be a valid package.
         payment_method: "ton" or "usdt_ton".
 
     Returns:
         GiveawayStarsResult with transaction details.
     '''
-    if not isinstance(winners, int) or not (1 <= winners <= 5):
-        raise ConfigError(ConfigError.INVALID_WINNERS_STARS)
+    _validate_stars_giveaway(amount, winners)
     if payment_method not in VALID_PAYMENT_METHODS:
         raise ConfigError(ConfigError.INVALID_PAYMENT_METHOD)
 

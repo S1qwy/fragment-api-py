@@ -73,6 +73,22 @@ MY_NUMBERS_PAGE: str = f"{FRAGMENT_BASE_URL}/my/numbers"
 STARS_WITHDRAW_PAGE: str = f"{FRAGMENT_BASE_URL}/stars/withdraw"
 NFT_WITHDRAW_PAGE: str = f"{FRAGMENT_BASE_URL}/gift/withdraw"
 
+STARS_GIVEAWAY_PACKAGES: frozenset[int] = frozenset({
+    500,
+    1_000,
+    1_500,
+    2_500,
+    5_000,
+    10_000,
+    25_000,
+    35_000,
+    50_000,
+    100_000,
+    150_000,
+    500_000,
+    1_000_000,
+})
+
 DEVICE_FINGERPRINT: str = json.dumps(
     {
         "platform": "android",

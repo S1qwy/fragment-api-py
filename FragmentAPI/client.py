@@ -22,6 +22,7 @@ from FragmentAPI.exceptions import (
     FragmentAPIError,
     FragmentBaseError,
     UnexpectedError,
+    UserNotFoundError,
 )
 from FragmentAPI.methods.giveaway_premium import giveaway_premium
 from FragmentAPI.methods.giveaway_stars import giveaway_stars
@@ -36,6 +37,7 @@ from FragmentAPI.methods.search import (
 from FragmentAPI.methods.topup_ton import topup_ton
 from FragmentAPI.types.constants import (
     ADS_HISTORY_PAGE,
+    ADS_TOPUP_PAGE,
     DEFAULT_TIMEOUT,
     DEVICE_FINGERPRINT,
     FRAGMENT_BASE_URL,
@@ -46,11 +48,14 @@ from FragmentAPI.types.constants import (
     MY_USERNAMES_PAGE,
     NFT_WITHDRAW_PAGE,
     NUMBERS_PAGE,
+    PREMIUM_GIFT_PAGE,
+    PREMIUM_GIVEAWAY_PAGE,
     PREMIUM_HISTORY_PAGE,
     PREMIUM_PAGE,
     PROFILE_PAGE,
     REQUIRED_COOKIE_KEYS,
     SESSIONS_PAGE,
+    STARS_GIVEAWAY_PAGE,
     STARS_HISTORY_PAGE,
     STARS_PAGE,
     STARS_WITHDRAW_PAGE,
@@ -80,6 +85,7 @@ from FragmentAPI.types.results import (
     PremiumResult,
     PremiumTransaction,
     ProfileInfo,
+    RecipientInfo,
     SessionInfo,
     StarsPrice,
     StarsPrices,
@@ -128,6 +134,27 @@ from FragmentAPI.utils.wallet import (
     execute_transaction,
     fetch_wallet_info,
 )
+
+
+def _parse_recipient_from_result(
+    result: dict[str, Any],
+) -> RecipientInfo | None:
+    '''
+    Extract RecipientInfo from a Fragment search API result.
+    '''
+    found = result.get("found")
+    if not found or not found.get("recipient"):
+        return None
+
+    photo_html = found.get("photo", "")
+    photo_match = re.search(r'src="([^"]+)"', photo_html)
+
+    return RecipientInfo(
+        recipient=found["recipient"],
+        name=found.get("name", ""),
+        photo_url=photo_match.group(1) if photo_match else None,
+        myself=found.get("myself", False),
+    )
 
 
 class FragmentClient:
@@ -271,6 +298,232 @@ class FragmentClient:
             telegram_phone,
             timeout,
         )
+
+    async def get_stars_recipient(
+        self,
+        username: str,
+    ) -> RecipientInfo | None:
+        '''
+        Search for a Stars gift recipient on Fragment.
+
+        Args:
+            username: Telegram username (with or without @).
+
+        Returns:
+            RecipientInfo or None if not found.
+        '''
+        try:
+            headers = build_headers(STARS_PAGE)
+            fragment_hash = await fetch_fragment_hash(
+                self.cookies,
+                headers,
+                STARS_PAGE,
+                self.timeout,
+            )
+            async with httpx.AsyncClient(
+                cookies=self.cookies,
+                timeout=self.timeout,
+            ) as session:
+                result = await post_FragmentAPI(
+                    session,
+                    fragment_hash,
+                    headers,
+                    {
+                        "method": "searchStarsRecipient",
+                        "query": username,
+                        "quantity": "",
+                    },
+                )
+            return _parse_recipient_from_result(result)
+        except FragmentBaseError:
+            raise
+        except Exception as exc:
+            raise UnexpectedError(
+                UnexpectedError.UNEXPECTED.format(exc=exc),
+            ) from exc
+
+    async def get_premium_recipient(
+        self,
+        username: str,
+        months: int = 3,
+    ) -> RecipientInfo | None:
+        '''
+        Search for a Premium gift recipient on Fragment.
+
+        Args:
+            username: Telegram username (with or without @).
+            months: Premium duration (3, 6, or 12).
+
+        Returns:
+            RecipientInfo or None if not found.
+        '''
+        try:
+            headers = build_headers(PREMIUM_GIFT_PAGE)
+            fragment_hash = await fetch_fragment_hash(
+                self.cookies,
+                headers,
+                PREMIUM_GIFT_PAGE,
+                self.timeout,
+            )
+            async with httpx.AsyncClient(
+                cookies=self.cookies,
+                timeout=self.timeout,
+            ) as session:
+                result = await post_FragmentAPI(
+                    session,
+                    fragment_hash,
+                    headers,
+                    {
+                        "method": "searchPremiumGiftRecipient",
+                        "query": username,
+                        "months": months,
+                    },
+                )
+            return _parse_recipient_from_result(result)
+        except FragmentBaseError:
+            raise
+        except Exception as exc:
+            raise UnexpectedError(
+                UnexpectedError.UNEXPECTED.format(exc=exc),
+            ) from exc
+
+    async def get_ads_topup_recipient(
+        self,
+        username: str,
+    ) -> RecipientInfo | None:
+        '''
+        Search for an Ads top-up recipient on Fragment.
+
+        Args:
+            username: Telegram username (with or without @).
+
+        Returns:
+            RecipientInfo or None if not found.
+        '''
+        try:
+            headers = build_headers(ADS_TOPUP_PAGE)
+            fragment_hash = await fetch_fragment_hash(
+                self.cookies,
+                headers,
+                ADS_TOPUP_PAGE,
+                self.timeout,
+            )
+            async with httpx.AsyncClient(
+                cookies=self.cookies,
+                timeout=self.timeout,
+            ) as session:
+                result = await post_FragmentAPI(
+                    session,
+                    fragment_hash,
+                    headers,
+                    {
+                        "method": "searchAdsTopupRecipient",
+                        "query": username,
+                    },
+                )
+            return _parse_recipient_from_result(result)
+        except FragmentBaseError:
+            raise
+        except Exception as exc:
+            raise UnexpectedError(
+                UnexpectedError.UNEXPECTED.format(exc=exc),
+            ) from exc
+
+    async def get_giveaway_stars_recipient(
+        self,
+        channel: str,
+        winners: int = 1,
+        amount: int = 500,
+    ) -> RecipientInfo | None:
+        '''
+        Search for a Stars giveaway channel recipient on Fragment.
+
+        Args:
+            channel: Channel username (with or without @).
+            winners: Number of winners.
+            amount: Total stars amount.
+
+        Returns:
+            RecipientInfo or None if not found.
+        '''
+        try:
+            headers = build_headers(STARS_GIVEAWAY_PAGE)
+            fragment_hash = await fetch_fragment_hash(
+                self.cookies,
+                headers,
+                STARS_GIVEAWAY_PAGE,
+                self.timeout,
+            )
+            async with httpx.AsyncClient(
+                cookies=self.cookies,
+                timeout=self.timeout,
+            ) as session:
+                result = await post_FragmentAPI(
+                    session,
+                    fragment_hash,
+                    headers,
+                    {
+                        "method": "searchStarsGiveawayRecipient",
+                        "query": channel,
+                        "quantity": winners,
+                        "stars": amount,
+                    },
+                )
+            return _parse_recipient_from_result(result)
+        except FragmentBaseError:
+            raise
+        except Exception as exc:
+            raise UnexpectedError(
+                UnexpectedError.UNEXPECTED.format(exc=exc),
+            ) from exc
+
+    async def get_giveaway_premium_recipient(
+        self,
+        channel: str,
+        winners: int = 1,
+        months: int = 3,
+    ) -> RecipientInfo | None:
+        '''
+        Search for a Premium giveaway channel recipient on Fragment.
+
+        Args:
+            channel: Channel username (with or without @).
+            winners: Number of winners.
+            months: Premium duration (3, 6, or 12).
+
+        Returns:
+            RecipientInfo or None if not found.
+        '''
+        try:
+            headers = build_headers(PREMIUM_GIVEAWAY_PAGE)
+            fragment_hash = await fetch_fragment_hash(
+                self.cookies,
+                headers,
+                PREMIUM_GIVEAWAY_PAGE,
+                self.timeout,
+            )
+            async with httpx.AsyncClient(
+                cookies=self.cookies,
+                timeout=self.timeout,
+            ) as session:
+                result = await post_FragmentAPI(
+                    session,
+                    fragment_hash,
+                    headers,
+                    {
+                        "method": "searchPremiumGiveawayRecipient",
+                        "query": channel,
+                        "quantity": winners,
+                        "months": months,
+                    },
+                )
+            return _parse_recipient_from_result(result)
+        except FragmentBaseError:
+            raise
+        except Exception as exc:
+            raise UnexpectedError(
+                UnexpectedError.UNEXPECTED.format(exc=exc),
+            ) from exc
 
     async def purchase_premium(
         self,
@@ -820,7 +1073,7 @@ class FragmentClient:
             raise UnexpectedError(
                 UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
-            
+
     async def get_topup_history(
         self,
         sort: str = "asc",
@@ -873,7 +1126,7 @@ class FragmentClient:
             raise UnexpectedError(
                 UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
-            
+
     async def get_my_bids(
         self,
         item_type: str = "usernames",
@@ -926,7 +1179,7 @@ class FragmentClient:
             raise UnexpectedError(
                 UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
-            
+
     async def get_my_assets(
         self,
         item_type: str = "usernames",
@@ -941,12 +1194,6 @@ class FragmentClient:
             MyAssetsResult with items, ton_rate, and total_count.
         '''
         try:
-            from FragmentAPI.types.constants import (
-                MY_USERNAMES_PAGE,
-                MY_NUMBERS_PAGE,
-                MY_GIFTS_PAGE,
-            )
-
             page_map = {
                 "usernames": MY_USERNAMES_PAGE,
                 "numbers": MY_NUMBERS_PAGE,
@@ -980,7 +1227,7 @@ class FragmentClient:
             raise UnexpectedError(
                 UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
-    
+
     async def get_assign_accounts(
         self,
         item_type: int,
@@ -997,7 +1244,6 @@ class FragmentClient:
             AssignAccountsResult with accounts list and can_disable flag.
         '''
         try:
-            
             if item_type == 1:
                 url = MY_USERNAMES_PAGE
             else:
@@ -1024,7 +1270,7 @@ class FragmentClient:
             raise UnexpectedError(
                 UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
-    
+
     async def assign_to_telegram(
         self,
         item_type: int,
@@ -1327,20 +1573,16 @@ class FragmentClient:
         try:
             account = await build_account_info(self)
 
-            async with httpx.AsyncClient(
-                cookies=self.cookies,
-                timeout=self.timeout,
-            ) as session:
-                transaction = await self.call(
-                    "getNftTransferLink",
-                    {
-                        "account": json.dumps(account),
-                        "device": DEVICE_FINGERPRINT,
-                        "transaction": "1",
-                        "id": req_id,
-                        "show_sender": "1" if show_sender else "0",
-                    },
-                )
+            transaction = await self.call(
+                "getNftTransferLink",
+                {
+                    "account": json.dumps(account),
+                    "device": DEVICE_FINGERPRINT,
+                    "transaction": "1",
+                    "id": req_id,
+                    "show_sender": "1" if show_sender else "0",
+                },
+            )
 
             tx_result = await execute_transaction(self, transaction)
 
@@ -1539,20 +1781,20 @@ class FragmentClient:
         '''
         from FragmentAPI.methods.anonymous_number import terminate_sessions
         return await terminate_sessions(self, number)
-        
+
     async def get_nft_withdrawal_state(
         self,
         transaction: str,
     ) -> dict[str, Any]:
         '''
         Get NFT withdrawal state from Fragment page.
-    
+
         Args:
             transaction: Transaction ID for withdrawal.
-    
+
         Returns:
             Raw JSON response with state data.
-    
+
         Raises:
             FragmentAPIError: If session expired.
         '''
@@ -1565,22 +1807,22 @@ class FragmentClient:
                 page_url,
                 self.timeout,
             )
-    
+
             if data.get("mode") == "done" and "expired" in data.get("html", ""):
                 raise FragmentAPIError(
                     "NFT withdrawal session has expired. "
                     "Please start the withdrawal process again."
                 )
-    
+
             return data
-    
+
         except FragmentBaseError:
             raise
         except Exception as exc:
             raise UnexpectedError(
                 UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
-    
+
     async def init_nft_withdrawal(
         self,
         transaction: str,
@@ -1588,18 +1830,18 @@ class FragmentClient:
     ) -> NftWithdrawalInitResult:
         '''
         Initialize NFT withdrawal to wallet.
-    
+
         Args:
             transaction: Transaction ID for withdrawal.
             keep_gift: Whether to keep gift visible in Telegram profile.
-    
+
         Returns:
             NftWithdrawalInitResult with confirm_hash for next step.
         '''
         try:
             wallet_info = await self.get_wallet()
             wallet_address = wallet_info.address
-    
+
             headers = build_headers(FRAGMENT_BASE_URL)
             fragment_hash = await fetch_fragment_hash(
                 self.cookies,
@@ -1607,7 +1849,7 @@ class FragmentClient:
                 FRAGMENT_BASE_URL,
                 self.timeout,
             )
-    
+
             async with httpx.AsyncClient(
                 cookies=self.cookies,
                 timeout=self.timeout,
@@ -1623,28 +1865,27 @@ class FragmentClient:
                         "keep_gift": "1" if keep_gift else "0",
                     },
                 )
-    
+
             if result.get("error"):
                 return NftWithdrawalInitResult(
                     ok=False,
                     error=result["error"],
                 )
-    
+
             return NftWithdrawalInitResult(
                 ok=result.get("ok", False),
                 confirm_message=result.get("confirm_message"),
                 confirm_button=result.get("confirm_button"),
                 confirm_hash=result.get("confirm_hash"),
             )
-    
+
         except FragmentBaseError:
             raise
         except Exception as exc:
             raise UnexpectedError(
                 UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
-    
-    
+
     async def confirm_nft_withdrawal(
         self,
         transaction: str,
@@ -1653,19 +1894,19 @@ class FragmentClient:
     ) -> NftWithdrawalConfirmResult:
         '''
         Confirm NFT withdrawal after user approval.
-    
+
         Args:
             transaction: Transaction ID for withdrawal.
             confirm_hash: Hash from init_nft_withdrawal response.
             keep_gift: Whether to keep gift visible in Telegram profile.
-    
+
         Returns:
             NftWithdrawalConfirmResult with processing status.
         '''
         try:
             wallet_info = await self.get_wallet()
             wallet_address = wallet_info.address
-    
+
             headers = build_headers(FRAGMENT_BASE_URL)
             fragment_hash = await fetch_fragment_hash(
                 self.cookies,
@@ -1673,7 +1914,7 @@ class FragmentClient:
                 FRAGMENT_BASE_URL,
                 self.timeout,
             )
-    
+
             async with httpx.AsyncClient(
                 cookies=self.cookies,
                 timeout=self.timeout,
@@ -1690,7 +1931,7 @@ class FragmentClient:
                         "confirm_hash": confirm_hash,
                     },
                 )
-    
+
             if result.get("error"):
                 return NftWithdrawalConfirmResult(
                     ok=False,
@@ -1698,35 +1939,34 @@ class FragmentClient:
                     mode="error",
                     error=result["error"],
                 )
-    
+
             return NftWithdrawalConfirmResult(
                 ok=result.get("ok", False),
                 need_update=result.get("need_update", False),
                 mode=result.get("mode", "unknown"),
                 html=result.get("html"),
             )
-    
+
         except FragmentBaseError:
             raise
         except Exception as exc:
             raise UnexpectedError(
                 UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
-    
-    
+
     async def get_stars_withdrawal_state(
         self,
         transaction: str,
     ) -> StarsWithdrawalState:
         '''
         Get Stars withdrawal state from Fragment page.
-    
+
         Args:
             transaction: Transaction ID for withdrawal.
-    
+
         Returns:
             StarsWithdrawalState with transaction and withdrawal_data.
-    
+
         Raises:
             FragmentAPIError: If session expired or state not found.
         '''
@@ -1739,35 +1979,34 @@ class FragmentClient:
                 page_url,
                 self.timeout,
             )
-    
+
             if data.get("mode") == "done" and "expired" in data.get("html", ""):
                 raise FragmentAPIError(
                     "Stars withdrawal session has expired. "
                     "Please start the withdrawal process again."
                 )
-    
+
             state = data.get("s", {})
             tx_id = state.get("transaction")
             withdrawal_data = state.get("withdrawalData")
-    
+
             if not tx_id or not withdrawal_data:
                 raise FragmentAPIError(
                     "Failed to extract transaction or withdrawalData from response."
                 )
-    
+
             return StarsWithdrawalState(
                 transaction=tx_id,
                 withdrawal_data=withdrawal_data,
             )
-    
+
         except FragmentBaseError:
             raise
         except Exception as exc:
             raise UnexpectedError(
                 UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
-    
-    
+
     async def init_stars_withdrawal(
         self,
         transaction: str,
@@ -1775,21 +2014,18 @@ class FragmentClient:
     ) -> StarsWithdrawalInitResult:
         '''
         Initialize Stars withdrawal to wallet.
-    
+
         Args:
             transaction: Transaction ID for withdrawal.
             withdrawal_data: Withdrawal data from get_stars_withdrawal_state.
-    
+
         Returns:
             StarsWithdrawalInitResult with confirm_hash for next step.
-    
-        Raises:
-            FragmentAPIError: If amount changed or wallet address invalid.
         '''
         try:
             wallet_info = await self.get_wallet()
             wallet_address = wallet_info.address
-    
+
             headers = build_headers(FRAGMENT_BASE_URL)
             fragment_hash = await fetch_fragment_hash(
                 self.cookies,
@@ -1797,7 +2033,7 @@ class FragmentClient:
                 FRAGMENT_BASE_URL,
                 self.timeout,
             )
-    
+
             async with httpx.AsyncClient(
                 cookies=self.cookies,
                 timeout=self.timeout,
@@ -1813,28 +2049,27 @@ class FragmentClient:
                         "withdrawal_data": withdrawal_data,
                     },
                 )
-    
+
             if result.get("error"):
                 return StarsWithdrawalInitResult(
                     ok=False,
                     error=result["error"],
                 )
-    
+
             return StarsWithdrawalInitResult(
                 ok=result.get("ok", False),
                 confirm_message=result.get("confirm_message"),
                 confirm_button=result.get("confirm_button"),
                 confirm_hash=result.get("confirm_hash"),
             )
-    
+
         except FragmentBaseError:
             raise
         except Exception as exc:
             raise UnexpectedError(
                 UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
-    
-    
+
     async def confirm_stars_withdrawal(
         self,
         transaction: str,
@@ -1843,22 +2078,19 @@ class FragmentClient:
     ) -> StarsWithdrawalConfirmResult:
         '''
         Confirm Stars withdrawal after user approval.
-    
+
         Args:
             transaction: Transaction ID for withdrawal.
             withdrawal_data: Withdrawal data from get_stars_withdrawal_state.
             confirm_hash: Hash from init_stars_withdrawal response.
-    
+
         Returns:
             StarsWithdrawalConfirmResult with processing status.
-    
-        Raises:
-            FragmentAPIError: If amount changed (retry from get_stars_withdrawal_state).
         '''
         try:
             wallet_info = await self.get_wallet()
             wallet_address = wallet_info.address
-    
+
             headers = build_headers(FRAGMENT_BASE_URL)
             fragment_hash = await fetch_fragment_hash(
                 self.cookies,
@@ -1866,7 +2098,7 @@ class FragmentClient:
                 FRAGMENT_BASE_URL,
                 self.timeout,
             )
-    
+
             async with httpx.AsyncClient(
                 cookies=self.cookies,
                 timeout=self.timeout,
@@ -1883,7 +2115,7 @@ class FragmentClient:
                         "confirm_hash": confirm_hash,
                     },
                 )
-    
+
             if result.get("error"):
                 return StarsWithdrawalConfirmResult(
                     ok=False,
@@ -1891,20 +2123,21 @@ class FragmentClient:
                     mode="error",
                     error=result["error"],
                 )
-    
+
             return StarsWithdrawalConfirmResult(
                 ok=result.get("ok", False),
                 need_update=result.get("need_update", False),
                 mode=result.get("mode", "unknown"),
                 html=result.get("html"),
             )
-    
+
         except FragmentBaseError:
             raise
         except Exception as exc:
             raise UnexpectedError(
                 UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
+
     async def confirm_request(
         self,
         req_id: str,
