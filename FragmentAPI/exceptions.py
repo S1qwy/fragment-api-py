@@ -51,6 +51,15 @@ class ConfigError(ClientError):
     INVALID_PAYMENT_METHOD = (
         "Invalid payment method: must be 'ton' or 'usdt_ton'."
     )
+    INVALID_GIVEAWAY_PACKAGE = (
+        "Invalid Stars giveaway amount: {amount}. "
+        "Must be one of: {packages}."
+    )
+    INVALID_GIVEAWAY_WINNERS = (
+        "Invalid winners count: {winners}. "
+        "For {amount} stars, winners must be 1 to {max_winners} "
+        "(total_stars / 100)."
+    )
 
 
 class CookieError(ClientError):

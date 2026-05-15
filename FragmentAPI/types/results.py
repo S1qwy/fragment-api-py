@@ -64,6 +64,25 @@ class WalletInfo:
 
 
 @dataclass
+class RecipientInfo:
+    '''Resolved recipient from Fragment search.'''
+
+    recipient: str
+    name: str
+    photo_url: str | None = None
+    myself: bool = False
+
+    def __repr__(self) -> str:
+        return (
+            f"RecipientInfo("
+            f"name='{self.name}', "
+            f"recipient='{self.recipient[:24]}...', "
+            f"myself={self.myself}"
+            f")"
+        )
+
+
+@dataclass
 class PremiumResult:
     '''Result of a successful Telegram Premium gift.'''
 
@@ -539,6 +558,7 @@ class PremiumTransaction:
     price_ton: str
     date: str
 
+
 @dataclass
 class TopupTransaction:
     '''Single topup transaction from Ads history.'''
@@ -555,6 +575,7 @@ class TopupTransaction:
             f"date='{self.date}'"
             f")"
         )
+
 
 @dataclass
 class ProfileInfo:
@@ -701,7 +722,12 @@ class AssignAccountsResult:
     can_disable: bool
 
     def __repr__(self) -> str:
-        return f"AssignAccountsResult(accounts={len(self.accounts)}, can_disable={self.can_disable})"
+        return (
+            f"AssignAccountsResult("
+            f"accounts={len(self.accounts)}, "
+            f"can_disable={self.can_disable}"
+            f")"
+        )
 
 
 @dataclass

@@ -22,6 +22,10 @@ from ton_core import (
 )
 from tonutils.clients import TonapiClient
 from tonutils.exceptions import ProviderResponseError
+from tonutils.contracts.wallet import (
+    WalletV4R2,
+    WalletV5R1,
+)
 
 from FragmentAPI.exceptions import (
     ConfirmationTimeout,

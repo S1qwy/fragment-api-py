@@ -1,5 +1,5 @@
 '''
-Fragment API Python Library v6.0.0
+Fragment API Python Library v6.1.0
 
 Async-only client for Fragment.com API.
 '''
@@ -32,6 +32,7 @@ from FragmentAPI.types import (
     PremiumTransaction,
     ProfileInfo,
     ProxyError,
+    RecipientInfo,
     SessionInfo,
     StarsPrice,
     StarsPrices,
@@ -48,7 +49,7 @@ from FragmentAPI.types import (
     WalletInfo,
 )
 
-__version__ = "v6.0.0"
+__version__ = "v6.1.0"
 __author__ = "S1qwy"
 __email__ = "S1qwy@internet.ru"
 
@@ -81,6 +82,7 @@ __all__ = [
     "PremiumTransaction",
     "ProfileInfo",
     "ProxyError",
+    "RecipientInfo",
     "SessionInfo",
     "StarsPrice",
     "StarsPrices",
