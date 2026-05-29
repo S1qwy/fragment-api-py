@@ -1,7 +1,8 @@
 '''
-Fragment API Python Library dev
+Fragment API Python Library v7.0.0
 
 Async-only client for Fragment.com API.
+Supports TON, USDT-TON and EVM (USDT/USDC on ETH/BASE/POL) payments.
 '''
 
 from FragmentAPI.client import FragmentClient
@@ -12,6 +13,8 @@ from FragmentAPI.types import (
     BidResult,
     ConfigError,
     CookieError,
+    EvmInvoice,
+    EvmPaymentResult,
     FragmentAPIError,
     FragmentBaseError,
     FragmentPageError,
@@ -49,7 +52,7 @@ from FragmentAPI.types import (
     WalletInfo,
 )
 
-__version__ = "dev"
+__version__ = "v7.0.0"
 __author__ = "S1qwy"
 __email__ = "S1qwy@internet.ru"
 
@@ -62,6 +65,8 @@ __all__ = [
     "BidResult",
     "ConfigError",
     "CookieError",
+    "EvmInvoice",
+    "EvmPaymentResult",
     "FragmentAPIError",
     "FragmentBaseError",
     "FragmentPageError",

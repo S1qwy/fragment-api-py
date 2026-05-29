@@ -1,8 +1,6 @@
 '''
-Async Fragment API client with seqno/balance confirmation and confirmReq.
-
-Single async client for Fragment.com API.
-All sync code removed. Uses httpx.AsyncClient throughout.
+Async Fragment API client with seqno/balance confirmation, confirmReq
+and EVM payment method support.
 '''
 
 from __future__ import annotations
@@ -68,6 +66,7 @@ from FragmentAPI.types.results import (
     AssignResult,
     AssignAccountsResult,
     BidResult,
+    EvmPaymentResult,
     GiftInfo,
     GiftsResult,
     GiveawayPremiumResult,
@@ -129,6 +128,7 @@ from FragmentAPI.utils.http import (
     fetch_page_ajax,
     post_FragmentAPI,
 )
+from FragmentAPI.utils.stats import StatsCollector, tracked
 from FragmentAPI.utils.wallet import (
     build_account_info,
     execute_transaction,
@@ -162,7 +162,8 @@ class FragmentClient:
     Async client for the Fragment.com API.
 
     All operations are async/await.
-    Supports seqno/balance transaction confirmation and confirmReq.
+    Supports seqno/balance transaction confirmation, confirmReq
+    and EVM payment methods (USDT/USDC on ETH/BASE/POL).
 
     Args:
         seed: 24-word mnemonic phrase for the TON wallet.
@@ -170,6 +171,9 @@ class FragmentClient:
         api_key: API key for TON blockchain interactions (optional).
         wallet_version: Wallet contract version — "V4R2" or "V5R1" (default).
         timeout: HTTP request timeout in seconds. Defaults to 30.0.
+        stats_enabled: Send anonymous usage statistics to help improve
+            the library (no sensitive data is ever sent). Defaults to True.
+            Can also be disabled via FRAGMENT_DISABLE_STATS=1 env var.
 
     Raises:
         ConfigError: If seed or wallet_version are missing or invalid.
@@ -194,6 +198,7 @@ class FragmentClient:
         api_key: str | None = None,
         wallet_version: str = "V5R1",
         timeout: float = DEFAULT_TIMEOUT,
+        stats_enabled: bool = True,
     ) -> None:
         missing = [
             name
@@ -263,14 +268,20 @@ class FragmentClient:
         self.seed: str = seed.strip()
         self.api_key: str = (api_key or TONAPI_DEFAULT_KEY).strip()
         self.cookies: dict = cast(dict, cookies)
-        self.wallet_version: WalletVersionType = version  # type: ignore[assignment]
+        self.wallet_version: WalletVersionType = version
         self.timeout: float = timeout
 
+        self._stats = StatsCollector(
+            enabled=stats_enabled,
+            wallet_version=version,
+        )
+
     async def __aenter__(self) -> "FragmentClient":
+        self._stats.record_lifecycle("open")
         return self
 
     async def __aexit__(self, *_: object) -> None:
-        pass
+        self._stats.record_lifecycle("close")
 
     def __repr__(self) -> str:
         return (
@@ -299,18 +310,13 @@ class FragmentClient:
             timeout,
         )
 
+    @tracked("get_stars_recipient")
     async def get_stars_recipient(
         self,
         username: str,
     ) -> RecipientInfo | None:
         '''
         Search for a Stars gift recipient on Fragment.
-
-        Args:
-            username: Telegram username (with or without @).
-
-        Returns:
-            RecipientInfo or None if not found.
         '''
         try:
             headers = build_headers(STARS_PAGE)
@@ -342,6 +348,7 @@ class FragmentClient:
                 UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
 
+    @tracked("get_premium_recipient")
     async def get_premium_recipient(
         self,
         username: str,
@@ -349,13 +356,6 @@ class FragmentClient:
     ) -> RecipientInfo | None:
         '''
         Search for a Premium gift recipient on Fragment.
-
-        Args:
-            username: Telegram username (with or without @).
-            months: Premium duration (3, 6, or 12).
-
-        Returns:
-            RecipientInfo or None if not found.
         '''
         try:
             headers = build_headers(PREMIUM_GIFT_PAGE)
@@ -387,18 +387,13 @@ class FragmentClient:
                 UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
 
+    @tracked("get_ads_topup_recipient")
     async def get_ads_topup_recipient(
         self,
         username: str,
     ) -> RecipientInfo | None:
         '''
         Search for an Ads top-up recipient on Fragment.
-
-        Args:
-            username: Telegram username (with or without @).
-
-        Returns:
-            RecipientInfo or None if not found.
         '''
         try:
             headers = build_headers(ADS_TOPUP_PAGE)
@@ -429,6 +424,7 @@ class FragmentClient:
                 UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
 
+    @tracked("get_giveaway_stars_recipient")
     async def get_giveaway_stars_recipient(
         self,
         channel: str,
@@ -437,14 +433,6 @@ class FragmentClient:
     ) -> RecipientInfo | None:
         '''
         Search for a Stars giveaway channel recipient on Fragment.
-
-        Args:
-            channel: Channel username (with or without @).
-            winners: Number of winners.
-            amount: Total stars amount.
-
-        Returns:
-            RecipientInfo or None if not found.
         '''
         try:
             headers = build_headers(STARS_GIVEAWAY_PAGE)
@@ -477,6 +465,7 @@ class FragmentClient:
                 UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
 
+    @tracked("get_giveaway_premium_recipient")
     async def get_giveaway_premium_recipient(
         self,
         channel: str,
@@ -485,14 +474,6 @@ class FragmentClient:
     ) -> RecipientInfo | None:
         '''
         Search for a Premium giveaway channel recipient on Fragment.
-
-        Args:
-            channel: Channel username (with or without @).
-            winners: Number of winners.
-            months: Premium duration (3, 6, or 12).
-
-        Returns:
-            RecipientInfo or None if not found.
         '''
         try:
             headers = build_headers(PREMIUM_GIVEAWAY_PAGE)
@@ -525,24 +506,24 @@ class FragmentClient:
                 UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
 
+    @tracked("purchase_premium")
     async def purchase_premium(
         self,
         username: str,
         months: int,
         show_sender: bool = True,
         payment_method: str = "ton",
-    ) -> PremiumResult:
+    ) -> PremiumResult | EvmPaymentResult:
         '''
         Gift Telegram Premium to a user.
 
-        Args:
-            username: Recipient Telegram username (with or without @).
-            months: Duration — 3, 6, or 12.
-            show_sender: Show your name as the sender.
-            payment_method: "ton" or "usdt_ton".
+        Supports TON, USDT (TON), and EVM-based payments (USDT/USDC on
+        ETH/BASE/POL).
 
-        Returns:
-            PremiumResult with transaction_id, username, and amount.
+        For TON-based payment methods returns PremiumResult.
+        For EVM payment methods returns EvmPaymentResult with invoice
+        details. The caller must implement their own EVM wallet logic
+        to complete the payment.
         '''
         return await purchase_premium(
             self,
@@ -552,24 +533,20 @@ class FragmentClient:
             payment_method,
         )
 
+    @tracked("purchase_stars")
     async def purchase_stars(
         self,
         username: str,
         amount: int,
         show_sender: bool = True,
         payment_method: str = "ton",
-    ) -> StarsResult:
+    ) -> StarsResult | EvmPaymentResult:
         '''
         Send Telegram Stars to a user.
 
-        Args:
-            username: Recipient Telegram username (with or without @).
-            amount: Number of stars — integer from 50 to 10_000_000.
-            show_sender: Show your name as the gift sender.
-            payment_method: "ton" or "usdt_ton".
-
-        Returns:
-            StarsResult with transaction_id, username, and amount.
+        For TON-based payment methods returns StarsResult.
+        For EVM payment methods returns EvmPaymentResult with invoice
+        details. The caller must complete the EVM payment manually.
         '''
         return await purchase_stars(
             self,
@@ -579,6 +556,7 @@ class FragmentClient:
             payment_method,
         )
 
+    @tracked("topup_ton")
     async def topup_ton(
         self,
         username: str,
@@ -587,14 +565,6 @@ class FragmentClient:
     ) -> AdsTopupResult:
         '''
         Top up TON to a recipient Telegram Ads balance.
-
-        Args:
-            username: Recipient Telegram username.
-            amount: Amount in TON — integer from 1 to 1_000_000_000.
-            show_sender: Show your name as the sender.
-
-        Returns:
-            AdsTopupResult with transaction_id, username, and amount.
         '''
         return await topup_ton(
             self,
@@ -603,13 +573,14 @@ class FragmentClient:
             show_sender,
         )
 
+    @tracked("giveaway_stars")
     async def giveaway_stars(
         self,
         channel: str,
         winners: int,
         amount: int,
         payment_method: str = "ton",
-    ) -> GiveawayStarsResult:
+    ) -> GiveawayStarsResult | EvmPaymentResult:
         '''
         Run a Telegram Stars giveaway for a channel.
         '''
@@ -621,13 +592,14 @@ class FragmentClient:
             payment_method,
         )
 
+    @tracked("giveaway_premium")
     async def giveaway_premium(
         self,
         channel: str,
         winners: int,
         months: int = 3,
         payment_method: str = "ton",
-    ) -> GiveawayPremiumResult:
+    ) -> GiveawayPremiumResult | EvmPaymentResult:
         '''
         Run a Telegram Premium giveaway for a channel.
         '''
@@ -639,6 +611,7 @@ class FragmentClient:
             payment_method,
         )
 
+    @tracked("place_bid")
     async def place_bid(
         self,
         item_type: int,
@@ -647,14 +620,6 @@ class FragmentClient:
     ) -> BidResult:
         '''
         Place a bid or buy-now on a Fragment marketplace item.
-
-        Args:
-            item_type: 1 (username), 3 (number), 5 (gift).
-            slug: Item identifier.
-            bid: Bid amount in TON (integer).
-
-        Returns:
-            BidResult with transaction details.
         '''
         return await place_bid(
             self,
@@ -663,12 +628,14 @@ class FragmentClient:
             bid,
         )
 
+    @tracked("get_wallet")
     async def get_wallet(self) -> WalletInfo:
         '''
         Return address, state, TON and USDT balance of the wallet.
         '''
         return await fetch_wallet_info(self)
 
+    @tracked("search_usernames")
     async def search_usernames(
         self,
         query: str = "",
@@ -687,6 +654,7 @@ class FragmentClient:
             offset_id=offset_id,
         )
 
+    @tracked("search_numbers")
     async def search_numbers(
         self,
         query: str = "",
@@ -705,6 +673,7 @@ class FragmentClient:
             offset_id=offset_id,
         )
 
+    @tracked("search_gifts")
     async def search_gifts(
         self,
         query: str = "",
@@ -729,6 +698,7 @@ class FragmentClient:
             offset=offset,
         )
 
+    @tracked("get_username_info")
     async def get_username_info(
         self,
         username: str,
@@ -788,6 +758,7 @@ class FragmentClient:
                 UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
 
+    @tracked("get_number_info")
     async def get_number_info(
         self,
         number: str,
@@ -851,6 +822,7 @@ class FragmentClient:
                 UnexpectedError.UNEXPECTED.format(exc=exc),
             ) from exc
 
+    @tracked("get_gift_info")
     async def get_gift_info(
         self,
         slug: str,
@@ -930,9 +902,7 @@ class FragmentClient:
             ) from exc
 
     async def get_stars_prices(self) -> StarsPrices:
-        '''
-        Get all available Telegram Stars package prices.
-        '''
+        '''Get all available Telegram Stars package prices.'''
         try:
             headers = build_headers(STARS_PAGE)
             data = await fetch_page_ajax(
@@ -959,9 +929,7 @@ class FragmentClient:
         self,
         quantity: int,
     ) -> StarsPrice:
-        '''
-        Get price for a specific quantity of Telegram Stars.
-        '''
+        '''Get price for a specific quantity of Telegram Stars.'''
         try:
             headers = build_headers(STARS_PAGE)
             fragment_hash = await fetch_fragment_hash(
@@ -999,9 +967,7 @@ class FragmentClient:
             ) from exc
 
     async def get_premium_prices(self) -> PremiumPrices:
-        '''
-        Get Telegram Premium subscription prices.
-        '''
+        '''Get Telegram Premium subscription prices.'''
         try:
             headers = build_headers(PREMIUM_PAGE)
             data = await fetch_page_ajax(
@@ -1028,9 +994,7 @@ class FragmentClient:
         self,
         sort: str = "desc",
     ) -> list[StarsTransaction]:
-        '''
-        Get Telegram Stars transaction history.
-        '''
+        '''Get Telegram Stars transaction history.'''
         try:
             url = f"{STARS_HISTORY_PAGE}?sort={sort}"
             headers = build_headers(STARS_HISTORY_PAGE)
@@ -1053,9 +1017,7 @@ class FragmentClient:
         self,
         sort: str = "desc",
     ) -> list[PremiumTransaction]:
-        '''
-        Get Telegram Premium transaction history.
-        '''
+        '''Get Telegram Premium transaction history.'''
         try:
             url = f"{PREMIUM_HISTORY_PAGE}?sort={sort}"
             headers = build_headers(PREMIUM_HISTORY_PAGE)
@@ -1077,16 +1039,8 @@ class FragmentClient:
     async def get_topup_history(
         self,
         sort: str = "asc",
-    ) -> list["TopupTransaction"]:
-        '''
-        Get Telegram Ads topup transaction history.
-
-        Args:
-            sort: "asc" (oldest first) or "desc" (newest first).
-
-        Returns:
-            List of TopupTransaction objects.
-        '''
+    ) -> list[TopupTransaction]:
+        '''Get Telegram Ads topup transaction history.'''
         try:
             url = f"{ADS_HISTORY_PAGE}?type=topup&sort={sort}"
             headers = build_headers(ADS_HISTORY_PAGE)
@@ -1106,9 +1060,7 @@ class FragmentClient:
             ) from exc
 
     async def get_profile(self) -> ProfileInfo:
-        '''
-        Get Fragment account profile information.
-        '''
+        '''Get Fragment account profile information.'''
         try:
             headers = build_headers(PROFILE_PAGE)
             data = await fetch_page_ajax(
@@ -1131,17 +1083,8 @@ class FragmentClient:
         self,
         item_type: str = "usernames",
         sort: str = "desc",
-    ) -> "MyBidsResult":
-        '''
-        Get My Bid History from Fragment.
-
-        Args:
-            item_type: "usernames", "numbers", or "gifts".
-            sort: "asc" (oldest first) or "desc" (newest first).
-
-        Returns:
-            MyBidsResult with items, ton_rate, and total_count.
-        '''
+    ) -> MyBidsResult:
+        '''Get My Bid History from Fragment.'''
         try:
             if item_type not in ("usernames", "numbers", "gifts"):
                 raise ConfigError(f"Invalid item_type: {item_type}")
@@ -1184,15 +1127,7 @@ class FragmentClient:
         self,
         item_type: str = "usernames",
     ) -> MyAssetsResult:
-        '''
-        Get My Assets from Fragment.
-
-        Args:
-            item_type: "usernames", "numbers", or "gifts".
-
-        Returns:
-            MyAssetsResult with items, ton_rate, and total_count.
-        '''
+        '''Get My Assets from Fragment.'''
         try:
             page_map = {
                 "usernames": MY_USERNAMES_PAGE,
@@ -1232,17 +1167,8 @@ class FragmentClient:
         self,
         item_type: int,
         slug: str,
-    ) -> "AssignAccountsResult":
-        '''
-        Get list of Telegram accounts available for assignment.
-
-        Args:
-            item_type: 1 (username), 5 (gift).
-            slug: Item identifier.
-
-        Returns:
-            AssignAccountsResult with accounts list and can_disable flag.
-        '''
+    ) -> AssignAccountsResult:
+        '''Get list of Telegram accounts available for assignment.'''
         try:
             if item_type == 1:
                 url = MY_USERNAMES_PAGE
@@ -1277,17 +1203,7 @@ class FragmentClient:
         slug: str,
         assign_to: str | None = None,
     ) -> AssignResult:
-        '''
-        Assign a username or gift to a Telegram account.
-
-        Args:
-            item_type: 1 (username), 5 (gift).
-            slug: Item identifier.
-            assign_to: Telegram account ID or None to remove.
-
-        Returns:
-            AssignResult with status and optional payment info.
-        '''
+        '''Assign a username or gift to a Telegram account.'''
         try:
             url = f"{FRAGMENT_BASE_URL}/" + (
                 f"username/{slug}" if item_type == 1 else f"gift/{slug}"
@@ -1349,18 +1265,7 @@ class FragmentClient:
         min_amount: int,
         max_amount: int = 0,
     ) -> StartAuctionResult:
-        '''
-        Start an auction for a username or gift.
-
-        Args:
-            item_type: 1 (username), 5 (gift).
-            slug: Item identifier.
-            min_amount: Minimum bid in TON.
-            max_amount: Maximum price (buy now), 0 for auction only.
-
-        Returns:
-            StartAuctionResult with req_id.
-        '''
+        '''Start an auction for a username or gift.'''
         try:
             url = f"{FRAGMENT_BASE_URL}/" + (
                 f"username/{slug}" if item_type == 1 else f"gift/{slug}"
@@ -1431,32 +1336,14 @@ class FragmentClient:
         slug: str,
         price: int,
     ) -> StartAuctionResult:
-        '''
-        Sell a username or gift at a fixed price.
-
-        Args:
-            item_type: 1 (username), 5 (gift).
-            slug: Item identifier.
-            price: Fixed price in TON.
-
-        Returns:
-            StartAuctionResult with req_id.
-        '''
+        '''Sell a username or gift at a fixed price.'''
         return await self.start_auction(item_type, slug, price, price)
 
     async def search_nft_transfer_recipient(
         self,
         query: str,
     ) -> NftTransferRecipient | None:
-        '''
-        Search for a recipient to transfer NFT.
-
-        Args:
-            query: Telegram username.
-
-        Returns:
-            NftTransferRecipient or None if not found.
-        '''
+        '''Search for a recipient to transfer NFT.'''
         try:
             headers = build_headers(FRAGMENT_BASE_URL)
             fragment_hash = await fetch_fragment_hash(
@@ -1503,16 +1390,7 @@ class FragmentClient:
         slug: str,
         recipient: str,
     ) -> NftTransferRequest:
-        '''
-        Initialize NFT transfer request.
-
-        Args:
-            slug: Gift slug.
-            recipient: Recipient ID from search.
-
-        Returns:
-            NftTransferRequest with req_id and content.
-        '''
+        '''Initialize NFT transfer request.'''
         try:
             url = f"{FRAGMENT_BASE_URL}/gift/{slug}/transfer"
             headers = build_headers(url)
@@ -1560,16 +1438,7 @@ class FragmentClient:
         req_id: str,
         show_sender: bool = True,
     ) -> TransactionResult:
-        '''
-        Execute NFT transfer.
-
-        Args:
-            req_id: Request ID from init_nft_transfer.
-            show_sender: Show your name to the recipient.
-
-        Returns:
-            TransactionResult with transaction details.
-        '''
+        '''Execute NFT transfer.'''
         try:
             account = await build_account_info(self)
 
@@ -1601,9 +1470,7 @@ class FragmentClient:
             ) from exc
 
     async def get_sessions(self) -> list[SessionInfo]:
-        '''
-        Get active Fragment sessions.
-        '''
+        '''Get active Fragment sessions.'''
         try:
             headers = build_headers(SESSIONS_PAGE)
             data = await fetch_page_ajax(
@@ -1625,9 +1492,7 @@ class FragmentClient:
         self,
         session_id: str,
     ) -> bool:
-        '''
-        Terminate a Fragment session by ID.
-        '''
+        '''Terminate a Fragment session by ID.'''
         try:
             headers = build_headers(SESSIONS_PAGE)
             fragment_hash = await fetch_fragment_hash(
@@ -1663,9 +1528,7 @@ class FragmentClient:
         username: str,
         offset_id: str,
     ) -> dict[str, Any]:
-        '''
-        Load more bid/orders history for an item.
-        '''
+        '''Load more bid/orders history for an item.'''
         try:
             if item_type == 1:
                 url = f"{FRAGMENT_BASE_URL}/username/{username}"
@@ -1710,9 +1573,7 @@ class FragmentClient:
         username: str,
         offset_id: str,
     ) -> dict[str, Any]:
-        '''
-        Load more ownership history for an item.
-        '''
+        '''Load more ownership history for an item.'''
         try:
             if item_type == 1:
                 url = f"{FRAGMENT_BASE_URL}/username/{username}"
@@ -1755,9 +1616,7 @@ class FragmentClient:
         self,
         number: str,
     ) -> LoginCodeResult:
-        '''
-        Fetch the current pending login code for an anonymous number.
-        '''
+        '''Fetch the current pending login code for an anonymous number.'''
         from FragmentAPI.methods.anonymous_number import get_login_code
         return await get_login_code(self, number)
 
@@ -1766,9 +1625,7 @@ class FragmentClient:
         number: str,
         can_receive: bool,
     ) -> None:
-        '''
-        Enable or disable login code delivery for an anonymous number.
-        '''
+        '''Enable or disable login code delivery for an anonymous number.'''
         from FragmentAPI.methods.anonymous_number import toggle_login_codes
         return await toggle_login_codes(self, number, can_receive)
 
@@ -1776,9 +1633,7 @@ class FragmentClient:
         self,
         number: str,
     ) -> TerminateSessionsResult:
-        '''
-        Terminate all active Telegram sessions for an anonymous number.
-        '''
+        '''Terminate all active Telegram sessions for an anonymous number.'''
         from FragmentAPI.methods.anonymous_number import terminate_sessions
         return await terminate_sessions(self, number)
 
@@ -1786,18 +1641,7 @@ class FragmentClient:
         self,
         transaction: str,
     ) -> dict[str, Any]:
-        '''
-        Get NFT withdrawal state from Fragment page.
-
-        Args:
-            transaction: Transaction ID for withdrawal.
-
-        Returns:
-            Raw JSON response with state data.
-
-        Raises:
-            FragmentAPIError: If session expired.
-        '''
+        '''Get NFT withdrawal state from Fragment page.'''
         try:
             page_url = f"{NFT_WITHDRAW_PAGE}?transaction={transaction}"
             headers = build_headers(page_url)
@@ -1828,16 +1672,7 @@ class FragmentClient:
         transaction: str,
         keep_gift: bool = False,
     ) -> NftWithdrawalInitResult:
-        '''
-        Initialize NFT withdrawal to wallet.
-
-        Args:
-            transaction: Transaction ID for withdrawal.
-            keep_gift: Whether to keep gift visible in Telegram profile.
-
-        Returns:
-            NftWithdrawalInitResult with confirm_hash for next step.
-        '''
+        '''Initialize NFT withdrawal to wallet.'''
         try:
             wallet_info = await self.get_wallet()
             wallet_address = wallet_info.address
@@ -1892,17 +1727,7 @@ class FragmentClient:
         confirm_hash: str,
         keep_gift: bool = False,
     ) -> NftWithdrawalConfirmResult:
-        '''
-        Confirm NFT withdrawal after user approval.
-
-        Args:
-            transaction: Transaction ID for withdrawal.
-            confirm_hash: Hash from init_nft_withdrawal response.
-            keep_gift: Whether to keep gift visible in Telegram profile.
-
-        Returns:
-            NftWithdrawalConfirmResult with processing status.
-        '''
+        '''Confirm NFT withdrawal after user approval.'''
         try:
             wallet_info = await self.get_wallet()
             wallet_address = wallet_info.address
@@ -1958,18 +1783,7 @@ class FragmentClient:
         self,
         transaction: str,
     ) -> StarsWithdrawalState:
-        '''
-        Get Stars withdrawal state from Fragment page.
-
-        Args:
-            transaction: Transaction ID for withdrawal.
-
-        Returns:
-            StarsWithdrawalState with transaction and withdrawal_data.
-
-        Raises:
-            FragmentAPIError: If session expired or state not found.
-        '''
+        '''Get Stars withdrawal state from Fragment page.'''
         try:
             page_url = f"{STARS_WITHDRAW_PAGE}?transaction={transaction}"
             headers = build_headers(page_url)
@@ -2012,16 +1826,7 @@ class FragmentClient:
         transaction: str,
         withdrawal_data: str,
     ) -> StarsWithdrawalInitResult:
-        '''
-        Initialize Stars withdrawal to wallet.
-
-        Args:
-            transaction: Transaction ID for withdrawal.
-            withdrawal_data: Withdrawal data from get_stars_withdrawal_state.
-
-        Returns:
-            StarsWithdrawalInitResult with confirm_hash for next step.
-        '''
+        '''Initialize Stars withdrawal to wallet.'''
         try:
             wallet_info = await self.get_wallet()
             wallet_address = wallet_info.address
@@ -2076,17 +1881,7 @@ class FragmentClient:
         withdrawal_data: str,
         confirm_hash: str,
     ) -> StarsWithdrawalConfirmResult:
-        '''
-        Confirm Stars withdrawal after user approval.
-
-        Args:
-            transaction: Transaction ID for withdrawal.
-            withdrawal_data: Withdrawal data from get_stars_withdrawal_state.
-            confirm_hash: Hash from init_stars_withdrawal response.
-
-        Returns:
-            StarsWithdrawalConfirmResult with processing status.
-        '''
+        '''Confirm Stars withdrawal after user approval.'''
         try:
             wallet_info = await self.get_wallet()
             wallet_address = wallet_info.address
@@ -2144,20 +1939,7 @@ class FragmentClient:
         boc: str,
         referer: str = "stars/buy",
     ) -> dict[str, Any]:
-        '''
-        Send confirmReq to Fragment after broadcasting a TON transaction.
-
-        Notifies Fragment that the transaction BOC has been sent,
-        which speeds up Stars/Premium delivery from ~30s to ~5s.
-
-        Args:
-            req_id: Request ID from initBuyStarsRequest or similar.
-            boc: Signed transaction BOC in base64 format.
-            referer: Fragment page path for the referer header.
-
-        Returns:
-            Raw Fragment API response dict.
-        '''
+        '''Send confirmReq to Fragment after broadcasting a TON transaction.'''
         try:
             page_url = f"{FRAGMENT_BASE_URL}/{referer}"
             headers = build_headers(page_url)
@@ -2195,17 +1977,7 @@ class FragmentClient:
         *,
         page_url: str = FRAGMENT_BASE_URL,
     ) -> dict[str, Any]:
-        '''
-        Send a raw request to the Fragment API.
-
-        Args:
-            method: Fragment API method name.
-            data: Additional form-data fields.
-            page_url: Fragment page URL for API hash derivation.
-
-        Returns:
-            Raw parsed JSON response as dict.
-        '''
+        '''Send a raw request to the Fragment API.'''
         headers = build_headers(page_url)
         async with httpx.AsyncClient(
             cookies=self.cookies,

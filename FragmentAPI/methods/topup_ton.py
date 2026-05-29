@@ -1,5 +1,5 @@
 '''
-TON Ads top-up method — async only with confirmReq.
+TON Ads top-up method — async only with confirmReq support.
 '''
 
 from __future__ import annotations
@@ -44,15 +44,6 @@ async def topup_ton(
 ) -> AdsTopupResult:
     '''
     Top up TON to a recipient Telegram Ads balance.
-
-    Args:
-        client: Authenticated FragmentClient instance.
-        username: Recipient Telegram username.
-        amount: Amount in TON — 1 to 1000000000.
-        show_sender: Show your name as the sender.
-
-    Returns:
-        AdsTopupResult with transaction_id, username, and amount.
     '''
     if not isinstance(amount, int) or not (1 <= amount <= 1000000000):
         raise ConfigError(ConfigError.INVALID_TON_AMOUNT)
