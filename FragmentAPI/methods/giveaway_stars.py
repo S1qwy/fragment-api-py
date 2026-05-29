@@ -1,5 +1,5 @@
 '''
-Stars giveaway method — async only.
+Stars giveaway method — async only with EVM support.
 '''
 
 from __future__ import annotations
@@ -19,11 +19,17 @@ from FragmentAPI.exceptions import (
 )
 from FragmentAPI.types.constants import (
     DEVICE_FINGERPRINT,
+    EVM_PAYMENT_METHODS,
     STARS_GIVEAWAY_PAGE,
     STARS_GIVEAWAY_PACKAGES,
+    TON_PAYMENT_METHODS,
     VALID_PAYMENT_METHODS,
 )
-from FragmentAPI.types.results import GiveawayStarsResult
+from FragmentAPI.types.results import (
+    EvmPaymentResult,
+    GiveawayStarsResult,
+)
+from FragmentAPI.utils.evm import fetch_evm_invoice
 from FragmentAPI.utils.http import (
     build_headers,
     fetch_fragment_hash,
@@ -42,12 +48,7 @@ def _validate_stars_giveaway(
     amount: int,
     winners: int,
 ) -> None:
-    '''
-    Validate stars giveaway parameters.
-
-    Stars must be one of the fixed packages.
-    Winners = total_stars / 100, capped at 1..max_winners.
-    '''
+    '''Validate stars giveaway parameters.'''
     if amount not in STARS_GIVEAWAY_PACKAGES:
         raise ConfigError(
             ConfigError.INVALID_GIVEAWAY_PACKAGE.format(
@@ -80,20 +81,8 @@ async def giveaway_stars(
     winners: int,
     amount: int,
     payment_method: str = "ton",
-) -> GiveawayStarsResult:
-    '''
-    Run a Telegram Stars giveaway for a channel.
-
-    Args:
-        client: Authenticated FragmentClient instance.
-        channel: Channel username.
-        winners: Number of winners (1 to amount // 100, max 10000).
-        amount: Total stars — must be a valid package.
-        payment_method: "ton" or "usdt_ton".
-
-    Returns:
-        GiveawayStarsResult with transaction details.
-    '''
+) -> GiveawayStarsResult | EvmPaymentResult:
+    '''Run a Telegram Stars giveaway for a channel.'''
     _validate_stars_giveaway(amount, winners)
     if payment_method not in VALID_PAYMENT_METHODS:
         raise ConfigError(ConfigError.INVALID_PAYMENT_METHOD)
@@ -167,6 +156,29 @@ async def giveaway_stars(
             )
             if transaction.get("need_verify"):
                 raise VerificationError(VerificationError.KYC_REQUIRED)
+
+        if payment_method in EVM_PAYMENT_METHODS or transaction.get("evm"):
+            invoice = await fetch_evm_invoice(
+                cookies=client.cookies,
+                page_path="/stars/giveaway",
+                recipient=recipient,
+                payment_method=payment_method,
+                quantity=winners,
+                amount=amount,
+                timeout=client.timeout,
+            )
+            return EvmPaymentResult(
+                item_kind="giveaway_stars",
+                target=channel,
+                amount=amount,
+                payment_method=payment_method,
+                invoice=invoice,
+            )
+
+        if payment_method not in TON_PAYMENT_METHODS:
+            raise FragmentAPIError(
+                f"Unsupported payment_method flow: {payment_method}"
+            )
 
         tx_result = await execute_transaction(client, transaction)
 

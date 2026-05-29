@@ -1,5 +1,5 @@
 '''
-Telegram Stars purchase method — async only with confirmReq.
+Telegram Stars purchase method — async only with confirmReq and EVM support.
 '''
 
 from __future__ import annotations
@@ -19,10 +19,16 @@ from FragmentAPI.exceptions import (
 )
 from FragmentAPI.types.constants import (
     DEVICE_FINGERPRINT,
+    EVM_PAYMENT_METHODS,
     STARS_PAGE,
+    TON_PAYMENT_METHODS,
     VALID_PAYMENT_METHODS,
 )
-from FragmentAPI.types.results import StarsResult
+from FragmentAPI.types.results import (
+    EvmPaymentResult,
+    StarsResult,
+)
+from FragmentAPI.utils.evm import fetch_evm_invoice
 from FragmentAPI.utils.http import (
     build_headers,
     fetch_fragment_hash,
@@ -43,7 +49,7 @@ async def purchase_stars(
     amount: int,
     show_sender: bool = True,
     payment_method: str = "ton",
-) -> StarsResult:
+) -> StarsResult | EvmPaymentResult:
     '''
     Send Telegram Stars to a user.
 
@@ -52,10 +58,12 @@ async def purchase_stars(
         username: Recipient Telegram username.
         amount: Number of Stars — 50 to 10_000_000.
         show_sender: Show your name as the gift sender.
-        payment_method: "ton" or "usdt_ton".
+        payment_method: One of "ton", "usdt_ton", "usdt_eth", "usdt_pol",
+            "usdc_eth", "usdc_base", "usdc_pol".
 
     Returns:
-        StarsResult with transaction_id, username, and amount.
+        StarsResult (for TON-based methods) or EvmPaymentResult
+        (for EVM methods — caller must complete payment manually).
     '''
     if not isinstance(amount, int) or not (50 <= amount <= 10_000_000):
         raise ConfigError(ConfigError.INVALID_STARS_AMOUNT)
@@ -130,6 +138,28 @@ async def purchase_stars(
             )
             if transaction.get("need_verify"):
                 raise VerificationError(VerificationError.KYC_REQUIRED)
+
+        if payment_method in EVM_PAYMENT_METHODS or transaction.get("evm"):
+            invoice = await fetch_evm_invoice(
+                cookies=client.cookies,
+                page_path="/stars/buy",
+                recipient=recipient,
+                payment_method=payment_method,
+                quantity=amount,
+                timeout=client.timeout,
+            )
+            return EvmPaymentResult(
+                item_kind="stars",
+                target=username,
+                amount=amount,
+                payment_method=payment_method,
+                invoice=invoice,
+            )
+
+        if payment_method not in TON_PAYMENT_METHODS:
+            raise FragmentAPIError(
+                f"Unsupported payment_method flow: {payment_method}"
+            )
 
         tx_result = await execute_transaction(client, transaction)
 

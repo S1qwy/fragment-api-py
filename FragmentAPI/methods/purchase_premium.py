@@ -1,5 +1,5 @@
 '''
-Telegram Premium gift method — async only with confirmReq.
+Telegram Premium gift method — async only with confirmReq and EVM support.
 '''
 
 from __future__ import annotations
@@ -20,10 +20,16 @@ from FragmentAPI.exceptions import (
 )
 from FragmentAPI.types.constants import (
     DEVICE_FINGERPRINT,
+    EVM_PAYMENT_METHODS,
     PREMIUM_GIFT_PAGE,
+    TON_PAYMENT_METHODS,
     VALID_PAYMENT_METHODS,
 )
-from FragmentAPI.types.results import PremiumResult
+from FragmentAPI.types.results import (
+    EvmPaymentResult,
+    PremiumResult,
+)
+from FragmentAPI.utils.evm import fetch_evm_invoice
 from FragmentAPI.utils.http import (
     build_headers,
     fetch_fragment_hash,
@@ -44,19 +50,12 @@ async def purchase_premium(
     months: int,
     show_sender: bool = True,
     payment_method: str = "ton",
-) -> PremiumResult:
+) -> PremiumResult | EvmPaymentResult:
     '''
     Gift Telegram Premium to a user.
 
-    Args:
-        client: Authenticated FragmentClient instance.
-        username: Recipient Telegram username.
-        months: Duration — 3, 6, or 12.
-        show_sender: Show your name as the sender.
-        payment_method: "ton" or "usdt_ton".
-
-    Returns:
-        PremiumResult with transaction_id, username, and amount.
+    Supports TON, USDT (TON), and EVM-based payments
+    (USDT/USDC on ETH/BASE/POL).
     '''
     if months not in (3, 6, 12):
         raise ConfigError(ConfigError.INVALID_MONTHS)
@@ -143,6 +142,28 @@ async def purchase_premium(
             )
             if transaction.get("need_verify"):
                 raise VerificationError(VerificationError.KYC_REQUIRED)
+
+        if payment_method in EVM_PAYMENT_METHODS or transaction.get("evm"):
+            invoice = await fetch_evm_invoice(
+                cookies=client.cookies,
+                page_path="/premium/gift",
+                recipient=recipient,
+                payment_method=payment_method,
+                months=months,
+                timeout=client.timeout,
+            )
+            return EvmPaymentResult(
+                item_kind="premium",
+                target=username,
+                amount=months,
+                payment_method=payment_method,
+                invoice=invoice,
+            )
+
+        if payment_method not in TON_PAYMENT_METHODS:
+            raise FragmentAPIError(
+                f"Unsupported payment_method flow: {payment_method}"
+            )
 
         tx_result = await execute_transaction(client, transaction)
 

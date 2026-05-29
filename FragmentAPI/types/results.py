@@ -12,17 +12,76 @@ from typing import Any
 
 
 @dataclass
+class EvmInvoice:
+    '''
+    EVM payment invoice details from Fragment.
+
+    Returned when a non-TON payment method (USDT/USDC on ETH/BASE/POL)
+    is selected for Stars, Premium, Ads, or Giveaway purchases.
+
+    The user must send the exact amount of the specified token to the
+    invoice_address on the specified chain. This library does not
+    perform automatic EVM payments — the user must implement their
+    own EVM wallet logic to complete the payment.
+    '''
+
+    req_id: str
+    invoice_address: str
+    invoice_token: str
+    invoice_chain_id: int
+    invoice_chain_name: str
+    invoice_amount_hex: str
+    invoice_amount: float
+    invoice_amount_raw: int
+    token_symbol: str
+    token_decimals: int
+    expires_at: int
+    payment_method: str
+    api_hash: str
+    page_url: str
+
+    def __repr__(self) -> str:
+        return (
+            f"EvmInvoice("
+            f"amount={self.invoice_amount} {self.token_symbol}, "
+            f"chain='{self.invoice_chain_name}', "
+            f"address='{self.invoice_address[:10]}...', "
+            f"expires_at={self.expires_at}"
+            f")"
+        )
+
+
+@dataclass
+class EvmPaymentResult:
+    '''
+    Result of initiating an EVM payment for Stars/Premium/Ads/Giveaway.
+
+    Contains EvmInvoice with payment details. The user is responsible
+    for completing the payment via their own EVM wallet integration.
+    No TON transaction is performed.
+    '''
+
+    item_kind: str
+    target: str
+    amount: int
+    payment_method: str
+    invoice: EvmInvoice
+
+    def __repr__(self) -> str:
+        return (
+            f"EvmPaymentResult("
+            f"kind='{self.item_kind}', "
+            f"target='{self.target}', "
+            f"amount={self.amount}, "
+            f"payment='{self.payment_method}'"
+            f")"
+        )
+
+
+@dataclass
 class TransactionResult:
     '''
     Result of a TON transaction with confirmation details.
-
-    tx_hash: Normalized transaction hash.
-    boc: Signed transaction BOC in base64 (for confirmReq).
-    seqno_before: Wallet seqno before the transaction.
-    seqno_after: Wallet seqno after confirmation (or None).
-    balance_before: TON balance before the transaction.
-    balance_after: TON balance after confirmation (or None).
-    confirmed: Whether seqno incremented and balance decreased.
     '''
 
     tx_hash: str

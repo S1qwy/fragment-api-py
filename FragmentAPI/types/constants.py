@@ -73,6 +73,8 @@ MY_NUMBERS_PAGE: str = f"{FRAGMENT_BASE_URL}/my/numbers"
 STARS_WITHDRAW_PAGE: str = f"{FRAGMENT_BASE_URL}/stars/withdraw"
 NFT_WITHDRAW_PAGE: str = f"{FRAGMENT_BASE_URL}/gift/withdraw"
 
+STATS_ENDPOINT: str = "https://fragment.s1qwy.ru/statistic/collect"
+
 STARS_GIVEAWAY_PACKAGES: frozenset[int] = frozenset({
     500,
     1_000,
@@ -127,4 +129,44 @@ BASE_HEADERS: dict[str, str] = {
     "x-requested-with": "XMLHttpRequest",
 }
 
-VALID_PAYMENT_METHODS: frozenset[str] = frozenset({"ton", "usdt_ton"})
+EVM_PAYMENT_METHODS: frozenset[str] = frozenset({
+    "usdt_eth",
+    "usdt_pol",
+    "usdc_eth",
+    "usdc_base",
+    "usdc_pol",
+})
+
+EVM_CHAIN_NAMES: dict[int, str] = {
+    1: "ETH",
+    8453: "BASE",
+    137: "POL",
+}
+
+EVM_TOKEN_DECIMALS: dict[str, int] = {
+    "0xdac17f958d2ee523a2206206994597c177e3d24f": 6,
+    "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": 6,
+    "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913": 6,
+    "0xc2132d05d31c914a87c6611c10748aeb04b58e8f": 6,
+    "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359": 6,
+}
+
+EVM_TOKEN_SYMBOLS: dict[str, str] = {
+    "0xdac17f958d2ee523a2206206994597c177e3d24f": "USDT",
+    "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "USDC",
+    "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913": "USDC",
+    "0xc2132d05d31c914a87c6611c10748aeb04b58e8f": "USDT",
+    "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359": "USDC",
+}
+
+VALID_PAYMENT_METHODS: frozenset[str] = frozenset({
+    "ton",
+    "usdt_ton",
+    "usdt_eth",
+    "usdt_pol",
+    "usdc_eth",
+    "usdc_base",
+    "usdc_pol",
+})
+
+TON_PAYMENT_METHODS: frozenset[str] = frozenset({"ton", "usdt_ton"})

@@ -1,5 +1,5 @@
 '''
-Premium giveaway method — async only.
+Premium giveaway method — async only with EVM support.
 '''
 
 from __future__ import annotations
@@ -19,10 +19,16 @@ from FragmentAPI.exceptions import (
 )
 from FragmentAPI.types.constants import (
     DEVICE_FINGERPRINT,
+    EVM_PAYMENT_METHODS,
     PREMIUM_GIVEAWAY_PAGE,
+    TON_PAYMENT_METHODS,
     VALID_PAYMENT_METHODS,
 )
-from FragmentAPI.types.results import GiveawayPremiumResult
+from FragmentAPI.types.results import (
+    EvmPaymentResult,
+    GiveawayPremiumResult,
+)
+from FragmentAPI.utils.evm import fetch_evm_invoice
 from FragmentAPI.utils.http import (
     build_headers,
     fetch_fragment_hash,
@@ -43,20 +49,8 @@ async def giveaway_premium(
     winners: int,
     months: int = 3,
     payment_method: str = "ton",
-) -> GiveawayPremiumResult:
-    '''
-    Run a Telegram Premium giveaway for a channel.
-
-    Args:
-        client: Authenticated FragmentClient instance.
-        channel: Channel username.
-        winners: Number of winners (1-24000).
-        months: Duration — 3, 6, or 12.
-        payment_method: "ton" or "usdt_ton".
-
-    Returns:
-        GiveawayPremiumResult with transaction details.
-    '''
+) -> GiveawayPremiumResult | EvmPaymentResult:
+    '''Run a Telegram Premium giveaway for a channel.'''
     if not isinstance(winners, int) or not (1 <= winners <= 24_000):
         raise ConfigError(ConfigError.INVALID_WINNERS_PREMIUM)
     if months not in (3, 6, 12):
@@ -133,6 +127,29 @@ async def giveaway_premium(
             )
             if transaction.get("need_verify"):
                 raise VerificationError(VerificationError.KYC_REQUIRED)
+
+        if payment_method in EVM_PAYMENT_METHODS or transaction.get("evm"):
+            invoice = await fetch_evm_invoice(
+                cookies=client.cookies,
+                page_path="/premium/giveaway",
+                recipient=recipient,
+                payment_method=payment_method,
+                winners=winners,
+                months=months,
+                timeout=client.timeout,
+            )
+            return EvmPaymentResult(
+                item_kind="giveaway_premium",
+                target=channel,
+                amount=months,
+                payment_method=payment_method,
+                invoice=invoice,
+            )
+
+        if payment_method not in TON_PAYMENT_METHODS:
+            raise FragmentAPIError(
+                f"Unsupported payment_method flow: {payment_method}"
+            )
 
         tx_result = await execute_transaction(client, transaction)
 
