@@ -1,12 +1,10 @@
-'''
-Public type exports for Fragment API.
-'''
-
 from FragmentAPI.types.results import (
     AdsTopupResult,
     AssignResult,
     AssignAccountsResult,
     AuctionInfo,
+    BatchItemResult,
+    BatchResult,
     BidHistoryEntry,
     BidResult,
     EvmInvoice,
@@ -32,6 +30,8 @@ from FragmentAPI.types.results import (
     PremiumPrices,
     PremiumResult,
     PremiumTransaction,
+    PreparedTransaction,
+    PreparedTransactionMessage,
     ProfileInfo,
     RecipientInfo,
     SessionInfo,
@@ -75,6 +75,8 @@ __all__ = [
     "AssignResult",
     "AssignAccountsResult",
     "AuctionInfo",
+    "BatchItemResult",
+    "BatchResult",
     "BidHistoryEntry",
     "BidResult",
     "EvmInvoice",
@@ -100,6 +102,8 @@ __all__ = [
     "PremiumPrices",
     "PremiumResult",
     "PremiumTransaction",
+    "PreparedTransaction",
+    "PreparedTransactionMessage",
     "ProfileInfo",
     "RecipientInfo",
     "SessionInfo",

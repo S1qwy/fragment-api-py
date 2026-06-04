@@ -1,5 +1,5 @@
 '''
-Fragment authentication utilities — TON proof and Telegram login.
+Fragment authentication utilities — TON proof and Telegram OAuth (QR/phone).
 Async only.
 '''
 
@@ -29,6 +29,29 @@ from FragmentAPI.types.constants import (
     WALLET_CLASSES,
 )
 
+TELEGRAM_CLIENT_ID = "5444323279"
+TELEGRAM_OAUTH_BASE = "https://oauth.telegram.org"
+
+TELEGRAM_BASE_PARAMS = (
+    f"client_id={TELEGRAM_CLIENT_ID}"
+    f"&origin=https%3A%2F%2Ffragment.com"
+    f"&return_to=https%3A%2F%2Ffragment.com%2F"
+    f"&scope=openid%20profile%20telegram%3Abot_access"
+    f"&redirect_uri=https%3A%2F%2Ffragment.com%2F"
+    f"&response_type=post_message"
+)
+
+BROWSER_HEADERS: dict[str, str] = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept-Language": "en-US,en;q=0.9,ru;q=0.8",
+    "Accept": "application/json, text/javascript, */*; q=0.01",
+    "X-Requested-With": "XMLHttpRequest",
+}
+
 
 def _parse_init_page(html: str) -> tuple[str, str]:
     '''Parse ajInit hash and ton_proof payload from Fragment homepage HTML.'''
@@ -57,14 +80,18 @@ def _generate_proof(
     wallet_version: str,
     ton_proof_payload: str,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-    
-    wallet_cls = WALLET_CLASSES.get(wallet_version.upper(), WALLET_CLASSES["V5R1"])
-    
-    wallet, pub_key, priv_key, _ = wallet_cls.from_mnemonic(
-        client=None, 
-        mnemonic=" ".join(mnemonic)
+    '''Generate TON proof data for Fragment authentication.'''
+
+    wallet_cls = WALLET_CLASSES.get(
+        wallet_version.upper(),
+        WALLET_CLASSES["V5R1"],
     )
-    
+
+    wallet, pub_key, priv_key, _ = wallet_cls.from_mnemonic(
+        client=None,
+        mnemonic=" ".join(mnemonic),
+    )
+
     raw_address = wallet.address.to_str(is_user_friendly=False)
     workchain, addr_hash_hex = raw_address.split(":")
 
@@ -131,89 +158,200 @@ def _generate_proof(
     return account_data, device_data, proof_data
 
 
-async def _fetch_tg_auth_result(
-    phone: str,
-    timeout: float = 30.0,
+def _print_qr_ascii(data: str) -> None:
+    '''Render QR code as ASCII art in terminal.'''
+    try:
+        import qrcode
+    except ImportError:
+        print(f"[!] qrcode lib not installed. Open URL manually: {data}")
+        return
+    qr = qrcode.QRCode()
+    qr.add_data(data)
+    qr.make(fit=True)
+    qr.print_ascii(invert=True)
+
+
+async def _poll_telegram_auth(
+    session: httpx.AsyncClient,
+    qtoken: str,
+    on_status: Any = None,
 ) -> str:
-    '''Perform Telegram OAuth flow via HTTP requests and polling.'''
-    bot_id = "5444323279"
-    origin = "https://fragment.com"
-    request_access = "write"
-    return_to = "https://fragment.com/"
+    '''
+    Poll Telegram OAuth until the auth flow is confirmed.
 
-    base_params = (
-        f"?bot_id={bot_id}"
-        f"&origin={origin}"
-        f"&request_access={request_access}"
-        f"&return_to={return_to}"
+    Returns the final tgAuthResult string extracted from /auth/push.
+    '''
+    headers = {
+        **BROWSER_HEADERS,
+        "Content-type": "application/x-www-form-urlencoded",
+    }
+
+    consumed = False
+    current_qtoken = qtoken
+
+    while True:
+        poll_url = (
+            f"{TELEGRAM_OAUTH_BASE}/auth/login"
+            f"?{TELEGRAM_BASE_PARAMS}&qtoken={current_qtoken}"
+        )
+
+        try:
+            res = await session.post(
+                poll_url,
+                content=b"",
+                headers=headers,
+            )
+            data = res.json()
+            status = data.get("status") if isinstance(data, dict) else None
+
+            if status == "refresh":
+                current_qtoken = data.get("qtoken", current_qtoken)
+                if on_status:
+                    on_status("refresh", current_qtoken)
+
+            elif status == "consumed":
+                if not consumed:
+                    consumed = True
+                    if on_status:
+                        on_status("consumed", None)
+
+            elif status == "confirmed":
+                if on_status:
+                    on_status("confirmed", None)
+                push_url = (
+                    f"{TELEGRAM_OAUTH_BASE}/auth/push"
+                    f"?{TELEGRAM_BASE_PARAMS}"
+                )
+                res_push = await session.get(
+                    push_url,
+                    headers=BROWSER_HEADERS,
+                )
+                text = res_push.text
+                m = re.search(
+                    r"#tgAuthResult=([A-Za-z0-9_\-]+)",
+                    text,
+                )
+                if not m:
+                    raise UnexpectedError(
+                        "Failed to extract tgAuthResult from push response.",
+                    )
+                return m.group(1)
+
+        except (httpx.HTTPError, ValueError):
+            pass
+
+        await asyncio.sleep(1)
+
+
+async def _telegram_auth_qr(
+    session: httpx.AsyncClient,
+    print_qr: bool = True,
+    on_status: Any = None,
+) -> str:
+    '''Run Telegram OAuth via QR-code flow.'''
+    url = (
+        f"{TELEGRAM_OAUTH_BASE}/auth/auth"
+        f"?{TELEGRAM_BASE_PARAMS}&quick_auth=new"
     )
-    auth_url = f"https://oauth.telegram.org/auth{base_params}"
-    request_url = f"https://oauth.telegram.org/auth/request{base_params}"
-    login_url = f"https://oauth.telegram.org/auth/login{base_params}"
-    push_url = f"https://oauth.telegram.org/auth/push{base_params}"
+    res = await session.get(url, headers=BROWSER_HEADERS)
 
-    async with httpx.AsyncClient(timeout=timeout) as session:
-        await session.get(auth_url)
+    m = re.search(r"setToken\('([^']+)'\)", res.text)
+    if not m:
+        raise UnexpectedError("Failed to fetch QR qtoken from Telegram OAuth.")
 
-        resp_request = await session.post(
-            request_url,
-            data={"phone": phone},
+    qtoken = m.group(1)
+    tg_link = f"https://t.me/oauth?startapp={qtoken}"
+
+    if on_status:
+        on_status("qr_link", tg_link)
+
+    if print_qr:
+        print(f"\n[*] Scan this QR (or open the link):\n    {tg_link}\n")
+        _print_qr_ascii(tg_link)
+
+    return await _poll_telegram_auth(
+        session,
+        qtoken,
+        on_status=on_status,
+    )
+
+
+async def _telegram_auth_phone(
+    session: httpx.AsyncClient,
+    phone: str,
+    on_status: Any = None,
+) -> str:
+    '''Run Telegram OAuth via phone-confirmation flow.'''
+    auth_page_url = (
+        f"{TELEGRAM_OAUTH_BASE}/auth/auth"
+        f"?{TELEGRAM_BASE_PARAMS}&phone_login=1"
+    )
+    await session.get(auth_page_url, headers=BROWSER_HEADERS)
+
+    digits = "".join(ch for ch in phone if ch.isdigit())
+
+    post_url = (
+        f"{TELEGRAM_OAUTH_BASE}/auth/request"
+        f"?{TELEGRAM_BASE_PARAMS}"
+    )
+    post_headers = {
+        **BROWSER_HEADERS,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Origin": TELEGRAM_OAUTH_BASE,
+        "Referer": auth_page_url,
+    }
+    res = await session.post(
+        post_url,
+        data={"phone": digits},
+        headers=post_headers,
+    )
+
+    qtoken = res.text.strip().strip('"').strip("'")
+    if (
+        not qtoken
+        or qtoken.lower() == "session expired"
+        or len(qtoken) > 100
+    ):
+        raise UnexpectedError(
+            f"Telegram OAuth phone request failed: {qtoken!r}",
         )
-        resp_request.raise_for_status()
 
-        login_success = False
-        for _ in range(30):
-            resp_login = await session.post(login_url)
-            try:
-                if resp_login.json() is True:
-                    login_success = True
-                    break
-            except Exception:
-                pass
-            await asyncio.sleep(3)
+    if on_status:
+        on_status("phone_sent", qtoken)
 
-        if not login_success:
-            raise UnexpectedError(
-                "Telegram login polling timed out. "
-                "Please confirm login in Telegram."
-            )
-
-        await session.get(auth_url)
-        resp_push = await session.get(
-            push_url,
-            follow_redirects=False,
-        )
-        location = resp_push.headers.get("Location", "")
-
-        match = re.search(r"#tgAuthResult=(.+)", location)
-        if not match:
-            raise UnexpectedError(
-                f"Failed to extract tgAuthResult from "
-                f"redirect URL: {location}"
-            )
-
-        return match.group(1)
+    return await _poll_telegram_auth(
+        session,
+        qtoken,
+        on_status=on_status,
+    )
 
 
 async def authenticate(
     seed: str,
-    wallet_version: str = "V4R2",
-    telegram_auth_data: str | None = None,
-    telegram_phone: str | None = None,
+    wallet_version: str = "V5R1",
+    phone: str | None = None,
+    print_qr: bool = True,
+    on_status: Any = None,
     timeout: float = DEFAULT_TIMEOUT,
 ) -> dict[str, str]:
     '''
     Perform full Fragment authentication and return session cookies.
 
+    First obtains stel_ssid / stel_dt / stel_ton_token via TON wallet proof.
+    If stel_token is missing, runs Telegram OAuth (QR by default, or phone
+    confirmation if `phone` is provided) and finalizes the login via the
+    `tgAuthResult` redirect.
+
     Args:
         seed: TON wallet mnemonic phrase.
         wallet_version: "V4R2" or "V5R1".
-        telegram_auth_data: Pre-encoded Telegram auth data (optional).
-        telegram_phone: Telegram phone for OAuth flow (optional).
+        phone: If provided, uses phone-confirmation flow instead of QR.
+        print_qr: Print the QR code to terminal (QR flow only).
+        on_status: Optional callback(status_name, payload) for progress.
         timeout: HTTP timeout in seconds.
 
     Returns:
-        Dict of session cookies.
+        Dict of session cookies with all required keys.
     '''
     try:
         async with httpx.AsyncClient(
@@ -278,31 +416,36 @@ async def authenticate(
             auth_resp = await session.post(api_url, data=form_data)
             auth_resp.raise_for_status()
 
-            cookies = dict(session.cookies.jar)
+            cookies = {c.name: c.value for c in session.cookies.jar}
 
-            if "stel_token" not in cookies and (
-                telegram_auth_data or telegram_phone
-            ):
-                if telegram_phone:
-                    auth_base64 = await _fetch_tg_auth_result(
-                        telegram_phone,
-                        timeout,
+            if "stel_token" in cookies and cookies["stel_token"]:
+                return cookies
+
+            async with httpx.AsyncClient(
+                timeout=timeout,
+                follow_redirects=True,
+            ) as tg_session:
+                if phone:
+                    tg_auth_result = await _telegram_auth_phone(
+                        tg_session,
+                        phone,
+                        on_status=on_status,
                     )
                 else:
-                    tg_json_clean = telegram_auth_data.replace("\\/", "/")
-                    tg_url_encoded = urllib.parse.quote(tg_json_clean)
-                    auth_base64 = base64.b64encode(
-                        tg_url_encoded.encode("utf-8"),
-                    ).decode("utf-8")
+                    tg_auth_result = await _telegram_auth_qr(
+                        tg_session,
+                        print_qr=print_qr,
+                        on_status=on_status,
+                    )
 
-                tg_form_data = {
-                    "auth": auth_base64,
-                    "method": "logIn",
-                }
-                tg_resp = await session.post(api_url, data=tg_form_data)
-                tg_resp.raise_for_status()
-                cookies = dict(session.cookies.jar)
+            tg_form_data = {
+                "auth": tg_auth_result,
+                "method": "logIn",
+            }
+            tg_resp = await session.post(api_url, data=tg_form_data)
+            tg_resp.raise_for_status()
 
+            cookies = {c.name: c.value for c in session.cookies.jar}
             return cookies
 
     except (FragmentPageError, UnexpectedError):

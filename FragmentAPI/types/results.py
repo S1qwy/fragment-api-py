@@ -1,7 +1,3 @@
-'''
-Result dataclasses for Fragment API operations.
-'''
-
 from __future__ import annotations
 
 from dataclasses import (
@@ -12,18 +8,43 @@ from typing import Any
 
 
 @dataclass
+class PreparedTransactionMessage:
+    '''Single message of a prepared TON transaction.'''
+
+    address: str
+    amount: str
+    payload: str | None = None
+    state_init: str | None = None
+
+
+@dataclass
+class PreparedTransaction:
+    '''Unsigned Fragment transaction payload for external signing.'''
+
+    req_id: str
+    item_kind: str
+    target: str
+    amount: int
+    valid_until: int
+    messages: list[PreparedTransactionMessage] = field(default_factory=list)
+    raw: dict[str, Any] = field(default_factory=dict)
+    sender_address: str | None = None
+    confirm_referer: str | None = None
+
+    def __repr__(self) -> str:
+        return (
+            f"PreparedTransaction("
+            f"kind='{self.item_kind}', "
+            f"target='{self.target}', "
+            f"amount={self.amount}, "
+            f"messages={len(self.messages)}"
+            f")"
+        )
+
+
+@dataclass
 class EvmInvoice:
-    '''
-    EVM payment invoice details from Fragment.
-
-    Returned when a non-TON payment method (USDT/USDC on ETH/BASE/POL)
-    is selected for Stars, Premium, Ads, or Giveaway purchases.
-
-    The user must send the exact amount of the specified token to the
-    invoice_address on the specified chain. This library does not
-    perform automatic EVM payments — the user must implement their
-    own EVM wallet logic to complete the payment.
-    '''
+    '''EVM payment invoice details from Fragment.'''
 
     req_id: str
     invoice_address: str
@@ -53,13 +74,7 @@ class EvmInvoice:
 
 @dataclass
 class EvmPaymentResult:
-    '''
-    Result of initiating an EVM payment for Stars/Premium/Ads/Giveaway.
-
-    Contains EvmInvoice with payment details. The user is responsible
-    for completing the payment via their own EVM wallet integration.
-    No TON transaction is performed.
-    '''
+    '''Result of initiating an EVM payment.'''
 
     item_kind: str
     target: str
@@ -80,9 +95,7 @@ class EvmPaymentResult:
 
 @dataclass
 class TransactionResult:
-    '''
-    Result of a TON transaction with confirmation details.
-    '''
+    '''Result of a TON transaction with confirmation details.'''
 
     tx_hash: str
     boc: str | None = None
@@ -890,5 +903,53 @@ class TerminateSessionsResult:
             f"TerminateSessionsResult("
             f"number='{self.number}', "
             f"message={self.message!r}"
+            f")"
+        )
+
+
+@dataclass
+class BatchItemResult:
+    '''Result of a single item within a batch operation.'''
+
+    username: str
+    amount: int
+    ok: bool
+    result: Any = None
+    error: str | None = None
+
+    def __repr__(self) -> str:
+        if self.ok:
+            return (
+                f"BatchItemResult("
+                f"username='{self.username}', "
+                f"amount={self.amount}, "
+                f"ok=True"
+                f")"
+            )
+        return (
+            f"BatchItemResult("
+            f"username='{self.username}', "
+            f"amount={self.amount}, "
+            f"ok=False, "
+            f"error='{self.error}'"
+            f")"
+        )
+
+
+@dataclass
+class BatchResult:
+    '''Result of a batch operation containing multiple individual results.'''
+
+    total: int
+    succeeded: int
+    failed: int
+    items: list[BatchItemResult] = field(default_factory=list)
+
+    def __repr__(self) -> str:
+        return (
+            f"BatchResult("
+            f"total={self.total}, "
+            f"succeeded={self.succeeded}, "
+            f"failed={self.failed}"
             f")"
         )

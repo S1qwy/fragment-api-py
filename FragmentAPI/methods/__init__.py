@@ -1,7 +1,3 @@
-'''
-Fragment API methods — async only.
-'''
-
 from FragmentAPI.methods.purchase_stars import purchase_stars
 from FragmentAPI.methods.purchase_premium import purchase_premium
 from FragmentAPI.methods.topup_ton import topup_ton

@@ -1,14 +1,9 @@
-'''
-Fragment API Python Library v7.0.0
-
-Async-only client for Fragment.com API.
-Supports TON, USDT-TON and EVM (USDT/USDC on ETH/BASE/POL) payments.
-'''
-
 from FragmentAPI.client import FragmentClient
 from FragmentAPI.types import (
     AdsTopupResult,
     AuctionInfo,
+    BatchItemResult,
+    BatchResult,
     BidHistoryEntry,
     BidResult,
     ConfigError,
@@ -33,6 +28,8 @@ from FragmentAPI.types import (
     PremiumPrices,
     PremiumResult,
     PremiumTransaction,
+    PreparedTransaction,
+    PreparedTransactionMessage,
     ProfileInfo,
     ProxyError,
     RecipientInfo,
@@ -52,7 +49,7 @@ from FragmentAPI.types import (
     WalletInfo,
 )
 
-__version__ = "v7.0.0"
+__version__ = "v8.0.0"
 __author__ = "S1qwy"
 __email__ = "S1qwy@internet.ru"
 
@@ -61,6 +58,8 @@ __all__ = [
     "FragmentClient",
     "AdsTopupResult",
     "AuctionInfo",
+    "BatchItemResult",
+    "BatchResult",
     "BidHistoryEntry",
     "BidResult",
     "ConfigError",
@@ -85,6 +84,8 @@ __all__ = [
     "PremiumPrices",
     "PremiumResult",
     "PremiumTransaction",
+    "PreparedTransaction",
+    "PreparedTransactionMessage",
     "ProfileInfo",
     "ProxyError",
     "RecipientInfo",
