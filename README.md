@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Professional Python library for Fragment.com automation</strong><br>
-  <strong>v7.0.0 — EVM Payments | Anonymous Telemetry | Live Stats Dashboard</strong>
+  <strong>v8.0.0 — No KYC Mode | Batch Operations | EVM Payments | Live Stats Dashboard</strong>
 </p>
 
 <p align="center">
@@ -25,86 +25,120 @@
 
 ---
 
-## ✨ What's New in v7.0.0
+## <img src="https://img.shields.io/badge/-What's_New_in_v8.0.0-black?style=flat-square" valign="middle">
 
 | Feature | Description |
 |---------|-------------|
-| 💳 **EVM Payments** | 5 new methods: `usdt_eth`, `usdt_pol`, `usdc_eth`, `usdc_base`, `usdc_pol` |
-| 📦 **EvmInvoice** | Full invoice details: address, token, chain_id, amount, expiration |
-| 📊 **Anonymous Telemetry** | Helps improve the library — no sensitive data ever sent |
-| 📈 **Live Dashboard** | [fragment.s1qwy.ru/statistic](https://fragment.s1qwy.ru/statistic) — real-time usage stats |
+| **No KYC Mode** | Operate without Fragment cookies or account. Execute purchases and giveaways directly via a hosted REST API (`fragment-api.tech`). |
+| **Batch Operations** | Execute multiple sequential transactions easily with `batch_purchase_stars`, `batch_purchase_premium`, and `batch_topup_ton`. |
+| **EVM Payments** | Native support for 5 EVM methods: `usdt_eth`, `usdt_pol`, `usdc_eth`, `usdc_base`, `usdc_pol`. |
+| **Anonymous Telemetry** | Helps improve the library. No sensitive data is ever sent. View stats at [fragment.s1qwy.ru/statistic](https://fragment.s1qwy.ru/statistic). |
 
 ---
 
-## 🚀 Features
+## <img src="https://img.shields.io/badge/-Features-black?style=flat-square" valign="middle">
 
-- **Async-only** — `FragmentClient` with full async/await support
-- **EVM Payments** — USDT/USDC on Ethereum, BASE, Polygon
-- **Purchases** — Stars (50–10M), Premium (3/6/12 months), TON Ads
-- **Giveaways** — Stars and Premium for channels (up to 24k winners)
-- **Bids** — `place_bid(item_type=1|3|5, slug, bid)` — instant buy if bid = buy-now price
-- **Marketplace** — search usernames, numbers, gifts with filters and pagination
-- **Wallet** — V4R2 and V5R1 (W5) support
-- **Auto-authentication** — obtain cookies via TON wallet and Telegram
-- **Anonymous numbers** — manage login codes, terminate sessions (+888)
-- **NFT Management** — withdraw gifts to wallet, transfer to users
-- **Stars Revenue** — withdraw earned Stars to wallet
-- **Error hierarchy** — complete exception handling
+- **Async-only** — `FragmentClient` with full async/await support.
+- **Two Operating Modes** — Full mode (with cookies) and No-Cookie Mode (No KYC required).
+- **Purchases** — Stars (50–10M), Premium (3/6/12 months), TON Ads.
+- **Giveaways** — Stars and Premium for channels (up to 24k winners).
+- **Bids** — `place_bid(item_type=1|3|5, slug, bid)` — instant buy if bid = buy-now price.
+- **Marketplace** — Search usernames, numbers, gifts with filters and pagination.
+- **Wallet** — V4R2 and V5R1 (W5) support.
+- **Auto-authentication** — Obtain cookies via TON wallet and Telegram.
+- **Anonymous numbers** — Manage login codes, terminate sessions (+888).
+- **NFT Management** — Withdraw gifts to wallet, transfer to users.
 
 ---
 
-## 📦 Installation
+## <img src="https://img.shields.io/badge/-Installation_&_Requirements-black?style=flat-square" valign="middle">
 
 ```bash
 pip install fragment-api-py
 ```
 
-## 🧪 Requirements
-
 - Python 3.10+
-- Fragment cookies: `stel_ssid`, `stel_dt`, `stel_token`, `stel_ton_token`
 - TON wallet seed phrase (12/18/24 words)
+- Fragment cookies (optional, only for full functionality)
 
 ---
 
-## 🎯 Quick Start
+## <img src="https://img.shields.io/badge/-Operating_Modes-black?style=flat-square" valign="middle">
 
+The library now supports two operating modes depending on your privacy needs and workflow:
+
+### 1. No KYC / No-Cookie Mode
+Perfect for automated systems that do not want to manage Fragment cookies or pass KYC verifications. By initializing the client without cookies, operations utilize the hosted `fragment-api.tech` REST API to securely obtain unsigned transaction payloads, sign them locally with your seed, and broadcast them to the network.
+*Note: EVM payment methods are not supported in No-Cookie mode (TON and USDT on TON only).*
+
+**Supported No-Cookie Methods:**
+- `purchase_stars`
+- `purchase_premium`
+- `topup_ton`
+- `giveaway_stars`
+- `giveaway_premium`
+- All `batch_*` variants of the above
+
+### 2. Full Mode
+Pass your Fragment session cookies (`stel_ssid`, `stel_dt`, `stel_token`, `stel_ton_token`) to access the entirety of Fragment's API, including marketplace operations, EVM payments, NFT management, and My Assets.
+
+---
+
+## <img src="https://img.shields.io/badge/-Quick_Start-black?style=flat-square" valign="middle">
+
+### No KYC Mode Example
 ```python
 import asyncio
 from FragmentAPI import FragmentClient
-from FragmentAPI.types.results import EvmPaymentResult, StarsResult
 
 async def main():
+    # Initialize WITHOUT cookies
+    async with FragmentClient(
+        seed="24 words...",
+        wallet_version="V5R1"
+    ) as client:
+        
+        # Wallet info
+        wallet = await client.get_wallet()
+        print(f"Balance: {wallet.balance_ton} TON, {wallet.balance_usdt} USDT")
+        
+        # Purchase stars without a Fragment account!
+        result = await client.purchase_stars("@durov", 100)
+        print(f"TX: {result.transaction_id}")
+        
+        # Execute batch operations
+        batch = await client.batch_purchase_premium([
+            {"username": "@durov", "months": 3},
+            {"username": "@telegram", "months": 6}
+        ])
+        print(f"Succeeded: {batch.succeeded}/{batch.total}")
+
+asyncio.run(main())
+```
+
+### Full Mode Example
+```python
+import asyncio
+from FragmentAPI import FragmentClient
+from FragmentAPI.types.results import EvmPaymentResult
+
+async def main():
+    # Initialize WITH cookies for full functionality
     async with FragmentClient(
         seed="24 words...",
         cookies={"stel_ssid": "...", "stel_token": "...", "stel_dt": "...", "stel_ton_token": "..."},
         wallet_version="V5R1",
     ) as client:
         
-        # Wallet info
-        wallet = await client.get_wallet()
-        print(f"{wallet.balance_ton} TON, {wallet.balance_usdt} USDT")
-        
-        # TON payment (automatic)
-        result = await client.purchase_stars("@durov", 100)
-        print(f"TX: {result.transaction_id}")
-        
         # EVM payment (returns invoice)
         result = await client.purchase_stars("@durov", 50, payment_method="usdc_base")
         if isinstance(result, EvmPaymentResult):
             inv = result.invoice
-            print(f"Send {inv.invoice_amount} {inv.token_symbol}")
-            print(f"To: {inv.invoice_address}")
+            print(f"Send {inv.invoice_amount} {inv.token_symbol} to {inv.invoice_address}")
             print(f"Chain: {inv.invoice_chain_name}")
-        
-        # Purchase Premium
-        await client.purchase_premium("@durov", 6, show_sender=True)
         
         # Place bid (type 1=username, 3=number, 5=gift)
         await client.place_bid(1, "username", bid=150)
-        
-        # Stars giveaway
-        await client.giveaway_stars("@channel", winners=5, amount=1000)
         
         # Search marketplace
         items = await client.search_usernames("gold", filter="sale")
@@ -114,7 +148,7 @@ asyncio.run(main())
 
 ---
 
-## 🔐 Auto-cookie Authentication
+## <img src="https://img.shields.io/badge/-Auto_Authentication-black?style=flat-square" valign="middle">
 
 ```python
 import asyncio
@@ -125,7 +159,7 @@ async def main():
     cookies = await FragmentClient.authenticate(
         seed="24 words...",
         wallet_version="V5R1",
-        telegram_phone="+71234567890"  # or telegram_auth_data
+        phone="+71234567890"  # Optional: omit for QR code flow
     )
     
     async with FragmentClient(seed="24 words...", cookies=cookies) as client:
@@ -137,16 +171,16 @@ asyncio.run(main())
 
 ---
 
-## 📊 Anonymous Telemetry
+## <img src="https://img.shields.io/badge/-Anonymous_Telemetry-black?style=flat-square" valign="middle">
 
 The library sends anonymous usage statistics to help understand which features are used and what errors users encounter.
 
-**✅ Collected:**
+**Collected:**
 - Library version, wallet version (V4R2/V5R1)
 - Method name, status (ok/error), duration
 - Error class name, scrubbed error message (first 200 chars)
 
-**❌ NEVER Collected:**
+**NEVER Collected:**
 - Seed phrases, cookies, API keys
 - Usernames (replaced with `<username>`)
 - Wallet addresses (replaced with `<ton_addr>` or `<eth_addr>`)
@@ -163,7 +197,7 @@ Or set environment variable: `export FRAGMENT_DISABLE_STATS=1`
 
 ---
 
-## 💳 EVM Payment Methods (v7.0.0)
+## <img src="https://img.shields.io/badge/-EVM_Payment_Methods-black?style=flat-square" valign="middle">
 
 | Method | Chain | Token | Flow |
 |--------|-------|-------|------|
@@ -175,27 +209,14 @@ Or set environment variable: `export FRAGMENT_DISABLE_STATS=1`
 | `usdc_base` | BASE | USDC | Returns invoice |
 | `usdc_pol` | Polygon | USDC | Returns invoice |
 
-```python
-# EVM example — you send the transaction
-result = await client.purchase_stars("@durov", 50, payment_method="usdc_base")
-
-if isinstance(result, EvmPaymentResult):
-    inv = result.invoice
-    # Send {inv.invoice_amount} {inv.token_symbol} 
-    # to {inv.invoice_address} on chain_id={inv.invoice_chain_id}
-    # before {inv.expires_at}
-```
-
 ---
 
-## 🐛 Reporting Errors
+## <img src="https://img.shields.io/badge/-Support_&_License-black?style=flat-square" valign="middle">
 
-Create an [Issue](https://github.com/s1qwy/fragment-api-py/issues) or message in [Telegram chat](https://t.me/fragment_api_py).
+**Reporting Errors**  
+Create an [Issue](https://github.com/s1qwy/fragment-api-py/issues) or message in the [Telegram chat](https://t.me/fragment_api_py).
 
----
-
-## 💖 Support the Project
-
+**Support the Project**  
 If you find this library useful, consider supporting its development:
 
 <p align="center">
@@ -208,10 +229,7 @@ If you find this library useful, consider supporting its development:
   <code>UQBsyxZvyQxDwAeOxoaWwO2HJoAmCKUoJlS_OpLzWHD9i2Xj</code>
 </p>
 
----
-
-## 📄 License
-
+**License**  
 **MIT License** — free for commercial and personal use.
 
 ---

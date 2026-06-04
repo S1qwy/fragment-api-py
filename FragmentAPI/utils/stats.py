@@ -41,7 +41,7 @@ from FragmentAPI.types.constants import STATS_ENDPOINT
 if TYPE_CHECKING:
     from FragmentAPI.client import FragmentClient
 
-LIBRARY_VERSION = "v7.0.0"
+LIBRARY_VERSION = "v8.0.0"
 
 SCRUB_PATTERNS = [
     (re.compile(r"\b[A-Fa-f0-9]{40,}\b"), "<hash>"),
