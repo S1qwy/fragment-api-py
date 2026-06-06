@@ -26,6 +26,11 @@ WALLET_CLASSES: dict[str, Any] = {
     "V5R1": WalletV5R1,
 }
 
+WALLET_MAX_MESSAGES: dict[str, int] = {
+    "V4R2": 4,
+    "V5R1": 255,
+}
+
 MIN_TON_BALANCE: float = 0.01
 
 DEFAULT_TIMEOUT: float = 30.0
@@ -167,6 +172,11 @@ VALID_PAYMENT_METHODS: frozenset[str] = frozenset({
     "usdc_eth",
     "usdc_base",
     "usdc_pol",
+})
+
+BATCH_PAYMENT_METHODS: frozenset[str] = frozenset({
+    "ton",
+    "usdt_ton",
 })
 
 TON_PAYMENT_METHODS: frozenset[str] = frozenset({"ton", "usdt_ton"})

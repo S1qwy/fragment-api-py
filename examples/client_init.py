@@ -1,8 +1,9 @@
 '''
-Example 02: Initialize FragmentClient with various cookie formats.
+Example: Initialize FragmentClient with various cookie formats.
 
 Shows how to create an async FragmentClient instance using
-dict cookies, JSON string cookies, or raw cookie strings.
+dict cookies, JSON string cookies, raw cookie strings,
+or no cookies at all (no-cookie / no-KYC mode).
 '''
 
 import asyncio
@@ -10,19 +11,24 @@ import json
 from FragmentAPI import FragmentClient
 
 
+SEED = (
+    "word1 word2 word3 word4 word5 word6 "
+    "word7 word8 word9 word10 word11 word12 "
+    "word13 word14 word15 word16 word17 word18 "
+    "word19 word20 word21 word22 word23 word24"
+)
+
+
 async def main():
     '''
-    Demonstrate three ways to pass cookies to FragmentClient.
+    Demonstrate four ways to initialize FragmentClient.
+
+    1. Dict cookies — pass a plain Python dict.
+    2. JSON string cookies — pass a JSON-serialized string.
+    3. Raw cookie string — pass a semicolon-separated string.
+    4. No-cookie mode — pass cookies=None (only seed required).
     '''
 
-    seed = (
-        "word1 word2 word3 word4 word5 word6 "
-        "word7 word8 word9 word10 word11 word12 "
-        "word13 word14 word15 word16 word17 word18 "
-        "word19 word20 word21 word22 word23 word24"
-    )
-
-    # --- Option 1: Dict cookies ---
     cookies_dict = {
         "stel_ssid": "your_ssid_value",
         "stel_dt": "-180",
@@ -31,26 +37,24 @@ async def main():
     }
 
     async with FragmentClient(
-        seed=seed,
+        seed=SEED,
         cookies=cookies_dict,
         wallet_version="V5R1",
     ) as client:
-        print(f"Client initialized: {client}")
+        print(f"Dict cookies: {client}")
         wallet = await client.get_wallet()
-        print(f"Wallet address: {wallet.address}")
-        print(f"Balance: {wallet.balance_ton} TON, {wallet.balance_usdt} USDT")
+        print(f"  Address: {wallet.address}")
+        print(f"  Balance: {wallet.balance_ton} TON, {wallet.balance_usdt} USDT")
 
-    # --- Option 2: JSON string cookies ---
     cookies_json = json.dumps(cookies_dict)
 
     async with FragmentClient(
-        seed=seed,
+        seed=SEED,
         cookies=cookies_json,
         wallet_version="V5R1",
     ) as client:
-        print(f"\nClient from JSON: {client}")
+        print(f"\nJSON cookies: {client}")
 
-    # --- Option 3: Raw cookie string ---
     cookies_raw = (
         "stel_ssid=your_ssid_value; "
         "stel_dt=-180; "
@@ -59,13 +63,22 @@ async def main():
     )
 
     async with FragmentClient(
-        seed=seed,
+        seed=SEED,
         cookies=cookies_raw,
         wallet_version="V5R1",
         api_key="your_tonapi_key_here_at_least_48_characters_long_abcdef",
         timeout=45.0,
     ) as client:
-        print(f"\nClient from raw string: {client}")
+        print(f"\nRaw string cookies: {client}")
+
+    async with FragmentClient(
+        seed=SEED,
+        wallet_version="V4R2",
+    ) as client:
+        print(f"\nNo-cookie mode: {client}")
+        print(f"  has_cookies={client.has_cookies}")
+        wallet = await client.get_wallet()
+        print(f"  Address: {wallet.address}")
 
 
 if __name__ == "__main__":

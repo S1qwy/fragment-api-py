@@ -49,7 +49,7 @@ from FragmentAPI.types import (
     WalletInfo,
 )
 
-__version__ = "v8.0.0"
+__version__ = "v8.1.0"
 __author__ = "S1qwy"
 __email__ = "S1qwy@internet.ru"
 

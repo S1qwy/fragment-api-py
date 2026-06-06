@@ -17,6 +17,7 @@ from FragmentAPI.exceptions import (
     UnexpectedError,
     UserNotFoundError,
 )
+from FragmentAPI.methods.batch_purchase import batch_purchase
 from FragmentAPI.methods.giveaway_premium import giveaway_premium
 from FragmentAPI.methods.giveaway_stars import giveaway_stars
 from FragmentAPI.methods.place_bid import place_bid
@@ -546,139 +547,42 @@ class FragmentClient:
             show_sender,
         )
 
-    @tracked("batch_purchase_stars")
-    async def batch_purchase_stars(
+    @tracked("batch_purchase")
+    async def batch_purchase(
         self,
         items: list[dict[str, Any]],
         payment_method: str = "ton",
     ) -> BatchResult:
         '''
-        Execute multiple Stars purchases sequentially.
+        Execute multiple Stars / Premium / Ads top-up purchases
+        as batched TON transactions with inline messages.
 
         Each item dict must contain:
+          - type: "stars" | "premium" | "ton"
           - username: str
-          - amount: int
-          - show_sender: bool (optional, default True)
+          - amount: int           (for "stars" or "ton")
+          - months: int           (for "premium", one of 3/6/12)
+          - show_sender: bool     (optional, default True)
 
-        Returns BatchResult with individual results for each item.
-        Failures do not stop the batch — each item is attempted independently.
+        Items are grouped into chunks based on the wallet version
+        message limit (4 for V4R2, 255 for V5R1). Each chunk is
+        broadcast as a single on-chain transaction. The total
+        required balance is checked upfront before any transaction
+        is sent.
+
+        Only "ton" and "usdt_ton" payment methods are supported.
+
+        Args:
+            items: List of purchase item dicts.
+            payment_method: "ton" or "usdt_ton".
+
+        Returns:
+            BatchResult with per-item outcomes and chunk statistics.
         '''
-        from FragmentAPI.methods.purchase_stars import purchase_stars as _ps
-        results: list[BatchItemResult] = []
-        for item in items:
-            username = item["username"]
-            amount = item["amount"]
-            show_sender = item.get("show_sender", True)
-            try:
-                r = await _ps(self, username, amount, show_sender, payment_method)
-                results.append(BatchItemResult(
-                    username=username,
-                    amount=amount,
-                    ok=True,
-                    result=r,
-                ))
-            except Exception as exc:
-                results.append(BatchItemResult(
-                    username=username,
-                    amount=amount,
-                    ok=False,
-                    error=str(exc),
-                ))
-        succeeded = sum(1 for r in results if r.ok)
-        return BatchResult(
-            total=len(items),
-            succeeded=succeeded,
-            failed=len(items) - succeeded,
-            items=results,
-        )
-
-    @tracked("batch_purchase_premium")
-    async def batch_purchase_premium(
-        self,
-        items: list[dict[str, Any]],
-        payment_method: str = "ton",
-    ) -> BatchResult:
-        '''
-        Execute multiple Premium gifts sequentially.
-
-        Each item dict must contain:
-          - username: str
-          - months: int
-          - show_sender: bool (optional, default True)
-
-        Returns BatchResult with individual results for each item.
-        '''
-        from FragmentAPI.methods.purchase_premium import purchase_premium as _pp
-        results: list[BatchItemResult] = []
-        for item in items:
-            username = item["username"]
-            months = item["months"]
-            show_sender = item.get("show_sender", True)
-            try:
-                r = await _pp(self, username, months, show_sender, payment_method)
-                results.append(BatchItemResult(
-                    username=username,
-                    amount=months,
-                    ok=True,
-                    result=r,
-                ))
-            except Exception as exc:
-                results.append(BatchItemResult(
-                    username=username,
-                    amount=months,
-                    ok=False,
-                    error=str(exc),
-                ))
-        succeeded = sum(1 for r in results if r.ok)
-        return BatchResult(
-            total=len(items),
-            succeeded=succeeded,
-            failed=len(items) - succeeded,
-            items=results,
-        )
-
-    @tracked("batch_topup_ton")
-    async def batch_topup_ton(
-        self,
-        items: list[dict[str, Any]],
-    ) -> BatchResult:
-        '''
-        Execute multiple Ads TON top-ups sequentially.
-
-        Each item dict must contain:
-          - username: str
-          - amount: int
-          - show_sender: bool (optional, default True)
-
-        Returns BatchResult with individual results for each item.
-        '''
-        from FragmentAPI.methods.topup_ton import topup_ton as _tt
-        results: list[BatchItemResult] = []
-        for item in items:
-            username = item["username"]
-            amount = item["amount"]
-            show_sender = item.get("show_sender", True)
-            try:
-                r = await _tt(self, username, amount, show_sender)
-                results.append(BatchItemResult(
-                    username=username,
-                    amount=amount,
-                    ok=True,
-                    result=r,
-                ))
-            except Exception as exc:
-                results.append(BatchItemResult(
-                    username=username,
-                    amount=amount,
-                    ok=False,
-                    error=str(exc),
-                ))
-        succeeded = sum(1 for r in results if r.ok)
-        return BatchResult(
-            total=len(items),
-            succeeded=succeeded,
-            failed=len(items) - succeeded,
-            items=results,
+        return await batch_purchase(
+            self,
+            items,
+            payment_method,
         )
 
     @tracked("giveaway_stars")

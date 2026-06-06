@@ -909,40 +909,60 @@ class TerminateSessionsResult:
 
 @dataclass
 class BatchItemResult:
-    '''Result of a single item within a batch operation.'''
+    '''
+    Result of a single item within a batch operation.
 
+    The type field indicates the purchase kind: "stars", "premium", or "ton".
+    The amount field holds star count or TON amount for stars/ton types,
+    or month count for premium type.
+    '''
+
+    type: str
     username: str
     amount: int
     ok: bool
     result: Any = None
     error: str | None = None
+    chunk_index: int = 0
 
     def __repr__(self) -> str:
         if self.ok:
             return (
                 f"BatchItemResult("
+                f"type='{self.type}', "
                 f"username='{self.username}', "
                 f"amount={self.amount}, "
-                f"ok=True"
+                f"ok=True, "
+                f"chunk={self.chunk_index}"
                 f")"
             )
         return (
             f"BatchItemResult("
+            f"type='{self.type}', "
             f"username='{self.username}', "
             f"amount={self.amount}, "
             f"ok=False, "
-            f"error='{self.error}'"
+            f"error='{self.error}', "
+            f"chunk={self.chunk_index}"
             f")"
         )
 
 
 @dataclass
 class BatchResult:
-    '''Result of a batch operation containing multiple individual results.'''
+    '''
+    Result of a batch purchase operation.
+
+    Items are grouped into chunks based on wallet version message limits
+    (4 for V4R2, 255 for V5R1). Each chunk is sent as a single TON
+    transaction with multiple inline messages. The chunks_sent field
+    indicates how many on-chain transactions were broadcast.
+    '''
 
     total: int
     succeeded: int
     failed: int
+    chunks_sent: int
     items: list[BatchItemResult] = field(default_factory=list)
 
     def __repr__(self) -> str:
@@ -950,6 +970,7 @@ class BatchResult:
             f"BatchResult("
             f"total={self.total}, "
             f"succeeded={self.succeeded}, "
-            f"failed={self.failed}"
+            f"failed={self.failed}, "
+            f"chunks_sent={self.chunks_sent}"
             f")"
         )
