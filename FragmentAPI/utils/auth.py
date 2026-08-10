@@ -17,6 +17,7 @@ from typing import Any
 
 import httpx
 from nacl.signing import SigningKey
+from ton_core import NetworkGlobalID
 
 from FragmentAPI.exceptions import (
     FragmentPageError,
@@ -53,6 +54,12 @@ BROWSER_HEADERS: dict[str, str] = {
 }
 
 
+class OfflineClient:
+    '''Minimal offline client interface for tonutils.'''
+    def __init__(self):
+        self.network = NetworkGlobalID.MAINNET
+
+
 def _parse_init_page(html: str) -> tuple[str, str]:
     '''Parse ajInit hash and ton_proof payload from Fragment homepage HTML.'''
     match_aj = re.search(r"ajInit\((.*?)\);", html)
@@ -81,16 +88,36 @@ def _generate_proof(
     ton_proof_payload: str,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     '''Generate TON proof data for Fragment authentication.'''
-
     wallet_cls = WALLET_CLASSES.get(
         wallet_version.upper(),
         WALLET_CLASSES["V5R1"],
     )
 
     wallet, pub_key, priv_key, _ = wallet_cls.from_mnemonic(
-        client=None,
+        client=OfflineClient(),
         mnemonic=" ".join(mnemonic),
     )
+
+    def _extract_key_bytes(obj: Any) -> bytes:
+        if isinstance(obj, bytes):
+            return obj
+        for attr in ("data", "key", "private_key", "public_key"):
+            val = getattr(obj, attr, None)
+            if isinstance(val, bytes):
+                return val
+        if hasattr(obj, "hex") and callable(obj.hex):
+            return bytes.fromhex(obj.hex())
+        if hasattr(obj, "as_hex") and isinstance(obj.as_hex, str):
+            return bytes.fromhex(obj.as_hex)
+        try:
+            return bytes(obj)
+        except TypeError:
+            raise UnexpectedError(
+                f"Could not extract bytes from key object of type {type(obj)}"
+            )
+
+    priv_bytes = _extract_key_bytes(priv_key)
+    pub_bytes = _extract_key_bytes(pub_key)
 
     raw_address = wallet.address.to_str(is_user_friendly=False)
     workchain, addr_hash_hex = raw_address.split(":")
@@ -116,7 +143,7 @@ def _generate_proof(
     sign_payload = b"\xff\xff" + b"ton-connect" + msg_hash
     final_hash = hashlib.sha256(sign_payload).digest()
 
-    signing_key = SigningKey(priv_key[:32])
+    signing_key = SigningKey(priv_bytes[:32])
     signature = signing_key.sign(final_hash).signature
     signature_b64 = base64.b64encode(signature).decode("utf-8")
 
@@ -124,7 +151,7 @@ def _generate_proof(
         "address": raw_address,
         "chain": "-239",
         "walletStateInit": state_init_b64,
-        "publicKey": pub_key.hex(),
+        "publicKey": pub_bytes.hex(),
     }
 
     device_data = {
