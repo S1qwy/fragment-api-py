@@ -177,6 +177,6 @@ If you find this library useful, consider supporting its development:
 
 <p align="center">
   <a href="https://github.com/s1qwy/fragment-api-py">GitHub</a> •
-  <a href="https://fragment.s1qwy.ru">Documentation</a> •
+  <a href="DOC.md">Documentation</a> •
   <a href="https://t.me/fragment_api_py">Telegram</a>
 </p>
