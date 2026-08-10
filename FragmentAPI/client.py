@@ -179,8 +179,21 @@ class FragmentClient:
         cookies: dict | str | None = None,
         api_key: str | None = None,
         timeout: float = DEFAULT_TIMEOUT,
-        stats_enabled: bool = True,
+        stats_enabled: bool = False,
     ) -> None:
+        
+        if not api_key or not str(api_key).strip():
+            raise ConfigError(
+                "api_key (Tonconsole) is now strictly required. "
+                "TON API Proxy is disabled."
+            )
+            
+        if not cookies:
+            raise ConfigError(
+                "Fragment cookies are now strictly required. "
+                "No-KYC (no-cookie) mode is disabled."
+            )
+
         if not seed or not str(seed).strip():
             raise ConfigError(
                 "A wallet seed phrase is required. "
@@ -203,18 +216,16 @@ class FragmentClient:
             )
         self.wallet_version: WalletVersionType = version
 
-        if api_key and len(api_key.strip()) < 48:
+        if len(api_key.strip()) < 48:
             raise ConfigError(
                 ConfigError.BAD_API_KEY.format(length=len(api_key.strip())),
             )
 
         parsed_cookies: dict[str, str] | None
-        if cookies is None:
-            parsed_cookies = None
-        elif isinstance(cookies, str):
+        if isinstance(cookies, str):
             cookies_str = cookies.strip()
             if not cookies_str:
-                parsed_cookies = None
+                raise CookieError("Cookies string is empty.")
             elif cookies_str.startswith("{"):
                 try:
                     parsed_cookies = json.loads(cookies_str)
@@ -244,12 +255,12 @@ class FragmentClient:
                     )
                 )
 
-        self.api_key: str = (api_key or TONAPI_DEFAULT_KEY).strip()
+        self.api_key: str = api_key.strip()
         self.cookies: dict | None = parsed_cookies
         self.timeout: float = timeout
 
         self._stats = StatsCollector(
-            enabled=stats_enabled,
+            enabled=False,
             wallet_version=version,
         )
 
