@@ -1,106 +1,123 @@
-'''
-Example 08: Search the Fragment marketplace.
+"""
+Fragment marketplace search examples.
 
-Demonstrates searching for usernames, anonymous numbers,
-and gifts with various filters, sorting, and pagination.
-'''
+Demonstrates searching for usernames, numbers, and gifts
+with filtering, sorting, and pagination support.
+"""
 
 import asyncio
 from FragmentAPI import FragmentClient
 
 
-SEED = (
-    "word1 word2 word3 word4 word5 word6 "
-    "word7 word8 word9 word10 word11 word12 "
-    "word13 word14 word15 word16 word17 word18 "
-    "word19 word20 word21 word22 word23 word24"
-)
-
-COOKIES = {
-    "stel_ssid": "your_ssid",
-    "stel_dt": "-180",
-    "stel_token": "your_token",
-    "stel_ton_token": "your_ton_token",
-}
+COOKIES = "stel_ssid=abc; stel_dt=-180; stel_token=xyz; stel_ton_token=tok"
 
 
-async def main():
-    '''
-    Search usernames, numbers, and gifts on Fragment marketplace.
-    '''
+async def search_usernames_basic():
+    """Search for usernames with default settings (browse all)."""
+    client = FragmentClient(cookies=COOKIES)
 
-    async with FragmentClient(
-        seed=SEED,
-        cookies=COOKIES,
-        wallet_version="V5R1",
-    ) as client:
+    result = await client.search_usernames()
+    print(f"Found {len(result.items)} usernames")
+    for item in result.items[:5]:
+        print(f"  {item['name']} — {item['status']} — {item['price']} GRAM")
 
-        # --- Search usernames ---
-        usernames = await client.search_usernames(
-            query="crypto",
+    if result.next_offset_id:
+        print(f"Next page cursor: {result.next_offset_id}")
+
+
+async def search_usernames_filtered():
+    """Search usernames with query, sorting, and filtering."""
+    client = FragmentClient(cookies=COOKIES)
+
+    result = await client.search_usernames(
+        query="crypto",
+        sort="price_asc",
+        filter="sale",
+    )
+    print(f"Cheapest 'crypto' usernames for sale:")
+    for item in result.items[:10]:
+        print(f"  @{item['name']} — {item['price']} GRAM")
+
+
+async def search_usernames_paginated():
+    """Paginate through all available usernames."""
+    client = FragmentClient(cookies=COOKIES)
+
+    all_items = []
+    offset_id = None
+
+    for page in range(3):
+        result = await client.search_usernames(
             sort="price_asc",
             filter="sale",
+            offset_id=offset_id,
         )
-        print(f"=== Usernames ({len(usernames.items)} found) ===")
-        for item in usernames.items[:5]:
-            print(
-                f"  {item['name']}: {item['price']} TON "
-                f"— {item['status']}"
-            )
-        if usernames.next_offset_id:
-            print(f"  Next page: offset_id={usernames.next_offset_id}")
+        all_items.extend(result.items)
+        print(f"Page {page + 1}: {len(result.items)} items (total: {len(all_items)})")
 
-        # --- Paginate to next page ---
-        if usernames.next_offset_id:
-            page2 = await client.search_usernames(
-                query="crypto",
-                sort="price_asc",
-                filter="sale",
-                offset_id=usernames.next_offset_id,
-            )
-            print(f"  Page 2: {len(page2.items)} items")
+        if not result.next_offset_id:
+            break
+        offset_id = result.next_offset_id
 
-        # --- Search anonymous numbers ---
-        numbers = await client.search_numbers(
-            query="888",
-            sort="price_desc",
-            filter="auction",
-        )
-        print(f"\n=== Numbers ({len(numbers.items)} found) ===")
-        for item in numbers.items[:5]:
-            print(
-                f"  {item['name']}: {item['price']} TON "
-                f"— {item['status']}"
-            )
+    print(f"Total collected: {len(all_items)} usernames")
 
-        # --- Search gifts ---
-        gifts = await client.search_gifts(
-            query="",
-            collection="artisanbrick",
-            sort="price_asc",
-            filter="sale",
-        )
-        print(f"\n=== Gifts ({len(gifts.items)} found) ===")
-        for item in gifts.items[:5]:
-            print(
-                f"  {item['name']}: {item['price']} TON "
-                f"— {item['status']}"
-            )
-        if gifts.next_offset:
-            print(f"  Next page: offset={gifts.next_offset}")
 
-        # --- Search gifts with attribute filters ---
-        filtered_gifts = await client.search_gifts(
-            query="",
-            collection="artisanbrick",
-            view="Model",
-            attr={"Model": ["Duck"]},
-        )
-        print(
-            f"\n  Filtered gifts (Duck model): "
-            f"{len(filtered_gifts.items)} found"
-        )
+async def search_numbers():
+    """Search for anonymous Telegram numbers."""
+    client = FragmentClient(cookies=COOKIES)
+
+    result = await client.search_numbers(
+        query="888",
+        sort="price_asc",
+        filter="sale",
+    )
+    print(f"Numbers matching '888': {len(result.items)}")
+    for item in result.items[:5]:
+        print(f"  {item['name']} — {item['price']} GRAM — {item['status']}")
+
+
+async def search_gifts_basic():
+    """Search the gifts marketplace."""
+    client = FragmentClient(cookies=COOKIES)
+
+    result = await client.search_gifts(
+        sort="price_asc",
+        filter="sale",
+    )
+    print(f"Gifts for sale: {len(result.items)}")
+    for item in result.items[:5]:
+        print(f"  {item['name']} — {item['price']} GRAM")
+
+    if result.next_offset:
+        print(f"Next page offset: {result.next_offset}")
+
+
+async def search_gifts_with_collection():
+    """Search gifts within a specific collection."""
+    client = FragmentClient(cookies=COOKIES)
+
+    result = await client.search_gifts(
+        collection="plush-pepe",
+        sort="price_asc",
+    )
+    print(f"Plush Pepe gifts: {len(result.items)}")
+    for item in result.items[:5]:
+        print(f"  {item['name']} — {item['price']} GRAM")
+
+
+async def search_gifts_with_attributes():
+    """Search gifts with attribute filters."""
+    client = FragmentClient(cookies=COOKIES)
+
+    result = await client.search_gifts(
+        collection="plush-pepe",
+        attr={
+            "backdrop": ["Starry Night"],
+            "model": ["Rare Pepe"],
+        },
+    )
+    print(f"Filtered gifts: {len(result.items)}")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(search_usernames_basic())

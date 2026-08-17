@@ -1,20 +1,13 @@
-'''
-Example 05: Gift Telegram Premium to a user.
+"""
+Premium gift purchase examples.
 
-Demonstrates purchasing Premium subscriptions for 3, 6, or 12 months
-with TON or USDT payment, and checking prices beforehand.
-'''
+Demonstrates gifting Telegram Premium to users with
+different durations and payment methods.
+"""
 
 import asyncio
-from FragmentAPI import FragmentClient
+from FragmentAPI import FragmentClient, EvmPaymentResult, PurchaseResult
 
-
-SEED = (
-    "word1 word2 word3 word4 word5 word6 "
-    "word7 word8 word9 word10 word11 word12 "
-    "word13 word14 word15 word16 word17 word18 "
-    "word19 word20 word21 word22 word23 word24"
-)
 
 COOKIES = {
     "stel_ssid": "your_ssid",
@@ -22,53 +15,85 @@ COOKIES = {
     "stel_token": "your_token",
     "stel_ton_token": "your_ton_token",
 }
+SEED = "word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24"
+API_KEY = "your_api_key_here_at_least_48_chars_long_xxxxxxxxxxxxxxxxx"
 
 
-async def main():
-    '''
-    Check Premium prices and gift Premium to a Telegram user.
-    '''
+async def check_premium_recipient():
+    """Verify a user can receive Premium before purchasing."""
+    client = FragmentClient(cookies=COOKIES, seed=SEED, api_key=API_KEY)
 
-    async with FragmentClient(
-        seed=SEED,
-        cookies=COOKIES,
-        wallet_version="V5R1",
-    ) as client:
+    recipient = await client.get_premium_recipient("durov", months=3)
+    if recipient:
+        print(f"Recipient found: {recipient.name}")
+        if recipient.myself:
+            print("Warning: this is your own account!")
+    else:
+        print("User not found or cannot receive Premium")
 
-        # --- Check Premium prices ---
-        prices = await client.get_premium_prices()
-        print(f"=== Premium Prices (TON rate: {prices.ton_rate}) ===")
-        for opt in prices.options:
-            discount = f" ({opt.discount})" if opt.discount else ""
-            print(
-                f"  {opt.months:>2} months — {opt.label}: "
-                f"{opt.ton_price} TON (${opt.usd_price}){discount}"
-            )
 
-        # --- Gift Premium for 3 months ---
-        result = await client.purchase_premium(
-            username="@durov",
-            months=3,
-            show_sender=True,
-            payment_method="ton",
-        )
-        print(f"\n=== Premium Gift Result ===")
-        print(f"  Transaction ID: {result.transaction_id}")
-        print(f"  Recipient:      {result.username}")
-        print(f"  Duration:       {result.amount} months")
-        print(f"  Payment:        {result.payment_method}")
+async def gift_premium_3_months():
+    """Gift 3 months of Telegram Premium."""
+    client = FragmentClient(cookies=COOKIES, seed=SEED, api_key=API_KEY)
 
-        # --- Gift Premium for 12 months with USDT ---
-        result_yearly = await client.purchase_premium(
-            username="@friend",
-            months=12,
-            show_sender=False,
-            payment_method="usdt_ton",
-        )
-        print(f"\n=== Yearly Premium Result ===")
-        print(f"  Transaction ID: {result_yearly.transaction_id}")
-        print(f"  Duration:       {result_yearly.amount} months")
+    result = await client.purchase_premium(
+        username="durov",
+        months=3,
+        show_sender=True,
+        payment_method="gram",
+    )
+
+    if isinstance(result, PurchaseResult):
+        print(f"Premium gifted!")
+        print(f"  Transaction: {result.transaction_id}")
+        print(f"  To: {result.username}")
+        print(f"  Duration: {result.amount} months")
+
+
+async def gift_premium_12_months():
+    """Gift 12 months of Telegram Premium for maximum savings."""
+    client = FragmentClient(cookies=COOKIES, seed=SEED, api_key=API_KEY)
+
+    result = await client.purchase_premium(
+        username="durov",
+        months=12,
+        payment_method="gram",
+    )
+    print(f"12-month Premium result: {result}")
+
+
+async def gift_premium_evm():
+    """Gift Premium using USDC on Base network."""
+    client = FragmentClient(
+        cookies={
+            "stel_ssid": "your_ssid",
+            "stel_dt": "-180",
+            "stel_token": "your_token",
+        },
+    )
+
+    result = await client.purchase_premium(
+        username="durov",
+        months=3,
+        payment_method="usdc_base",
+    )
+
+    if isinstance(result, EvmPaymentResult):
+        print(f"EVM invoice for Premium: {result.invoice}")
+
+
+async def gift_premium_unified():
+    """Gift Premium using the unified purchase() method."""
+    client = FragmentClient(cookies=COOKIES, seed=SEED, api_key=API_KEY)
+
+    result = await client.purchase(
+        "premium",
+        username="durov",
+        months=6,
+        payment_method="gram",
+    )
+    print(f"Unified Premium purchase: {result}")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(gift_premium_3_months())

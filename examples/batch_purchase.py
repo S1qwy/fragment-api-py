@@ -1,31 +1,14 @@
-'''
-Example: Batch purchase Stars, Premium, and Ads top-ups
-in bundled TON transactions with inline messages.
+"""
+Batch purchase examples.
 
-Demonstrates how to use client.batch_purchase() to send
-multiple purchases as grouped on-chain transactions.
-
-V5R1 wallets can pack up to 255 messages per transaction.
-V4R2 wallets can pack up to 4 messages per transaction.
-Items exceeding the limit are automatically split into
-multiple chunks, each broadcast as a separate transaction.
-'''
+Demonstrates executing multiple purchases in a single on-chain
+transaction for maximum efficiency. Transactions are automatically
+chunked based on wallet version limits.
+"""
 
 import asyncio
-from FragmentAPI import (
-    FragmentClient,
-    ConfigError,
-    WalletError,
-    FragmentBaseError,
-)
+from FragmentAPI import FragmentClient, PurchaseItem, BatchResult
 
-
-SEED = (
-    "word1 word2 word3 word4 word5 word6 "
-    "word7 word8 word9 word10 word11 word12 "
-    "word13 word14 word15 word16 word17 word18 "
-    "word19 word20 word21 word22 word23 word24"
-)
 
 COOKIES = {
     "stel_ssid": "your_ssid",
@@ -33,110 +16,113 @@ COOKIES = {
     "stel_token": "your_token",
     "stel_ton_token": "your_ton_token",
 }
+SEED = "word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24"
+API_KEY = "your_api_key_here_at_least_48_chars_long_xxxxxxxxxxxxxxxxx"
 
 
-async def main():
-    '''
-    Run a batch purchase containing mixed item types.
+async def batch_stars_and_premium():
+    """Purchase Stars and Premium for multiple users in one transaction."""
+    client = FragmentClient(cookies=COOKIES, seed=SEED, api_key=API_KEY)
 
-    Each item dict specifies:
-      - type: "stars", "premium", or "ton"
-      - username: Telegram username of the recipient
-      - amount: star count (stars), TON amount (ton)
-      - months: subscription duration (premium only, 3/6/12)
-      - show_sender: whether to reveal sender (optional)
+    result = await client.batch_purchase(
+        items=[
+            {"type": "stars", "username": "user1", "amount": 100},
+            {"type": "stars", "username": "user2", "amount": 200},
+            {"type": "premium", "username": "user3", "months": 3},
+            {"type": "stars", "username": "user4", "amount": 500, "show_sender": False},
+        ],
+        payment_method="gram",
+    )
 
-    The library resolves each recipient, obtains transaction
-    payloads from Fragment, groups messages into chunks that
-    fit the wallet version limit, checks total balance upfront,
-    and broadcasts each chunk as a single on-chain transaction.
+    print(f"Batch result: {result.total} total, {result.succeeded} succeeded, {result.failed} failed")
+    print(f"Chunks sent: {result.chunks_sent}")
 
-    After confirmation, req_ids are sent to Fragment for
-    purchase finalization.
-    '''
+    for item in result.items:
+        status = "OK" if item.ok else f"FAILED: {item.error}"
+        print(f"  [{item.chunk_index}] {item.type} -> {item.username}: {item.amount} — {status}")
 
-    async with FragmentClient(
-        seed=SEED,
+
+async def batch_with_purchase_items():
+    """Batch purchase using PurchaseItem dataclass for type safety."""
+    client = FragmentClient(cookies=COOKIES, seed=SEED, api_key=API_KEY)
+
+    items = [
+        PurchaseItem(type="stars", username="user1", amount=100),
+        PurchaseItem(type="premium", username="user2", months=6),
+        PurchaseItem(type="stars", username="user3", amount=1000, show_sender=False),
+    ]
+
+    result = await client.batch_purchase(items, payment_method="gram")
+    print(f"Typed batch: {result}")
+
+
+async def batch_via_unified_purchase():
+    """Execute batch purchase through the unified purchase() method."""
+    client = FragmentClient(cookies=COOKIES, seed=SEED, api_key=API_KEY)
+
+    result = await client.purchase(
+        [
+            {"type": "stars", "username": "user1", "amount": 50},
+            {"type": "stars", "username": "user2", "amount": 75},
+        ],
+        payment_method="gram",
+    )
+
+    if isinstance(result, BatchResult):
+        print(f"Batch via unified: {result.succeeded}/{result.total} succeeded")
+
+
+async def batch_with_ads_topup():
+    """Include Ads GRAM top-ups in a batch with Stars purchases."""
+    client = FragmentClient(cookies=COOKIES, seed=SEED, api_key=API_KEY)
+
+    result = await client.batch_purchase(
+        items=[
+            {"type": "stars", "username": "user1", "amount": 100},
+            {"type": "gram", "username": "my_channel", "amount": 5},
+            {"type": "premium", "username": "user2", "months": 3},
+        ],
+        payment_method="gram",
+    )
+    print(f"Mixed batch: {result}")
+
+
+async def batch_large_with_highload():
+    """Execute a large batch with HighloadWalletV3 (up to 254 messages)."""
+    client = FragmentClient(
         cookies=COOKIES,
-        wallet_version="V5R1",
-    ) as client:
+        seed=SEED,
+        api_key=API_KEY,
+        wallet_version="HIGHLOAD_V3",
+    )
 
-        wallet = await client.get_wallet()
-        print(f"Wallet: {wallet.address}")
-        print(f"Balance: {wallet.balance_ton} TON\n")
+    items = [
+        {"type": "stars", "username": f"user{i}", "amount": 50}
+        for i in range(10)
+    ]
 
-        items = [
-            {
-                "type": "stars",
-                "username": "@alice",
-                "amount": 500,
-                "show_sender": True,
-            },
-            {
-                "type": "stars",
-                "username": "@bob",
-                "amount": 1000,
-            },
-            {
-                "type": "premium",
-                "username": "@charlie",
-                "months": 3,
-                "show_sender": False,
-            },
-            {
-                "type": "ton",
-                "username": "@dave",
-                "amount": 10,
-            },
-            {
-                "type": "stars",
-                "username": "@eve",
-                "amount": 250,
-            },
-        ]
+    result = await client.batch_purchase(items, payment_method="gram")
+    print(f"Highload batch: {result.succeeded}/{result.total}, chunks: {result.chunks_sent}")
 
-        try:
-            result = await client.batch_purchase(
-                items=items,
-                payment_method="ton",
-            )
-        except ConfigError as exc:
-            print(f"Configuration error: {exc}")
-            return
-        except WalletError as exc:
-            print(f"Wallet error (insufficient balance): {exc}")
-            return
-        except FragmentBaseError as exc:
-            print(f"Fragment error: {exc}")
-            return
 
-        print(f"Batch complete: {result}")
-        print(f"  Total: {result.total}")
-        print(f"  Succeeded: {result.succeeded}")
-        print(f"  Failed: {result.failed}")
-        print(f"  Chunks sent: {result.chunks_sent}\n")
+async def batch_handle_partial_failures():
+    """Handle partial failures in batch operations gracefully."""
+    client = FragmentClient(cookies=COOKIES, seed=SEED, api_key=API_KEY)
 
-        idx = 0
-        while idx < len(result.items):
-            item = result.items[idx]
-            if item.ok:
-                print(
-                    f"  OK  [{item.type}] "
-                    f"@{item.username} "
-                    f"amount={item.amount} "
-                    f"chunk={item.chunk_index} "
-                    f"tx={item.result['transaction_id'][:16]}..."
-                )
-            else:
-                print(
-                    f"  FAIL [{item.type}] "
-                    f"@{item.username} "
-                    f"amount={item.amount} "
-                    f"chunk={item.chunk_index} "
-                    f"error={item.error}"
-                )
-            idx += 1
+    result = await client.batch_purchase([
+        {"type": "stars", "username": "real_user", "amount": 100},
+        {"type": "stars", "username": "nonexistent_user_12345", "amount": 100},
+        {"type": "stars", "username": "another_real_user", "amount": 100},
+    ])
+
+    print(f"Total: {result.total}, Succeeded: {result.succeeded}, Failed: {result.failed}")
+
+    for item in result.items:
+        if item.ok:
+            print(f"  SUCCESS: {item.username} — {item.amount} stars")
+        else:
+            print(f"  FAILED:  {item.username} — {item.error}")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(batch_stars_and_premium())

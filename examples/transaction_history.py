@@ -1,20 +1,13 @@
-'''
-Example 12: View transaction history for Stars, Premium, and Ads.
+"""
+Transaction history retrieval examples.
 
-Demonstrates fetching and displaying all types of
-transaction history available on Fragment.
-'''
+Demonstrates fetching Stars, Premium, and Ads top-up
+transaction history from Fragment.
+"""
 
 import asyncio
 from FragmentAPI import FragmentClient
 
-
-SEED = (
-    "word1 word2 word3 word4 word5 word6 "
-    "word7 word8 word9 word10 word11 word12 "
-    "word13 word14 word15 word16 word17 word18 "
-    "word19 word20 word21 word22 word23 word24"
-)
 
 COOKIES = {
     "stel_ssid": "your_ssid",
@@ -24,49 +17,39 @@ COOKIES = {
 }
 
 
-async def main():
-    '''
-    Retrieve Stars, Premium, and Ads topup transaction history.
-    '''
+async def stars_history():
+    """Fetch Stars transaction history (newest first)."""
+    client = FragmentClient(cookies=COOKIES)
 
-    async with FragmentClient(
-        seed=SEED,
-        cookies=COOKIES,
-        wallet_version="V5R1",
-    ) as client:
+    transactions = await client.get_stars_history(sort="desc")
+    print(f"Stars transactions: {len(transactions)}")
 
-        # --- Stars history (newest first) ---
-        stars_history = await client.get_stars_history(
-            sort="desc",
-        )
-        print(f"=== Stars History ({len(stars_history)} entries) ===")
-        for tx in stars_history[:10]:
-            print(
-                f"  @{tx.recipient}: {tx.stars} stars — "
-                f"{tx.price_ton} TON — {tx.date}"
-            )
+    for tx in transactions[:10]:
+        print(f"  @{tx.recipient} — {tx.stars} stars — {tx.price_gram} GRAM — {tx.date}")
+        print(f"    Price TON (alias): {tx.price_ton}")
 
-        # --- Premium history (oldest first) ---
-        premium_history = await client.get_premium_history(
-            sort="asc",
-        )
-        print(f"\n=== Premium History ({len(premium_history)} entries) ===")
-        for tx in premium_history[:10]:
-            print(
-                f"  @{tx.recipient}: {tx.duration} — "
-                f"{tx.price_ton} TON — {tx.date}"
-            )
 
-        # --- Ads topup history ---
-        topup_history = await client.get_topup_history(
-            sort="desc",
-        )
-        print(f"\n=== Ads Topup History ({len(topup_history)} entries) ===")
-        for tx in topup_history[:10]:
-            print(
-                f"  @{tx.recipient}: {tx.amount} TON — {tx.date}"
-            )
+async def premium_history():
+    """Fetch Premium gift transaction history (newest first)."""
+    client = FragmentClient(cookies=COOKIES)
+
+    transactions = await client.get_premium_history(sort="desc")
+    print(f"Premium transactions: {len(transactions)}")
+
+    for tx in transactions[:10]:
+        print(f"  @{tx.recipient} — {tx.duration} — {tx.price_gram} GRAM — {tx.date}")
+
+
+async def topup_history():
+    """Fetch Ads GRAM top-up history (oldest first)."""
+    client = FragmentClient(cookies=COOKIES)
+
+    transactions = await client.get_topup_history(sort="asc")
+    print(f"Top-up transactions: {len(transactions)}")
+
+    for tx in transactions[:10]:
+        print(f"  @{tx.recipient} — {tx.amount} GRAM — {tx.date}")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(stars_history())

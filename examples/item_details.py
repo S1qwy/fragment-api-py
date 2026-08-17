@@ -1,110 +1,112 @@
-'''
-Example 09: Get detailed information about marketplace items.
+"""
+Detailed item information retrieval examples.
 
-Demonstrates retrieving full details for usernames, numbers,
-and gifts including auction info, bid history, and ownership history.
-'''
+Demonstrates fetching full details for usernames, numbers, and gifts,
+including auction info, bid history, ownership history, and attributes.
+"""
 
 import asyncio
 from FragmentAPI import FragmentClient
 
 
-SEED = (
-    "word1 word2 word3 word4 word5 word6 "
-    "word7 word8 word9 word10 word11 word12 "
-    "word13 word14 word15 word16 word17 word18 "
-    "word19 word20 word21 word22 word23 word24"
-)
-
-COOKIES = {
-    "stel_ssid": "your_ssid",
-    "stel_dt": "-180",
-    "stel_token": "your_token",
-    "stel_ton_token": "your_ton_token",
-}
+COOKIES = "stel_ssid=abc; stel_dt=-180; stel_token=xyz; stel_ton_token=tok"
 
 
-async def main():
-    '''
-    Fetch detailed info for username, number, and gift items.
-    '''
+async def get_username_details():
+    """Get detailed info about a specific username listing."""
+    client = FragmentClient(cookies=COOKIES)
 
-    async with FragmentClient(
-        seed=SEED,
-        cookies=COOKIES,
-        wallet_version="V5R1",
-    ) as client:
+    info = await client.get_username_info("durov")
+    print(f"Username:       @{info.username}")
+    print(f"Status:         {info.status}")
+    print(f"GRAM rate:      {info.gram_rate}")
+    print(f"TON rate (alias): {info.ton_rate}")
 
-        # --- Username details ---
-        username_info = await client.get_username_info(
+    if info.auction:
+        print(f"Highest bid:    {info.auction.highest_bid} GRAM")
+        print(f"Bid step:       {info.auction.bid_step} GRAM")
+        print(f"Minimum bid:    {info.auction.minimum_bid} GRAM")
+        print(f"Buy now:        {info.auction.buy_now_price} GRAM")
+        print(f"Sell price:     {info.auction.sell_price} GRAM")
+
+    if info.auction_end:
+        print(f"Auction ends:   {info.auction_end}")
+
+    if info.owner_wallet:
+        print(f"Owner wallet:   {info.owner_wallet}")
+
+    if info.purchased_date:
+        print(f"Purchased:      {info.purchased_date}")
+
+    print(f"\nBid history ({len(info.bid_history)} entries):")
+    for bid in info.bid_history[:5]:
+        print(f"  {bid.price} GRAM — {bid.date} — {bid.wallet}")
+
+    if info.bid_history_next_offset:
+        print(f"  ... more available (offset: {info.bid_history_next_offset})")
+
+    print(f"\nOwnership history ({len(info.owner_history)} entries):")
+    for owner in info.owner_history[:5]:
+        print(f"  {owner.price} — {owner.date} — {owner.wallet}")
+
+
+async def get_number_details():
+    """Get detailed info about a specific number listing."""
+    client = FragmentClient(cookies=COOKIES)
+
+    info = await client.get_number_info("+88812345678")
+    print(f"Number:         {info.display_number}")
+    print(f"Status:         {info.status}")
+    print(f"Restricted:     {info.restricted}")
+    print(f"GRAM rate:      {info.gram_rate}")
+
+    if info.auction:
+        print(f"Highest bid:    {info.auction.highest_bid} GRAM")
+
+
+async def get_gift_details():
+    """Get detailed info about a specific gift listing."""
+    client = FragmentClient(cookies=COOKIES)
+
+    info = await client.get_gift_info("plush-pepe-42")
+    print(f"Gift:           {info.name}")
+    print(f"Slug:           {info.slug}")
+    print(f"Status:         {info.status}")
+    print(f"Image:          {info.image_url}")
+    print(f"Sticker:        {info.sticker_url}")
+    print(f"Issued:         {info.issued}")
+
+    print(f"\nAttributes ({len(info.attributes)}):")
+    for attr in info.attributes:
+        rarity_str = f" ({attr.rarity})" if attr.rarity else ""
+        print(f"  {attr.name}: {attr.value}{rarity_str}")
+
+    print(f"\nBid history: {len(info.bid_history)} entries")
+    print(f"Ownership history: {len(info.owner_history)} entries")
+
+
+async def load_more_history():
+    """Load additional bid/ownership history pages for an item."""
+    client = FragmentClient(cookies=COOKIES)
+
+    info = await client.get_username_info("durov")
+
+    if info.bid_history_next_offset:
+        more_bids = await client.get_orders_history(
+            item_type=1,
             username="durov",
+            offset_id=info.bid_history_next_offset,
         )
-        print("=== Username Info ===")
-        print(f"  Username:     @{username_info.username}")
-        print(f"  Status:       {username_info.status}")
-        print(f"  TON Rate:     {username_info.ton_rate}")
-        print(f"  Owner Wallet: {username_info.owner_wallet}")
-        print(f"  Purchased:    {username_info.purchased_date}")
-        if username_info.auction:
-            a = username_info.auction
-            print(f"  Highest Bid:  {a.highest_bid}")
-            print(f"  Bid Step:     {a.bid_step}")
-            print(f"  Minimum Bid:  {a.minimum_bid}")
-            print(f"  Sell Price:   {a.sell_price}")
-            print(f"  Buy Now:      {a.buy_now_price}")
-        print(f"  Auction End:  {username_info.auction_end}")
-        print(f"  Bid History:  {len(username_info.bid_history)} entries")
-        for bid in username_info.bid_history[:3]:
-            print(f"    {bid.price} TON — {bid.date} — {bid.wallet}")
-        print(f"  Owner History: {len(username_info.owner_history)} entries")
-        for owner in username_info.owner_history[:3]:
-            print(f"    {owner.price} — {owner.date} — {owner.wallet}")
+        print(f"Additional bid history loaded: {more_bids}")
 
-        # --- Number details ---
-        number_info = await client.get_number_info(
-            number="+888 1234 5678",
+    if info.owner_history_next_offset:
+        more_owners = await client.get_owners_history(
+            item_type=1,
+            username="durov",
+            offset_id=info.owner_history_next_offset,
         )
-        print(f"\n=== Number Info ===")
-        print(f"  Number:       {number_info.display_number}")
-        print(f"  Status:       {number_info.status}")
-        print(f"  Restricted:   {number_info.restricted}")
-        print(f"  Bid History:  {len(number_info.bid_history)} entries")
-
-        # --- Gift details ---
-        gift_info = await client.get_gift_info(
-            slug="plushpepe-1821",
-        )
-        print(f"\n=== Gift Info ===")
-        print(f"  Name:         {gift_info.name}")
-        print(f"  Status:       {gift_info.status}")
-        print(f"  Image URL:    {gift_info.image_url}")
-        print(f"  Sticker URL:  {gift_info.sticker_url}")
-        print(f"  Issued:       {gift_info.issued}")
-        print(f"  Attributes ({len(gift_info.attributes)}):")
-        for attr in gift_info.attributes:
-            rarity = f" ({attr.rarity})" if attr.rarity else ""
-            print(f"    {attr.name}: {attr.value}{rarity}")
-        print(f"  Bid History:  {len(gift_info.bid_history)} entries")
-        print(f"  Owner History: {len(gift_info.owner_history)} entries")
-
-        # --- Load more bid history (pagination) ---
-        if username_info.bid_history_next_offset:
-            more_bids = await client.get_orders_history(
-                item_type=1,
-                username="durov",
-                offset_id=username_info.bid_history_next_offset,
-            )
-            print(f"\n  More bids loaded: {len(more_bids.get('html', ''))}")
-
-        # --- Load more owner history (pagination) ---
-        if username_info.owner_history_next_offset:
-            more_owners = await client.get_owners_history(
-                item_type=1,
-                username="durov",
-                offset_id=username_info.owner_history_next_offset,
-            )
-            print(f"  More owners loaded: {len(more_owners.get('html', ''))}")
+        print(f"Additional ownership history loaded: {more_owners}")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(get_username_details())
