@@ -16,10 +16,9 @@ from typing import (
 from tonutils.contracts.wallet import (
     WalletV4R2,
     WalletV5R1,
-    HighloadWalletV3,
 )
 
-WalletVersionType = Literal["V4R2", "V5R1", "HIGHLOAD_V3"]
+WalletVersionType = Literal["V4R2", "V5R1"]
 SUPPORTED_WALLET_VERSIONS: frozenset[str] = frozenset(
     get_args(WalletVersionType),
 )
@@ -27,13 +26,11 @@ SUPPORTED_WALLET_VERSIONS: frozenset[str] = frozenset(
 WALLET_CLASSES: dict[str, Any] = {
     "V4R2": WalletV4R2,
     "V5R1": WalletV5R1,
-    "HIGHLOAD_V3": HighloadWalletV3,
 }
 
 WALLET_MAX_MESSAGES: dict[str, int] = {
     "V4R2": 4,
     "V5R1": 255,
-    "HIGHLOAD_V3": 254,
 }
 
 ApiProviderType = Literal["tonapi", "toncenter"]

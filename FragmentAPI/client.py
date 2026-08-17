@@ -174,7 +174,7 @@ class FragmentClient:
         seed: 24-word mnemonic phrase for the TON wallet. Optional.
         api_key: API key for TON blockchain interactions (Tonconsole or Toncenter). Optional.
         api_provider: "tonapi" or "toncenter". Default "tonapi".
-        wallet_version: Wallet contract version — "V4R2", "V5R1", or "HIGHLOAD_V3". Default "V5R1".
+        wallet_version: Wallet contract version — "V4R2", "V5R1". Default "V5R1".
         timeout: HTTP request timeout in seconds. Default 30.
     """
 

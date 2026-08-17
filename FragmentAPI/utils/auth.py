@@ -329,7 +329,7 @@ async def authenticate(
 
     Args:
         seed: TON wallet mnemonic phrase.
-        wallet_version: "V4R2", "V5R1", or "HIGHLOAD_V3".
+        wallet_version: "V4R2", "V5R1".
         phone: If provided, uses phone-confirmation flow instead of QR.
         print_qr: Print the QR code to terminal (QR flow only).
         on_status: Optional callback(status_name, payload) for progress.

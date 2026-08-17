@@ -3,7 +3,7 @@ TON wallet utilities for transaction execution and wallet info retrieval.
 
 Handles wallet creation, balance checking, transaction signing/broadcasting,
 and seqno/balance confirmation. Supports Tonapi and Toncenter providers,
-and V4R2, V5R1, and HighloadWalletV3 wallet versions.
+and V4R2, V5R1 wallet versions.
 """
 
 from __future__ import annotations

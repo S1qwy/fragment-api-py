@@ -3,7 +3,7 @@ Unified purchase engine for Fragment.
 
 Handles single and batched purchases for Stars, Premium, and Ads GRAM/TON.
 Automatically chunks multiple purchases into batched on-chain TON transactions
-based on wallet version limits (V4R2: 4, V5R1: 255, HIGHLOAD_V3: 254).
+based on wallet version limits (V4R2: 4, V5R1: 255).
 Supports both GRAM on-chain and EVM invoice payment flows.
 """
 
