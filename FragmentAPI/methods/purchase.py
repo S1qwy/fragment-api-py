@@ -587,7 +587,13 @@ async def _execute_single_flow(
                     invoice=invoice,
                 )
 
+            if is_evm:
+                raise ConfigurationError(
+                    ConfigurationError.UNSUPPORTED_METHOD.format(item_type=item_type)
+                )
+
             raise FragmentAPIError(f"Unsupported payment flow for {item_type}/{payment_method}")
+
 
     except FragmentError:
         raise

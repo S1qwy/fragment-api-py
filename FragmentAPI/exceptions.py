@@ -40,6 +40,10 @@ class ConfigurationError(ClientError):
         f"{', '.join(str(n) for n in sorted(MNEMONIC_WORD_COUNTS_VALID))} words, got {{count}}."
     )
     UNSUPPORTED_PROVIDER = "Unsupported API provider '{provider}'. Supported values: {supported}."
+    UNSUPPORTED_METHOD = (
+        f"EVM payment methods are not supported for '{item_type}' purchases. "
+        f"Use 'gram' or 'ton' payment method instead."
+    )
     INVALID_MONTHS = (
         f"Invalid Premium duration: choose "
         f"{', '.join(str(m) for m in sorted(PREMIUM_MONTHS_VALID))} months."
