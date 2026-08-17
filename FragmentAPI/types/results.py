@@ -1,15 +1,18 @@
+"""
+Result dataclasses for Fragment API responses.
+
+All API methods return strongly-typed dataclass instances.
+"""
+
 from __future__ import annotations
 
-from dataclasses import (
-    dataclass,
-    field,
-)
+from dataclasses import dataclass, field
 from typing import Any
 
 
 @dataclass
 class PreparedTransactionMessage:
-    '''Single message of a prepared TON transaction.'''
+    """Single message of a prepared TON transaction."""
 
     address: str
     amount: str
@@ -19,7 +22,7 @@ class PreparedTransactionMessage:
 
 @dataclass
 class PreparedTransaction:
-    '''Unsigned Fragment transaction payload for external signing.'''
+    """Unsigned Fragment transaction payload for external signing."""
 
     req_id: str
     item_kind: str
@@ -44,7 +47,7 @@ class PreparedTransaction:
 
 @dataclass
 class EvmInvoice:
-    '''EVM payment invoice details from Fragment.'''
+    """EVM payment invoice details from Fragment."""
 
     req_id: str
     invoice_address: str
@@ -74,7 +77,7 @@ class EvmInvoice:
 
 @dataclass
 class EvmPaymentResult:
-    '''Result of initiating an EVM payment.'''
+    """Result of initiating an EVM payment."""
 
     item_kind: str
     target: str
@@ -95,7 +98,7 @@ class EvmPaymentResult:
 
 @dataclass
 class TransactionResult:
-    '''Result of a TON transaction with confirmation details.'''
+    """Result of a TON transaction with confirmation details."""
 
     tx_hash: str
     boc: str | None = None
@@ -117,27 +120,37 @@ class TransactionResult:
 
 @dataclass
 class WalletInfo:
-    '''Wallet state information.'''
+    """Wallet state information with GRAM and USDT balances."""
 
     address: str
     state: str
-    balance_ton: float
-    balance_usdt: float
+    gram_balance: float
+    usdt_balance: float
+
+    @property
+    def balance_ton(self) -> float:
+        """Alias for gram_balance for backward compatibility."""
+        return self.gram_balance
+
+    @property
+    def balance_usdt(self) -> float:
+        """Alias for usdt_balance for consistency."""
+        return self.usdt_balance
 
     def __repr__(self) -> str:
         return (
             f"WalletInfo("
             f"address='{self.address}', "
             f"state='{self.state}', "
-            f"balance_ton={self.balance_ton}, "
-            f"balance_usdt={self.balance_usdt}"
+            f"gram_balance={self.gram_balance}, "
+            f"usdt_balance={self.usdt_balance}"
             f")"
         )
 
 
 @dataclass
 class RecipientInfo:
-    '''Resolved recipient from Fragment search.'''
+    """Resolved recipient from Fragment search."""
 
     recipient: str
     name: str
@@ -155,13 +168,52 @@ class RecipientInfo:
 
 
 @dataclass
+class PurchaseItem:
+    """Single item for batch purchase operation."""
+
+    type: str
+    username: str
+    amount: int | None = None
+    months: int | None = None
+    show_sender: bool = True
+
+    def __repr__(self) -> str:
+        if self.type == "premium":
+            return f"PurchaseItem(type='premium', username='{self.username}', months={self.months})"
+        return f"PurchaseItem(type='{self.type}', username='{self.username}', amount={self.amount})"
+
+
+@dataclass
+class PurchaseResult:
+    """Result of a successful purchase operation."""
+
+    transaction_id: str
+    type: str
+    username: str
+    amount: int
+    payment_method: str = "gram"
+
+    def __repr__(self) -> str:
+        unit = "months" if self.type == "premium" else ("GRAM" if self.type in ("gram", "ton") else "stars")
+        return (
+            f"PurchaseResult("
+            f"type='{self.type}', "
+            f"username='{self.username}', "
+            f"amount={self.amount} {unit}, "
+            f"payment='{self.payment_method}', "
+            f"tx='{self.transaction_id}'"
+            f")"
+        )
+
+
+@dataclass
 class PremiumResult:
-    '''Result of a successful Telegram Premium gift.'''
+    """Result of a successful Telegram Premium gift."""
 
     transaction_id: str
     username: str
     amount: int
-    payment_method: str = "ton"
+    payment_method: str = "gram"
 
     def __repr__(self) -> str:
         return (
@@ -176,12 +228,12 @@ class PremiumResult:
 
 @dataclass
 class StarsResult:
-    '''Result of a successful Telegram Stars purchase.'''
+    """Result of a successful Telegram Stars purchase."""
 
     transaction_id: str
     username: str
     amount: int
-    payment_method: str = "ton"
+    payment_method: str = "gram"
 
     def __repr__(self) -> str:
         return (
@@ -196,7 +248,7 @@ class StarsResult:
 
 @dataclass
 class AdsTopupResult:
-    '''Result of a successful Telegram Ads TON top-up.'''
+    """Result of a successful Telegram Ads GRAM top-up."""
 
     transaction_id: str
     username: str
@@ -206,7 +258,7 @@ class AdsTopupResult:
         return (
             f"AdsTopupResult("
             f"username='{self.username}', "
-            f"amount={self.amount} TON, "
+            f"amount={self.amount} GRAM, "
             f"tx='{self.transaction_id}'"
             f")"
         )
@@ -214,13 +266,13 @@ class AdsTopupResult:
 
 @dataclass
 class GiveawayStarsResult:
-    '''Result of a successful Stars giveaway.'''
+    """Result of a successful Stars giveaway."""
 
     transaction_id: str
     channel: str
     winners: int
     amount: int
-    payment_method: str = "ton"
+    payment_method: str = "gram"
 
     def __repr__(self) -> str:
         return (
@@ -236,13 +288,13 @@ class GiveawayStarsResult:
 
 @dataclass
 class GiveawayPremiumResult:
-    '''Result of a successful Premium giveaway.'''
+    """Result of a successful Premium giveaway."""
 
     transaction_id: str
     channel: str
     winners: int
     amount: int
-    payment_method: str = "ton"
+    payment_method: str = "gram"
 
     def __repr__(self) -> str:
         return (
@@ -258,7 +310,7 @@ class GiveawayPremiumResult:
 
 @dataclass
 class NftWithdrawalInitResult:
-    '''Result of NFT withdrawal initialization.'''
+    """Result of NFT withdrawal initialization."""
 
     ok: bool
     confirm_message: str | None = None
@@ -280,7 +332,7 @@ class NftWithdrawalInitResult:
 
 @dataclass
 class NftWithdrawalConfirmResult:
-    '''Result of NFT withdrawal confirmation.'''
+    """Result of NFT withdrawal confirmation."""
 
     ok: bool
     need_update: bool
@@ -302,7 +354,7 @@ class NftWithdrawalConfirmResult:
 
 @dataclass
 class StarsWithdrawalState:
-    '''Stars withdrawal state from Fragment page.'''
+    """Stars withdrawal state from Fragment page."""
 
     transaction: str
     withdrawal_data: str
@@ -318,7 +370,7 @@ class StarsWithdrawalState:
 
 @dataclass
 class StarsWithdrawalInitResult:
-    '''Result of Stars withdrawal initialization.'''
+    """Result of Stars withdrawal initialization."""
 
     ok: bool
     confirm_message: str | None = None
@@ -340,7 +392,7 @@ class StarsWithdrawalInitResult:
 
 @dataclass
 class StarsWithdrawalConfirmResult:
-    '''Result of Stars withdrawal confirmation.'''
+    """Result of Stars withdrawal confirmation."""
 
     ok: bool
     need_update: bool
@@ -362,7 +414,7 @@ class StarsWithdrawalConfirmResult:
 
 @dataclass
 class BidResult:
-    '''Result of a successful bid or buy-now transaction.'''
+    """Result of a successful bid or buy-now transaction."""
 
     transaction_id: str
     item_type: int
@@ -378,7 +430,7 @@ class BidResult:
             f"BidResult("
             f"type='{t}', "
             f"slug='{self.slug}', "
-            f"bid={self.bid} TON, "
+            f"bid={self.bid} GRAM, "
             f"tx='{self.transaction_id}'"
             f")"
         )
@@ -386,7 +438,7 @@ class BidResult:
 
 @dataclass
 class UsernamesResult:
-    '''Result of username marketplace search.'''
+    """Result of username marketplace search."""
 
     items: list[dict[str, Any]]
     next_offset_id: str | None
@@ -402,7 +454,7 @@ class UsernamesResult:
 
 @dataclass
 class NumbersResult:
-    '''Result of anonymous numbers marketplace search.'''
+    """Result of anonymous numbers marketplace search."""
 
     items: list[dict[str, Any]]
     next_offset_id: str | None
@@ -418,7 +470,7 @@ class NumbersResult:
 
 @dataclass
 class GiftsResult:
-    '''Result of gifts marketplace search.'''
+    """Result of gifts marketplace search."""
 
     items: list[dict[str, Any]]
     next_offset: int | None
@@ -434,7 +486,7 @@ class GiftsResult:
 
 @dataclass
 class BidHistoryEntry:
-    '''Single bid history entry.'''
+    """Single bid history entry."""
 
     price: str | None
     date: str | None
@@ -443,7 +495,7 @@ class BidHistoryEntry:
 
 @dataclass
 class OwnerHistoryEntry:
-    '''Single ownership history entry.'''
+    """Single ownership history entry."""
 
     price: str | None
     date: str | None
@@ -452,7 +504,7 @@ class OwnerHistoryEntry:
 
 @dataclass
 class AuctionInfo:
-    '''Auction pricing information.'''
+    """Auction pricing information."""
 
     highest_bid: str | None = None
     bid_step: str | None = None
@@ -463,12 +515,12 @@ class AuctionInfo:
 
 @dataclass
 class UsernameInfo:
-    '''Detailed information about a Fragment username.'''
+    """Detailed information about a Fragment username."""
 
     username: str
     status: str
     item_type: int
-    ton_rate: float
+    gram_rate: float
     auction: AuctionInfo | None = None
     auction_end: str | None = None
     owner_wallet: str | None = None
@@ -477,6 +529,11 @@ class UsernameInfo:
     owner_history: list[OwnerHistoryEntry] = field(default_factory=list)
     bid_history_next_offset: str | None = None
     owner_history_next_offset: str | None = None
+
+    @property
+    def ton_rate(self) -> float:
+        """Alias for gram_rate for backward compatibility."""
+        return self.gram_rate
 
     def __repr__(self) -> str:
         return (
@@ -491,13 +548,13 @@ class UsernameInfo:
 
 @dataclass
 class NumberInfo:
-    '''Detailed information about a Fragment number.'''
+    """Detailed information about a Fragment number."""
 
     number: str
     display_number: str
     status: str
     item_type: int
-    ton_rate: float
+    gram_rate: float
     restricted: bool = False
     auction: AuctionInfo | None = None
     auction_end: str | None = None
@@ -507,6 +564,11 @@ class NumberInfo:
     owner_history: list[OwnerHistoryEntry] = field(default_factory=list)
     bid_history_next_offset: str | None = None
     owner_history_next_offset: str | None = None
+
+    @property
+    def ton_rate(self) -> float:
+        """Alias for gram_rate for backward compatibility."""
+        return self.gram_rate
 
     def __repr__(self) -> str:
         return (
@@ -520,7 +582,7 @@ class NumberInfo:
 
 @dataclass
 class GiftAttribute:
-    '''Gift attribute with rarity.'''
+    """Gift attribute with rarity."""
 
     name: str
     value: str
@@ -529,13 +591,13 @@ class GiftAttribute:
 
 @dataclass
 class GiftInfo:
-    '''Detailed information about a Fragment gift.'''
+    """Detailed information about a Fragment gift."""
 
     slug: str
     name: str
     status: str
     item_type: int
-    ton_rate: float
+    gram_rate: float
     image_url: str | None = None
     sticker_url: str | None = None
     owner_wallet: str | None = None
@@ -549,6 +611,11 @@ class GiftInfo:
     bid_history_next_offset: str | None = None
     owner_history_next_offset: str | None = None
 
+    @property
+    def ton_rate(self) -> float:
+        """Alias for gram_rate for backward compatibility."""
+        return self.gram_rate
+
     def __repr__(self) -> str:
         return (
             f"GiftInfo("
@@ -561,79 +628,109 @@ class GiftInfo:
 
 @dataclass
 class StarsPrice:
-    '''Price for a specific stars amount.'''
+    """Price for a specific stars amount."""
 
     stars: int
-    ton_price: str
+    gram_price: str
     usd_price: str
+
+    @property
+    def ton_price(self) -> str:
+        """Alias for gram_price for backward compatibility."""
+        return self.gram_price
 
 
 @dataclass
 class StarsPrices:
-    '''All available stars package prices.'''
+    """All available stars package prices."""
 
     packages: list[StarsPrice]
-    ton_rate: float
+    gram_rate: float
+
+    @property
+    def ton_rate(self) -> float:
+        """Alias for gram_rate for backward compatibility."""
+        return self.gram_rate
 
     def __repr__(self) -> str:
         return (
             f"StarsPrices("
             f"packages={len(self.packages)}, "
-            f"ton_rate={self.ton_rate}"
+            f"gram_rate={self.gram_rate}"
             f")"
         )
 
 
 @dataclass
 class PremiumPriceOption:
-    '''Single premium duration price.'''
+    """Single premium duration price."""
 
     months: int
     label: str
-    ton_price: str
+    gram_price: str
     usd_price: str
     discount: str | None = None
+
+    @property
+    def ton_price(self) -> str:
+        """Alias for gram_price for backward compatibility."""
+        return self.gram_price
 
 
 @dataclass
 class PremiumPrices:
-    '''Premium subscription prices.'''
+    """Premium subscription prices."""
 
     options: list[PremiumPriceOption]
-    ton_rate: float
+    gram_rate: float
+
+    @property
+    def ton_rate(self) -> float:
+        """Alias for gram_rate for backward compatibility."""
+        return self.gram_rate
 
     def __repr__(self) -> str:
         return (
             f"PremiumPrices("
             f"options={len(self.options)}, "
-            f"ton_rate={self.ton_rate}"
+            f"gram_rate={self.gram_rate}"
             f")"
         )
 
 
 @dataclass
 class StarsTransaction:
-    '''Single stars transaction from history.'''
+    """Single stars transaction from history."""
 
     recipient: str
     stars: int
-    price_ton: str
+    price_gram: str
     date: str
+
+    @property
+    def price_ton(self) -> str:
+        """Alias for price_gram for backward compatibility."""
+        return self.price_gram
 
 
 @dataclass
 class PremiumTransaction:
-    '''Single premium transaction from history.'''
+    """Single premium transaction from history."""
 
     recipient: str
     duration: str
-    price_ton: str
+    price_gram: str
     date: str
+
+    @property
+    def price_ton(self) -> str:
+        """Alias for price_gram for backward compatibility."""
+        return self.price_gram
 
 
 @dataclass
 class TopupTransaction:
-    '''Single topup transaction from Ads history.'''
+    """Single topup transaction from Ads history."""
 
     recipient: str
     amount: int
@@ -643,7 +740,7 @@ class TopupTransaction:
         return (
             f"TopupTransaction("
             f"recipient='{self.recipient}', "
-            f"amount={self.amount} TON, "
+            f"amount={self.amount} GRAM, "
             f"date='{self.date}'"
             f")"
         )
@@ -651,7 +748,7 @@ class TopupTransaction:
 
 @dataclass
 class ProfileInfo:
-    '''Fragment account profile information.'''
+    """Fragment account profile information."""
 
     name: str
     username: str
@@ -673,7 +770,7 @@ class ProfileInfo:
 
 @dataclass
 class SessionInfo:
-    '''Active session information.'''
+    """Active session information."""
 
     session_id: str
     device: str
@@ -693,7 +790,7 @@ class SessionInfo:
 
 @dataclass
 class MyBid:
-    '''Single bid entry from My Bid History.'''
+    """Single bid entry from My Bid History."""
 
     item_type: str
     slug: str
@@ -709,7 +806,7 @@ class MyBid:
             f"MyBid("
             f"type='{self.item_type}', "
             f"name='{self.name}', "
-            f"bid={self.bid} TON, "
+            f"bid={self.bid} GRAM, "
             f"status='{self.status}'"
             f")"
         )
@@ -717,17 +814,22 @@ class MyBid:
 
 @dataclass
 class MyBidsResult:
-    '''Result of My Bid History query.'''
+    """Result of My Bid History query."""
 
     items: list[MyBid]
-    ton_rate: float
+    gram_rate: float
     total_count: int
+
+    @property
+    def ton_rate(self) -> float:
+        """Alias for gram_rate for backward compatibility."""
+        return self.gram_rate
 
     def __repr__(self) -> str:
         return (
             f"MyBidsResult("
             f"items={len(self.items)}, "
-            f"ton_rate={self.ton_rate}, "
+            f"gram_rate={self.gram_rate}, "
             f"total={self.total_count}"
             f")"
         )
@@ -735,7 +837,7 @@ class MyBidsResult:
 
 @dataclass
 class MyAsset:
-    '''Single asset from My Assets page.'''
+    """Single asset from My Assets page."""
 
     item_type: str
     slug: str
@@ -757,17 +859,22 @@ class MyAsset:
 
 @dataclass
 class MyAssetsResult:
-    '''Result of My Assets query.'''
+    """Result of My Assets query."""
 
     items: list[MyAsset]
-    ton_rate: float
+    gram_rate: float
     total_count: int
+
+    @property
+    def ton_rate(self) -> float:
+        """Alias for gram_rate for backward compatibility."""
+        return self.gram_rate
 
     def __repr__(self) -> str:
         return (
             f"MyAssetsResult("
             f"items={len(self.items)}, "
-            f"ton_rate={self.ton_rate}, "
+            f"gram_rate={self.gram_rate}, "
             f"total={self.total_count}"
             f")"
         )
@@ -775,7 +882,7 @@ class MyAssetsResult:
 
 @dataclass
 class TelegramAccount:
-    '''Telegram account available for assignment.'''
+    """Telegram account available for assignment."""
 
     id: str
     name: str
@@ -788,7 +895,7 @@ class TelegramAccount:
 
 @dataclass
 class AssignAccountsResult:
-    '''Result of getting available Telegram accounts for assignment.'''
+    """Result of getting available Telegram accounts for assignment."""
 
     accounts: list[TelegramAccount]
     can_disable: bool
@@ -804,7 +911,7 @@ class AssignAccountsResult:
 
 @dataclass
 class AssignResult:
-    '''Result of assigning asset to Telegram account.'''
+    """Result of assigning asset to Telegram account."""
 
     ok: bool
     message: str | None = None
@@ -825,7 +932,7 @@ class AssignResult:
 
 @dataclass
 class StartAuctionResult:
-    '''Result of starting auction or selling asset.'''
+    """Result of starting auction or selling asset."""
 
     ok: bool
     req_id: str | None = None
@@ -836,7 +943,7 @@ class StartAuctionResult:
 
 @dataclass
 class NftTransferRecipient:
-    '''Recipient info for NFT transfer.'''
+    """Recipient info for NFT transfer."""
 
     myself: bool
     recipient: str
@@ -855,7 +962,7 @@ class NftTransferRecipient:
 
 @dataclass
 class NftTransferRequest:
-    '''Result of initNftTransferRequest.'''
+    """Result of initNftTransferRequest."""
 
     req_id: str
     myself: bool
@@ -874,7 +981,7 @@ class NftTransferRequest:
 
 @dataclass
 class LoginCodeResult:
-    '''Result of a pending login code request.'''
+    """Result of a pending login code request."""
 
     number: str
     code: str | None
@@ -893,7 +1000,7 @@ class LoginCodeResult:
 
 @dataclass
 class TerminateSessionsResult:
-    '''Result of terminating anonymous number sessions.'''
+    """Result of terminating anonymous number sessions."""
 
     number: str
     message: str | None
@@ -909,13 +1016,7 @@ class TerminateSessionsResult:
 
 @dataclass
 class BatchItemResult:
-    '''
-    Result of a single item within a batch operation.
-
-    The type field indicates the purchase kind: "stars", "premium", or "ton".
-    The amount field holds star count or TON amount for stars/ton types,
-    or month count for premium type.
-    '''
+    """Result of a single item within a batch operation."""
 
     type: str
     username: str
@@ -950,14 +1051,7 @@ class BatchItemResult:
 
 @dataclass
 class BatchResult:
-    '''
-    Result of a batch purchase operation.
-
-    Items are grouped into chunks based on wallet version message limits
-    (4 for V4R2, 255 for V5R1). Each chunk is sent as a single TON
-    transaction with multiple inline messages. The chunks_sent field
-    indicates how many on-chain transactions were broadcast.
-    '''
+    """Result of a batch purchase operation."""
 
     total: int
     succeeded: int
