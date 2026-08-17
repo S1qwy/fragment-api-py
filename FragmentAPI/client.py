@@ -444,15 +444,32 @@ class FragmentClient:
             raise UnexpectedError(UnexpectedError.UNEXPECTED.format(exc=exc)) from exc
 
     async def purchase(
-        self, item_type: str, username: str,
-        amount: int | None = None, months: int | None = None,
-        show_sender: bool = True, payment_method: str = "gram",
-    ) -> PurchaseResult | EvmPaymentResult:
-        """Execute a single purchase (Stars, Premium, or GRAM top-up)."""
+        self,
+        items_or_type: list[dict[str, Any] | PurchaseItem] | dict[str, Any] | PurchaseItem | str,
+        username: str | None = None,
+        amount: int | None = None,
+        months: int | None = None,
+        show_sender: bool = True,
+        payment_method: str = "gram",
+    ) -> PurchaseResult | BatchResult | EvmPaymentResult:
+        """Execute a single purchase or batched purchases."""
         return await purchase(
-            self, item_type, username,
-            amount=amount, months=months,
-            show_sender=show_sender, payment_method=payment_method,
+            self,
+            items_or_type=items_or_type,
+            username=username,
+            amount=amount,
+            months=months,
+            show_sender=show_sender,
+            payment_method=payment_method,
+        )
+
+    async def batch_purchase(
+        self,
+        items: list[dict[str, Any] | PurchaseItem],
+        payment_method: str = "gram",
+    ) -> BatchResult:
+        """Execute multiple purchases as batched TON transactions. Alias for purchase(items)."""
+        return await batch_purchase(self, items, payment_method)
         )
 
     async def purchase_stars(
@@ -481,12 +498,6 @@ class FragmentClient:
     ) -> PurchaseResult:
         """Top up GRAM (formerly TON) to Telegram Ads balance. Alias for topup_gram."""
         return await self.topup_gram(username, amount, show_sender)
-
-    async def batch_purchase(
-        self, items: list[dict[str, Any]], payment_method: str = "gram",
-    ) -> BatchResult:
-        """Execute multiple purchases as batched TON transactions."""
-        return await batch_purchase(self, items, payment_method)
 
     async def giveaway_stars(
         self, channel: str, winners: int, amount: int, payment_method: str = "gram",
