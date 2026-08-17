@@ -1,3 +1,9 @@
+"""
+Type exports for Fragment API library.
+
+Contains all dataclasses for API responses and exception classes.
+"""
+
 from FragmentAPI.types.results import (
     AdsTopupResult,
     AssignResult,
@@ -33,6 +39,8 @@ from FragmentAPI.types.results import (
     PreparedTransaction,
     PreparedTransactionMessage,
     ProfileInfo,
+    PurchaseItem,
+    PurchaseResult,
     RecipientInfo,
     SessionInfo,
     StartAuctionResult,
@@ -52,16 +60,18 @@ from FragmentAPI.types.results import (
     WalletInfo,
 )
 from FragmentAPI.exceptions import (
+    AlreadySubscribedError,
+    AnonymousNumberError,
     ClientError,
+    ConfigurationError,
     ConfigError,
     ConfirmationTimeout,
     CookieError,
     FragmentAPIError,
-    FragmentBaseError,
+    FragmentError,
     FragmentPageError,
     OperationError,
     ParseError,
-    ProxyError,
     SeqnoError,
     TransactionError,
     UnexpectedError,
@@ -72,6 +82,8 @@ from FragmentAPI.exceptions import (
 
 __all__ = [
     "AdsTopupResult",
+    "AlreadySubscribedError",
+    "AnonymousNumberError",
     "AssignResult",
     "AssignAccountsResult",
     "AuctionInfo",
@@ -80,13 +92,14 @@ __all__ = [
     "BidHistoryEntry",
     "BidResult",
     "ClientError",
+    "ConfigurationError",
     "ConfigError",
     "ConfirmationTimeout",
     "CookieError",
     "EvmInvoice",
     "EvmPaymentResult",
     "FragmentAPIError",
-    "FragmentBaseError",
+    "FragmentError",
     "FragmentPageError",
     "GiftAttribute",
     "GiftInfo",
@@ -114,7 +127,8 @@ __all__ = [
     "PreparedTransaction",
     "PreparedTransactionMessage",
     "ProfileInfo",
-    "ProxyError",
+    "PurchaseItem",
+    "PurchaseResult",
     "RecipientInfo",
     "SeqnoError",
     "SessionInfo",
