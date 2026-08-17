@@ -470,7 +470,6 @@ class FragmentClient:
     ) -> BatchResult:
         """Execute multiple purchases as batched TON transactions. Alias for purchase(items)."""
         return await batch_purchase(self, items, payment_method)
-        )
 
     async def purchase_stars(
         self, username: str, amount: int,
