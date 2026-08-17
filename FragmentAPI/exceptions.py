@@ -41,8 +41,8 @@ class ConfigurationError(ClientError):
     )
     UNSUPPORTED_PROVIDER = "Unsupported API provider '{provider}'. Supported values: {supported}."
     UNSUPPORTED_METHOD = (
-        f"EVM payment methods are not supported for '{item_type}' purchases. "
-        f"Use 'gram' or 'ton' payment method instead."
+        "EVM payment methods are not supported for '{item_type}' purchases. "
+        "Use 'gram' or 'ton' payment method instead."
     )
     INVALID_MONTHS = (
         f"Invalid Premium duration: choose "
