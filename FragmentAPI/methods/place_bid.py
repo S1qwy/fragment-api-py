@@ -1,18 +1,19 @@
-'''
-Place bid / buy now method for Fragment marketplace items — async only.
-'''
+"""
+Place bid / buy now method for Fragment marketplace items.
+"""
 
 from __future__ import annotations
 
 import json
+import logging
 from typing import TYPE_CHECKING
 
-import httpx
+from curl_cffi import requests
 
 from FragmentAPI.exceptions import (
-    ConfigError,
+    ConfigurationError,
     FragmentAPIError,
-    FragmentBaseError,
+    FragmentError,
     UnexpectedError,
 )
 from FragmentAPI.types.constants import (
@@ -23,7 +24,7 @@ from FragmentAPI.types.results import BidResult
 from FragmentAPI.utils.http import (
     build_headers,
     fetch_fragment_hash,
-    post_FragmentAPI,
+    post_fragment_api,
 )
 from FragmentAPI.utils.wallet import (
     build_account_info,
@@ -33,6 +34,7 @@ from FragmentAPI.utils.wallet import (
 if TYPE_CHECKING:
     from FragmentAPI.client import FragmentClient
 
+logger = logging.getLogger("FragmentAPI")
 
 _TYPE_URL_MAP = {
     1: "username",
@@ -41,11 +43,8 @@ _TYPE_URL_MAP = {
 }
 
 
-def _item_page_url(
-    item_type: int,
-    slug: str,
-) -> str:
-    '''Build the Fragment page URL for an item.'''
+def _item_page_url(item_type: int, slug: str) -> str:
+    """Build the Fragment page URL for an item."""
     prefix = _TYPE_URL_MAP.get(item_type, "username")
     return f"{FRAGMENT_BASE_URL}/{prefix}/{slug}"
 
@@ -56,48 +55,46 @@ async def place_bid(
     slug: str,
     bid: int,
 ) -> BidResult:
-    '''
-    Place a bid or buy-now on a Fragment marketplace item.
+    """Place a bid or buy-now on a Fragment marketplace item.
 
     Args:
         client: Authenticated FragmentClient instance.
         item_type: 1 (username), 3 (number), 5 (gift).
-        slug: Item identifier.
-        bid: Bid amount in TON (integer).
+        slug: Item identifier on Fragment.
+        bid: Bid amount in GRAM (integer).
 
     Returns:
         BidResult with transaction details.
-    '''
+
+    Raises:
+        ConfigurationError: If parameters are invalid.
+        FragmentAPIError: If Fragment rejects the bid.
+    """
     if item_type not in (1, 3, 5):
-        raise ConfigError(
-            "Invalid item_type: must be 1 (username), "
-            "3 (number), or 5 (gift)."
+        raise ConfigurationError(
+            "Invalid item_type: must be 1 (username), 3 (number), or 5 (gift)."
         )
     if not isinstance(bid, int) or bid < 1:
-        raise ConfigError(
-            "Invalid bid amount: must be a positive integer (TON)."
+        raise ConfigurationError(
+            "Invalid bid amount: must be a positive integer (GRAM)."
         )
+
+    client._require_wallet()
 
     try:
         page_url = _item_page_url(item_type, slug)
         headers = build_headers(page_url)
 
-        async with httpx.AsyncClient(
-            cookies=client.cookies,
-            timeout=client.timeout,
+        async with requests.AsyncSession(
+            cookies=client.cookies, timeout=client.timeout, impersonate="chrome120",
         ) as session:
             fragment_hash = await fetch_fragment_hash(
-                client.cookies,
-                headers,
-                page_url,
-                client.timeout,
+                client.cookies, headers, page_url, client.timeout,
             )
 
             account = await build_account_info(client)
-            transaction = await post_FragmentAPI(
-                session,
-                fragment_hash,
-                headers,
+            transaction = await post_fragment_api(
+                session, fragment_hash, headers,
                 {
                     "method": "getBidLink",
                     "account": json.dumps(account),
@@ -115,6 +112,7 @@ async def place_bid(
         confirm_method = transaction.get("confirm_method")
         confirm_params = transaction.get("confirm_params", {})
 
+        logger.info("Placing bid %d GRAM on %s/%s", bid, _TYPE_URL_MAP.get(item_type, ""), slug)
         tx_result = await execute_transaction(client, transaction)
 
         return BidResult(
@@ -126,9 +124,7 @@ async def place_bid(
             confirm_id=confirm_params.get("id"),
         )
 
-    except FragmentBaseError:
+    except FragmentError:
         raise
     except Exception as exc:
-        raise UnexpectedError(
-            UnexpectedError.UNEXPECTED.format(exc=exc),
-        ) from exc
+        raise UnexpectedError(UnexpectedError.UNEXPECTED.format(exc=exc)) from exc
