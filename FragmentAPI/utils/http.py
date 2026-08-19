@@ -3,12 +3,14 @@ HTTP utilities for Fragment API requests.
 
 Handles page loading, API hash extraction, and Fragment API POST requests.
 Uses curl_cffi for browser impersonation to bypass anti-bot protection.
+Supports proxy configuration and automatic retry with exponential backoff.
 """
 
 from __future__ import annotations
 
 import logging
 import re
+import time
 from typing import Any
 
 from curl_cffi import requests
@@ -22,8 +24,13 @@ from FragmentAPI.types.constants import (
     DEFAULT_TIMEOUT,
     FRAGMENT_BASE_URL,
 )
+from FragmentAPI.utils.proxy import build_curl_proxy_args
+from FragmentAPI.utils.retry import with_retry
 
 logger = logging.getLogger("FragmentAPI")
+
+_hash_cache: dict[str, tuple[str, float]] = {}
+_HASH_TTL: float = 120.0
 
 
 def build_headers(page_url: str = FRAGMENT_BASE_URL) -> dict[str, str]:
@@ -73,22 +80,22 @@ def _parse_response(response: Any, context: str) -> dict[str, Any]:
         ) from exc
 
 
+@with_retry(context="fetch_page_ajax")
 async def fetch_page_ajax(
     cookies: dict[str, Any],
     headers: dict[str, str],
     page_url: str,
     timeout: float = DEFAULT_TIMEOUT,
+    proxy: str | None = None,
 ) -> dict[str, Any]:
-    """Fetch a Fragment page via AJAX navigation.
-
-    Fragment returns JSON with keys (v, t, h, j, s, rc) when the
-    request includes X-Requested-With: XMLHttpRequest header.
+    """Fetch a Fragment page via AJAX navigation with automatic retry.
 
     Args:
         cookies: Fragment session cookies.
         headers: HTTP headers with referer set.
         page_url: Full URL of the Fragment page.
         timeout: HTTP request timeout in seconds.
+        proxy: Optional proxy URL string.
 
     Returns:
         Parsed JSON dict from Fragment response.
@@ -97,6 +104,7 @@ async def fetch_page_ajax(
         FragmentPageError: If page returns non-200 status or redirect.
     """
     ajax_headers = _make_ajax_headers(headers)
+    proxy_args = build_curl_proxy_args(proxy)
     logger.debug("AJAX fetch: %s", page_url)
 
     async with requests.AsyncSession(
@@ -104,6 +112,7 @@ async def fetch_page_ajax(
         timeout=timeout,
         impersonate="chrome120",
         allow_redirects=True,
+        **proxy_args,
     ) as session:
         response = await session.get(page_url, headers=ajax_headers)
 
@@ -119,36 +128,46 @@ async def fetch_page_ajax(
     return _parse_response(response, f"page {page_url}")
 
 
+@with_retry(context="fetch_fragment_hash")
 async def fetch_fragment_hash(
     cookies: dict[str, Any],
     headers: dict[str, str],
     page_url: str,
     timeout: float = DEFAULT_TIMEOUT,
+    proxy: str | None = None,
 ) -> str:
-    """Fetch the API hash from Fragment homepage via full page load.
+    """Fetch the API hash from Fragment homepage with caching and retry.
 
     The API hash is required for all Fragment API POST requests
-    and changes periodically.
+    and changes periodically. Results are cached for 120 seconds.
 
     Args:
         cookies: Fragment session cookies.
         headers: HTTP headers (used for reference only).
         page_url: Page URL for context in error messages.
         timeout: HTTP request timeout in seconds.
+        proxy: Optional proxy URL string.
 
     Returns:
         Hex string API hash extracted from page HTML.
-
-    Raises:
-        FragmentPageError: If page cannot be loaded or hash not found.
     """
+    cache_key = str(sorted(cookies.items()))
+    now = time.monotonic()
+
+    cached = _hash_cache.get(cache_key)
+    if cached and (now - cached[1]) < _HASH_TTL:
+        logger.debug("Using cached Fragment API hash")
+        return cached[0]
+
     full_headers = _make_full_page_headers()
+    proxy_args = build_curl_proxy_args(proxy)
     logger.debug("Fetching Fragment API hash from homepage")
 
     async with requests.AsyncSession(
         cookies=cookies,
         timeout=timeout,
         impersonate="chrome120",
+        **proxy_args,
     ) as session:
         response = await session.get("https://fragment.com", headers=full_headers)
 
@@ -158,16 +177,20 @@ async def fetch_fragment_hash(
                 status=response.status_code, url="https://fragment.com",
             )
         )
-    return _extract_hash_from_text(response.text, "https://fragment.com")
+
+    api_hash = _extract_hash_from_text(response.text, "https://fragment.com")
+    _hash_cache[cache_key] = (api_hash, now)
+    return api_hash
 
 
+@with_retry(context="post_fragment_api")
 async def post_fragment_api(
     session: requests.AsyncSession,
     fragment_hash: str,
     headers: dict[str, str],
     data: dict[str, Any],
 ) -> dict[str, Any]:
-    """POST a request to the Fragment API.
+    """POST a request to the Fragment API with automatic retry.
 
     Args:
         session: Active curl_cffi async session.
