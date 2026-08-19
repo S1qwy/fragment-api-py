@@ -102,6 +102,14 @@ class CookieError(ClientError):
         "Fragment cookies are missing or empty for key(s): {keys}. "
         "Open fragment.com in your browser, log in, and copy fresh cookies."
     )
+    AUTO_REFRESH_NOT_AVAILABLE = (
+        "Automatic cookie refresh is only available in full mode "
+        "(requires both seed phrase and connected stel_ton_token)."
+    )
+    AUTO_REFRESH_FAILED = (
+        "Failed to automatically refresh cookies using seed phrase: "
+        "missing required session keys ({missing}). Interactive re-authentication required."
+    )
     UNSUPPORTED_BROWSER = "Unsupported browser '{browser}'. Supported values: {supported}."
     BROWSER_READ_FAILED = (
         "Failed to read {browser} cookies: {exc}. "

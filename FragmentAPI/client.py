@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import asyncio
 import re
 from typing import Any, cast
 
@@ -110,7 +111,7 @@ from FragmentAPI.types.results import (
     UsernamesResult,
     WalletInfo,
 )
-from FragmentAPI.utils.auth import authenticate
+from FragmentAPI.utils.auth import authenticate, refresh_wallet_session
 from FragmentAPI.utils.html import (
     parse_assign_accounts,
     parse_auction_info,
@@ -263,12 +264,15 @@ class FragmentClient:
             )
         self.wallet_version = version
 
+        self._refresh_lock = asyncio.Lock()
+
         logger.info(
             "FragmentClient initialized: wallet_version=%s, api_provider=%s, "
             "has_seed=%s, has_api_key=%s, has_ton_token=%s",
             self.wallet_version, self.api_provider,
             self.seed is not None, self.api_key is not None, self._has_ton_token,
         )
+        
 
     @property
     def has_wallet(self) -> bool:
@@ -1322,7 +1326,49 @@ class FragmentClient:
             raise
         except Exception as exc:
             raise UnexpectedError(UnexpectedError.UNEXPECTED.format(exc=exc)) from exc
+    
+    @property
+    def can_auto_refresh(self) -> bool:
+        """Return True if client is in full mode (has seed and stel_ton_token)."""
+        return bool(self.seed and self._has_ton_token)
 
+    async def refresh_cookies(self) -> dict[str, str]:
+        """Refresh cookies using the seed phrase (Full mode only).
+
+        Raises:
+            ConfigurationError: If the client is not in full mode.
+            CookieError: If full cookies could not be retrieved.
+        """
+        if not self.can_auto_refresh:
+            raise ConfigurationError(CookieError.AUTO_REFRESH_NOT_AVAILABLE)
+
+        async with self._refresh_lock:
+            logger.info("Automatically refreshing Fragment cookies via seed phrase...")
+            new_cookies = await refresh_wallet_session(
+                seed=self.seed,
+                wallet_version=self.wallet_version,
+                timeout=self.timeout,
+            )
+            self.cookies = new_cookies
+            self._has_ton_token = bool(str(new_cookies.get("stel_ton_token", "")).strip())
+            logger.info("Fragment cookies successfully refreshed.")
+            return self.cookies
+
+    async def _execute_with_retry(self, coro_func, *args, **kwargs):
+        """Helper to transparently refresh cookies on auth/session failures and retry once."""
+        try:
+            return await coro_func(*args, **kwargs)
+        except (FragmentPageError, FragmentAPIError) as exc:
+            err_msg = str(exc).lower()
+            is_auth_error = any(
+                k in err_msg for k in ("bad status: 401", "bad status: 403", "expired", "hash not found", "unauthorized")
+            )
+            if is_auth_error and self.can_auto_refresh:
+                logger.warning("Session/auth error detected, attempting auto-refresh of cookies...")
+                await self.refresh_cookies()
+                return await coro_func(*args, **kwargs)
+            raise
+    
     async def call(
         self, method: str, data: dict[str, Any] | None = None,
         *, page_url: str = FRAGMENT_BASE_URL,
