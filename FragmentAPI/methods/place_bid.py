@@ -19,6 +19,8 @@ from FragmentAPI.exceptions import (
 from FragmentAPI.types.constants import (
     DEVICE_FINGERPRINT,
     FRAGMENT_BASE_URL,
+    ITEM_TYPE_URL_PREFIX,
+    VALID_ITEM_TYPES,
 )
 from FragmentAPI.types.results import BidResult
 from FragmentAPI.utils.http import (
@@ -26,6 +28,7 @@ from FragmentAPI.utils.http import (
     fetch_fragment_hash,
     post_fragment_api,
 )
+from FragmentAPI.utils.proxy import build_curl_proxy_args
 from FragmentAPI.utils.wallet import (
     build_account_info,
     execute_transaction,
@@ -36,16 +39,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("FragmentAPI")
 
-_TYPE_URL_MAP = {
-    1: "username",
-    3: "number",
-    5: "gift",
-}
-
 
 def _item_page_url(item_type: int, slug: str) -> str:
     """Build the Fragment page URL for an item."""
-    prefix = _TYPE_URL_MAP.get(item_type, "username")
+    prefix = ITEM_TYPE_URL_PREFIX.get(item_type, "username")
     return f"{FRAGMENT_BASE_URL}/{prefix}/{slug}"
 
 
@@ -70,26 +67,24 @@ async def place_bid(
         ConfigurationError: If parameters are invalid.
         FragmentAPIError: If Fragment rejects the bid.
     """
-    if item_type not in (1, 3, 5):
-        raise ConfigurationError(
-            "Invalid item_type: must be 1 (username), 3 (number), or 5 (gift)."
-        )
+    if item_type not in VALID_ITEM_TYPES:
+        raise ConfigurationError(ConfigurationError.INVALID_ITEM_TYPE.format(item_type=item_type))
     if not isinstance(bid, int) or bid < 1:
-        raise ConfigurationError(
-            "Invalid bid amount: must be a positive integer (GRAM)."
-        )
+        raise ConfigurationError(ConfigurationError.INVALID_BID_AMOUNT)
 
     client._require_wallet()
 
     try:
         page_url = _item_page_url(item_type, slug)
         headers = build_headers(page_url)
+        proxy_args = build_curl_proxy_args(client.proxy)
 
         async with requests.AsyncSession(
             cookies=client.cookies, timeout=client.timeout, impersonate="chrome120",
+            **proxy_args,
         ) as session:
             fragment_hash = await fetch_fragment_hash(
-                client.cookies, headers, page_url, client.timeout,
+                client.cookies, headers, page_url, client.timeout, proxy=client.proxy,
             )
 
             account = await build_account_info(client)
@@ -112,7 +107,7 @@ async def place_bid(
         confirm_method = transaction.get("confirm_method")
         confirm_params = transaction.get("confirm_params", {})
 
-        logger.info("Placing bid %d GRAM on %s/%s", bid, _TYPE_URL_MAP.get(item_type, ""), slug)
+        logger.info("Placing bid %d GRAM on %s/%s", bid, ITEM_TYPE_URL_PREFIX.get(item_type, ""), slug)
         tx_result = await execute_transaction(client, transaction)
 
         return BidResult(
