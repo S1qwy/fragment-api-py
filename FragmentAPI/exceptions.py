@@ -77,6 +77,12 @@ class ConfigurationError(ClientError):
         "Invalid winners count: {winners}. "
         "For {amount} stars, winners must be 1 to {max_winners} (total_stars / 100)."
     )
+    INVALID_ITEM_TYPE = (
+        "Invalid item_type: {item_type}. Must be 1 (username), 3 (number), or 5 (gift)."
+    )
+    INVALID_BID_AMOUNT = "Invalid bid amount: must be a positive integer (GRAM)."
+    INVALID_OFFER_AMOUNT = "Invalid offer amount: must be a positive integer (GRAM)."
+    INVALID_CREDITS_AMOUNT = "Invalid credits amount: must be a positive integer."
     SEED_REQUIRED = (
         "This operation requires a wallet seed phrase. "
         "Initialize FragmentClient with seed=... parameter."
@@ -88,6 +94,11 @@ class ConfigurationError(ClientError):
     API_KEY_REQUIRED = (
         "This operation requires an API key (Tonconsole or Toncenter). "
         "Initialize FragmentClient with api_key=... parameter."
+    )
+    INVALID_PROXY = (
+        "Invalid proxy format: '{proxy}'. "
+        "Expected format: 'http://host:port', 'socks5://host:port', "
+        "or 'socks5://user:pass@host:port'."
     )
 
 
@@ -102,14 +113,6 @@ class CookieError(ClientError):
         "Fragment cookies are missing or empty for key(s): {keys}. "
         "Open fragment.com in your browser, log in, and copy fresh cookies."
     )
-    AUTO_REFRESH_NOT_AVAILABLE = (
-        "Automatic cookie refresh is only available in full mode "
-        "(requires both seed phrase and connected stel_ton_token)."
-    )
-    AUTO_REFRESH_FAILED = (
-        "Failed to automatically refresh cookies using seed phrase: "
-        "missing required session keys ({missing}). Interactive re-authentication required."
-    )
     UNSUPPORTED_BROWSER = "Unsupported browser '{browser}'. Supported values: {supported}."
     BROWSER_READ_FAILED = (
         "Failed to read {browser} cookies: {exc}. "
@@ -122,6 +125,10 @@ class CookieError(ClientError):
     EXPIRED = (
         "Fragment session cookie expired at {expires}. "
         "Log in to fragment.com in your browser and extract fresh cookies."
+    )
+    REFRESH_FAILED = (
+        "Failed to refresh Fragment session cookies: {exc}. "
+        "Manual re-authentication may be required."
     )
 
 
@@ -201,11 +208,7 @@ class TransactionError(FragmentAPIError):
 
 
 class ConfirmationTimeout(TransactionError):
-    """Raised when seqno/balance confirmation times out.
-
-    The transaction was likely sent but confirmation was not received
-    within the timeout window. Manual blockchain check is recommended.
-    """
+    """Raised when seqno/balance confirmation times out."""
 
     TIMEOUT = (
         "Transaction confirmation timed out after {seconds}s. "
@@ -268,6 +271,22 @@ class UnexpectedError(OperationError):
     UNEXPECTED = "An unexpected error occurred during the operation: {exc}"
 
 
+class RetryExhaustedError(OperationError):
+    """Raised when all retry attempts have been exhausted."""
+
+    EXHAUSTED = (
+        "All {attempts} retry attempts exhausted for {context}. "
+        "Last error: {last_error}"
+    )
+
+
+class SessionStorageError(OperationError):
+    """Raised for session storage read/write errors."""
+
+    SAVE_FAILED = "Failed to save session to storage: {exc}"
+    LOAD_FAILED = "Failed to load session from storage: {exc}"
+
+
 __all__ = [
     "FragmentError",
     "ClientError",
@@ -287,4 +306,6 @@ __all__ = [
     "OperationError",
     "WalletError",
     "UnexpectedError",
+    "RetryExhaustedError",
+    "SessionStorageError",
 ]
