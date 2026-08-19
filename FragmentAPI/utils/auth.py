@@ -1,8 +1,8 @@
 """
 Fragment authentication utilities — TON proof and Telegram OAuth (QR/phone).
 
-Generates TON wallet proof for Fragment login, then optionally completes
-Telegram OAuth via QR code scanning or phone confirmation to obtain
+Generates TON wallet proof for Fragment login, supports seed-only session refresh,
+and handles Telegram OAuth via QR code scanning or phone confirmation to obtain
 full session cookies including stel_token.
 """
 
@@ -23,6 +23,7 @@ from nacl.signing import SigningKey
 from ton_core import NetworkGlobalID
 
 from FragmentAPI.exceptions import (
+    CookieError,
     FragmentPageError,
     UnexpectedError,
 )
@@ -30,6 +31,7 @@ from FragmentAPI.types.constants import (
     BASE_HEADERS,
     DEFAULT_TIMEOUT,
     FRAGMENT_BASE_URL,
+    REQUIRED_COOKIE_KEYS_WALLET,
     WALLET_CLASSES,
 )
 
@@ -312,6 +314,105 @@ async def _telegram_auth_phone(
     return await _poll_telegram_auth(session, qtoken, on_status=on_status)
 
 
+async def auth_ton_proof(
+    seed: str,
+    wallet_version: str = "V5R1",
+    timeout: float = DEFAULT_TIMEOUT,
+) -> dict[str, str]:
+    """Authenticate with Fragment exclusively via TON Proof using the seed phrase.
+
+    Performs checkTonProofAuth against Fragment and returns the resulting cookies.
+
+    Args:
+        seed: TON wallet mnemonic phrase.
+        wallet_version: "V4R2", "V5R1".
+        timeout: HTTP timeout in seconds.
+
+    Returns:
+        Dict of session cookies obtained from the TON Proof flow.
+    """
+    async with requests.AsyncSession(
+        timeout=timeout,
+        impersonate="chrome120",
+        allow_redirects=True,
+    ) as session:
+        session.headers.update({
+            "User-Agent": BASE_HEADERS["user-agent"],
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        })
+        session.cookies.set("stel_dt", "-180", domain="fragment.com")
+
+        resp = await session.get(f"{FRAGMENT_BASE_URL}/")
+        resp.raise_for_status()
+
+        api_hash, ton_proof_payload = _parse_init_page(resp.text)
+        mnemonic = seed.strip().split()
+        account_data, device_data, proof_data = _generate_proof(
+            mnemonic, wallet_version, ton_proof_payload,
+        )
+
+        form_data = {
+            "account": json.dumps(account_data, separators=(",", ":")),
+            "device": json.dumps(device_data, separators=(",", ":")),
+            "proof": json.dumps(proof_data, separators=(",", ":")),
+            "method": "checkTonProofAuth",
+        }
+
+        session.headers.update({
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Origin": FRAGMENT_BASE_URL,
+            "Referer": f"{FRAGMENT_BASE_URL}/",
+            "X-Requested-With": "XMLHttpRequest",
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        })
+
+        api_url = f"{FRAGMENT_BASE_URL}/api?hash={api_hash}"
+        auth_resp = await session.post(api_url, data=form_data)
+        auth_resp.raise_for_status()
+
+        cookies = {c.name: c.value for c in session.cookies.jar}
+        if "stel_dt" not in cookies:
+            cookies["stel_dt"] = "-180"
+        return cookies
+
+
+async def refresh_wallet_session(
+    seed: str,
+    wallet_version: str = "V5R1",
+    timeout: float = DEFAULT_TIMEOUT,
+) -> dict[str, str]:
+    """Refresh session cookies using seed phrase only.
+
+    Args:
+        seed: TON wallet mnemonic phrase.
+        wallet_version: "V4R2", "V5R1".
+        timeout: HTTP timeout in seconds.
+
+    Returns:
+        Dict of fresh session cookies.
+
+    Raises:
+        CookieError: If full cookies (including stel_token and stel_ton_token)
+            could not be obtained automatically.
+    """
+    cookies = await auth_ton_proof(
+        seed=seed,
+        wallet_version=wallet_version,
+        timeout=timeout,
+    )
+
+    missing = [
+        k for k in REQUIRED_COOKIE_KEYS_WALLET
+        if not str(cookies.get(k, "")).strip()
+    ]
+    if missing:
+        raise CookieError(
+            CookieError.AUTO_REFRESH_FAILED.format(missing=", ".join(missing))
+        )
+    return cookies
+
+
 async def authenticate(
     seed: str,
     wallet_version: str = "V5R1",
@@ -417,7 +518,7 @@ async def authenticate(
             logger.info("Authentication complete with Telegram OAuth")
             return cookies
 
-    except (FragmentPageError, UnexpectedError):
+    except (FragmentPageError, UnexpectedError, CookieError):
         raise
     except Exception as exc:
         raise UnexpectedError(
