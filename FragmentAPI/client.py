@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 import logging
-import asyncio
 import re
 from typing import Any, cast
 
@@ -40,6 +39,17 @@ from FragmentAPI.methods.purchase import (
 from FragmentAPI.methods.giveaway import giveaway_premium, giveaway_stars
 from FragmentAPI.methods.place_bid import place_bid
 from FragmentAPI.methods.search import search_gifts, search_numbers, search_usernames
+from FragmentAPI.methods.marketplace import (
+    cancel_auction as _cancel_auction,
+    confirm_ads_withdrawal as _confirm_ads_withdrawal,
+    get_gateway_price as _get_gateway_price,
+    init_ads_withdrawal as _init_ads_withdrawal,
+    make_offer as _make_offer,
+    recharge_gateway as _recharge_gateway,
+    subscribe_to_item as _subscribe_to_item,
+    unsubscribe_from_item as _unsubscribe_from_item,
+)
+from FragmentAPI.storage.base import SessionStorage
 from FragmentAPI.types.constants import (
     ADS_HISTORY_PAGE,
     ADS_TOPUP_PAGE,
@@ -69,13 +79,16 @@ from FragmentAPI.types.constants import (
     SUPPORTED_API_PROVIDERS,
     SUPPORTED_WALLET_VERSIONS,
 )
-from FragmentAPI.types.results import (
-    AdsTopupResult,
+from FragmentAPI.types.models import (
+    AdsWithdrawalConfirmResult,
+    AdsWithdrawalInitResult,
     AssignAccountsResult,
     AssignResult,
     BatchResult,
     BidResult,
     EvmPaymentResult,
+    GatewayPriceInfo,
+    GatewayRechargeResult,
     GiftInfo,
     GiftsResult,
     GiveawayPremiumResult,
@@ -89,10 +102,12 @@ from FragmentAPI.types.results import (
     NftWithdrawalInitResult,
     NumberInfo,
     NumbersResult,
+    OfferResult,
     PremiumPrices,
     PremiumResult,
     PremiumTransaction,
     ProfileInfo,
+    PurchaseItem,
     PurchaseResult,
     RecipientInfo,
     SessionInfo,
@@ -104,6 +119,7 @@ from FragmentAPI.types.results import (
     StarsWithdrawalInitResult,
     StarsWithdrawalState,
     StartAuctionResult,
+    SubscriptionResult,
     TerminateSessionsResult,
     TopupTransaction,
     TransactionResult,
@@ -111,7 +127,7 @@ from FragmentAPI.types.results import (
     UsernamesResult,
     WalletInfo,
 )
-from FragmentAPI.utils.auth import authenticate, refresh_wallet_session
+from FragmentAPI.utils.auth import authenticate
 from FragmentAPI.utils.html import (
     parse_assign_accounts,
     parse_auction_info,
@@ -138,6 +154,7 @@ from FragmentAPI.utils.http import (
     fetch_page_ajax,
     post_fragment_api,
 )
+from FragmentAPI.utils.proxy import build_curl_proxy_args, parse_proxy
 from FragmentAPI.utils.wallet import (
     build_account_info,
     execute_transaction,
@@ -177,6 +194,10 @@ class FragmentClient:
         api_provider: "tonapi" or "toncenter". Default "tonapi".
         wallet_version: Wallet contract version — "V4R2", "V5R1". Default "V5R1".
         timeout: HTTP request timeout in seconds. Default 30.
+        proxy: Proxy URL string (http, socks5, etc). Optional.
+        session_storage: SessionStorage backend for cookie persistence. Optional.
+        session_id: Identifier for session in storage. Optional.
+        auto_refresh_cookies: Enable automatic cookie refresh on expiry. Default False.
     """
 
     def __init__(
@@ -187,6 +208,10 @@ class FragmentClient:
         api_provider: str = "tonapi",
         wallet_version: str = "V5R1",
         timeout: float = DEFAULT_TIMEOUT,
+        proxy: str | None = None,
+        session_storage: SessionStorage | None = None,
+        session_id: str | None = None,
+        auto_refresh_cookies: bool = False,
     ) -> None:
         if not cookies:
             raise ConfigurationError(
@@ -232,6 +257,14 @@ class FragmentClient:
         self.api_key: str | None = None
         self.api_provider: str = "tonapi"
         self.wallet_version: str = "V5R1"
+        self.proxy: str | None = None
+        self._session_storage: SessionStorage | None = session_storage
+        self._session_id: str | None = session_id
+        self._auto_refresh: bool = auto_refresh_cookies
+
+        if proxy:
+            parse_proxy(proxy)
+            self.proxy = proxy.strip()
 
         if seed and str(seed).strip():
             word_count = len(seed.strip().split())
@@ -264,15 +297,13 @@ class FragmentClient:
             )
         self.wallet_version = version
 
-        self._refresh_lock = asyncio.Lock()
-
         logger.info(
             "FragmentClient initialized: wallet_version=%s, api_provider=%s, "
-            "has_seed=%s, has_api_key=%s, has_ton_token=%s",
+            "has_seed=%s, has_api_key=%s, has_ton_token=%s, proxy=%s",
             self.wallet_version, self.api_provider,
-            self.seed is not None, self.api_key is not None, self._has_ton_token,
+            self.seed is not None, self.api_key is not None,
+            self._has_ton_token, "set" if self.proxy else "none",
         )
-        
 
     @property
     def has_wallet(self) -> bool:
@@ -283,6 +314,11 @@ class FragmentClient:
     def has_ton_token(self) -> bool:
         """Return True if stel_ton_token cookie is present."""
         return self._has_ton_token
+
+    @property
+    def session_storage(self) -> SessionStorage | None:
+        """Return the configured session storage backend."""
+        return self._session_storage
 
     def _require_cookies(self) -> dict:
         """Internal: return cookies or raise if not configured."""
@@ -304,11 +340,97 @@ class FragmentClient:
         if not self._has_ton_token:
             raise ConfigurationError(ConfigurationError.TON_TOKEN_REQUIRED)
 
+    async def _save_cookies(self) -> None:
+        """Persist current cookies to session storage if configured."""
+        if self._session_storage and self._session_id:
+            try:
+                await self._session_storage.save(self._session_id, self.cookies)
+            except Exception as exc:
+                logger.warning("Failed to save cookies to storage: %s", exc)
+
+    async def refresh_cookies(self) -> dict[str, str]:
+        """Re-authenticate and refresh session cookies.
+
+        Requires seed to be configured. Updates internal cookies and
+        saves to session storage if configured.
+
+        Returns:
+            Updated cookies dict.
+        """
+        if not self.seed:
+            raise ConfigurationError(ConfigurationError.SEED_REQUIRED)
+
+        logger.info("Refreshing Fragment session cookies")
+        new_cookies = await authenticate(
+            seed=self.seed,
+            wallet_version=self.wallet_version,
+            timeout=self.timeout,
+        )
+
+        self.cookies = new_cookies
+        self._has_ton_token = bool(str(new_cookies.get("stel_ton_token", "")).strip())
+
+        await self._save_cookies()
+        logger.info("Cookies refreshed successfully")
+        return new_cookies
+
+    @classmethod
+    async def from_storage(
+        cls,
+        session_storage: SessionStorage,
+        session_id: str,
+        seed: str | None = None,
+        api_key: str | None = None,
+        api_provider: str = "tonapi",
+        wallet_version: str = "V5R1",
+        timeout: float = DEFAULT_TIMEOUT,
+        proxy: str | None = None,
+        auto_refresh_cookies: bool = False,
+    ) -> "FragmentClient":
+        """Create a FragmentClient from stored session cookies.
+
+        Args:
+            session_storage: Storage backend to load cookies from.
+            session_id: Session identifier in storage.
+            seed: TON wallet mnemonic. Optional.
+            api_key: TON API key. Optional.
+            api_provider: API provider name.
+            wallet_version: Wallet version string.
+            timeout: HTTP timeout.
+            proxy: Proxy URL.
+            auto_refresh_cookies: Enable auto refresh.
+
+        Returns:
+            FragmentClient instance with loaded cookies.
+        """
+        cookies = await session_storage.load(session_id)
+        if not cookies:
+            if seed:
+                cookies = await authenticate(seed=seed, wallet_version=wallet_version, timeout=timeout)
+                await session_storage.save(session_id, cookies)
+            else:
+                raise CookieError(
+                    f"No stored session found for '{session_id}' and no seed provided for authentication."
+                )
+
+        return cls(
+            cookies=cookies,
+            seed=seed,
+            api_key=api_key,
+            api_provider=api_provider,
+            wallet_version=wallet_version,
+            timeout=timeout,
+            proxy=proxy,
+            session_storage=session_storage,
+            session_id=session_id,
+            auto_refresh_cookies=auto_refresh_cookies,
+        )
+
     async def __aenter__(self) -> "FragmentClient":
         return self
 
     async def __aexit__(self, *_: object) -> None:
-        pass
+        await self._save_cookies()
 
     def __repr__(self) -> str:
         return (
@@ -317,7 +439,8 @@ class FragmentClient:
             f"api_provider='{self.api_provider}', "
             f"seed={'set' if self.seed else 'none'}, "
             f"api_key={'set' if self.api_key else 'none'}, "
-            f"ton_token={self._has_ton_token}"
+            f"ton_token={self._has_ton_token}, "
+            f"proxy={'set' if self.proxy else 'none'}"
             f")"
         )
 
@@ -341,10 +464,12 @@ class FragmentClient:
         try:
             headers = build_headers(STARS_PAGE)
             fragment_hash = await fetch_fragment_hash(
-                self.cookies, headers, STARS_PAGE, self.timeout,
+                self.cookies, headers, STARS_PAGE, self.timeout, proxy=self.proxy,
             )
+            proxy_args = build_curl_proxy_args(self.proxy)
             async with requests.AsyncSession(
                 cookies=self.cookies, timeout=self.timeout, impersonate="chrome120",
+                **proxy_args,
             ) as session:
                 result = await post_fragment_api(
                     session, fragment_hash, headers,
@@ -361,10 +486,12 @@ class FragmentClient:
         try:
             headers = build_headers(PREMIUM_GIFT_PAGE)
             fragment_hash = await fetch_fragment_hash(
-                self.cookies, headers, PREMIUM_GIFT_PAGE, self.timeout,
+                self.cookies, headers, PREMIUM_GIFT_PAGE, self.timeout, proxy=self.proxy,
             )
+            proxy_args = build_curl_proxy_args(self.proxy)
             async with requests.AsyncSession(
                 cookies=self.cookies, timeout=self.timeout, impersonate="chrome120",
+                **proxy_args,
             ) as session:
                 result = await post_fragment_api(
                     session, fragment_hash, headers,
@@ -382,10 +509,12 @@ class FragmentClient:
         try:
             headers = build_headers(ADS_TOPUP_PAGE)
             fragment_hash = await fetch_fragment_hash(
-                self.cookies, headers, ADS_TOPUP_PAGE, self.timeout,
+                self.cookies, headers, ADS_TOPUP_PAGE, self.timeout, proxy=self.proxy,
             )
+            proxy_args = build_curl_proxy_args(self.proxy)
             async with requests.AsyncSession(
                 cookies=self.cookies, timeout=self.timeout, impersonate="chrome120",
+                **proxy_args,
             ) as session:
                 result = await post_fragment_api(
                     session, fragment_hash, headers,
@@ -404,10 +533,12 @@ class FragmentClient:
         try:
             headers = build_headers(STARS_GIVEAWAY_PAGE)
             fragment_hash = await fetch_fragment_hash(
-                self.cookies, headers, STARS_GIVEAWAY_PAGE, self.timeout,
+                self.cookies, headers, STARS_GIVEAWAY_PAGE, self.timeout, proxy=self.proxy,
             )
+            proxy_args = build_curl_proxy_args(self.proxy)
             async with requests.AsyncSession(
                 cookies=self.cookies, timeout=self.timeout, impersonate="chrome120",
+                **proxy_args,
             ) as session:
                 result = await post_fragment_api(
                     session, fragment_hash, headers,
@@ -429,10 +560,12 @@ class FragmentClient:
         try:
             headers = build_headers(PREMIUM_GIVEAWAY_PAGE)
             fragment_hash = await fetch_fragment_hash(
-                self.cookies, headers, PREMIUM_GIVEAWAY_PAGE, self.timeout,
+                self.cookies, headers, PREMIUM_GIVEAWAY_PAGE, self.timeout, proxy=self.proxy,
             )
+            proxy_args = build_curl_proxy_args(self.proxy)
             async with requests.AsyncSession(
                 cookies=self.cookies, timeout=self.timeout, impersonate="chrome120",
+                **proxy_args,
             ) as session:
                 result = await post_fragment_api(
                     session, fragment_hash, headers,
@@ -472,7 +605,7 @@ class FragmentClient:
         items: list[dict[str, Any] | PurchaseItem],
         payment_method: str = "gram",
     ) -> BatchResult:
-        """Execute multiple purchases as batched TON transactions. Alias for purchase(items)."""
+        """Execute multiple purchases as batched TON transactions."""
         return await batch_purchase(self, items, payment_method)
 
     async def purchase_stars(
@@ -519,6 +652,40 @@ class FragmentClient:
         self._require_ton_token()
         return await place_bid(self, item_type, slug, bid)
 
+    async def make_offer(self, item_type: int, slug: str, amount: int) -> OfferResult:
+        """Make an offer to buy an unlisted username, number, or gift."""
+        self._require_ton_token()
+        return await _make_offer(self, item_type, slug, amount)
+
+    async def cancel_auction(self, item_type: int, slug: str) -> TransactionResult:
+        """Cancel an active auction (if no bids were placed)."""
+        self._require_ton_token()
+        return await _cancel_auction(self, item_type, slug)
+
+    async def subscribe_to_item(self, item_type: int, slug: str) -> SubscriptionResult:
+        """Subscribe to auction update notifications for an item."""
+        return await _subscribe_to_item(self, item_type, slug)
+
+    async def unsubscribe_from_item(self, item_type: int, slug: str) -> SubscriptionResult:
+        """Unsubscribe from auction update notifications for an item."""
+        return await _unsubscribe_from_item(self, item_type, slug)
+
+    async def init_ads_withdrawal(self, transaction_id: str) -> AdsWithdrawalInitResult:
+        """Initialize Ads revenue withdrawal to wallet."""
+        return await _init_ads_withdrawal(self, transaction_id)
+
+    async def confirm_ads_withdrawal(self, transaction_id: str, confirm_hash: str) -> AdsWithdrawalConfirmResult:
+        """Confirm Ads revenue withdrawal after user approval."""
+        return await _confirm_ads_withdrawal(self, transaction_id, confirm_hash)
+
+    async def get_gateway_price(self, account_id: str, credits: int) -> GatewayPriceInfo:
+        """Get price info for Telegram Gateway credits."""
+        return await _get_gateway_price(self, account_id, credits)
+
+    async def recharge_gateway(self, account_id: str, credits: int) -> GatewayRechargeResult:
+        """Recharge Telegram Gateway credits via TON payment."""
+        return await _recharge_gateway(self, account_id, credits)
+
     async def get_wallet(self) -> WalletInfo:
         """Return address, state, GRAM and USDT balance of the wallet."""
         self._require_wallet()
@@ -556,7 +723,7 @@ class FragmentClient:
         try:
             url = f"{FRAGMENT_BASE_URL}/username/{username.lstrip('@')}"
             headers = build_headers(url)
-            data = await fetch_page_ajax(self.cookies, headers, url, self.timeout)
+            data = await fetch_page_ajax(self.cookies, headers, url, self.timeout, proxy=self.proxy)
 
             html = data.get("h", "")
             state = data.get("s", {})
@@ -593,7 +760,7 @@ class FragmentClient:
             clean = number.replace("+", "").replace(" ", "").replace("-", "")
             url = f"{FRAGMENT_BASE_URL}/number/{clean}"
             headers = build_headers(url)
-            data = await fetch_page_ajax(self.cookies, headers, url, self.timeout)
+            data = await fetch_page_ajax(self.cookies, headers, url, self.timeout, proxy=self.proxy)
 
             html = data.get("h", "")
             state = data.get("s", {})
@@ -631,7 +798,7 @@ class FragmentClient:
         try:
             url = f"{FRAGMENT_BASE_URL}/gift/{slug}"
             headers = build_headers(url)
-            data = await fetch_page_ajax(self.cookies, headers, url, self.timeout)
+            data = await fetch_page_ajax(self.cookies, headers, url, self.timeout, proxy=self.proxy)
 
             html = data.get("h", "")
             state = data.get("s", {})
@@ -675,7 +842,7 @@ class FragmentClient:
         """Get all available Telegram Stars package prices."""
         try:
             headers = build_headers(STARS_BUY_PAGE)
-            data = await fetch_page_ajax(self.cookies, headers, STARS_BUY_PAGE, self.timeout)
+            data = await fetch_page_ajax(self.cookies, headers, STARS_BUY_PAGE, self.timeout, proxy=self.proxy)
             html = data.get("h", "")
             state = data.get("s", {})
             packages = parse_stars_packages(html)
@@ -690,10 +857,12 @@ class FragmentClient:
         try:
             headers = build_headers(STARS_PAGE)
             fragment_hash = await fetch_fragment_hash(
-                self.cookies, headers, STARS_PAGE, self.timeout,
+                self.cookies, headers, STARS_PAGE, self.timeout, proxy=self.proxy,
             )
+            proxy_args = build_curl_proxy_args(self.proxy)
             async with requests.AsyncSession(
                 cookies=self.cookies, timeout=self.timeout, impersonate="chrome120",
+                **proxy_args,
             ) as session:
                 result = await post_fragment_api(
                     session, fragment_hash, headers,
@@ -711,7 +880,7 @@ class FragmentClient:
         """Get Telegram Premium subscription prices."""
         try:
             headers = build_headers(PREMIUM_GIFT_PAGE)
-            data = await fetch_page_ajax(self.cookies, headers, PREMIUM_GIFT_PAGE, self.timeout)
+            data = await fetch_page_ajax(self.cookies, headers, PREMIUM_GIFT_PAGE, self.timeout, proxy=self.proxy)
             html = data.get("h", "")
             state = data.get("s", {})
             options = parse_premium_options(html)
@@ -727,7 +896,7 @@ class FragmentClient:
         try:
             url = f"{STARS_HISTORY_PAGE}?sort={sort}"
             headers = build_headers(STARS_HISTORY_PAGE)
-            data = await fetch_page_ajax(self.cookies, headers, url, self.timeout)
+            data = await fetch_page_ajax(self.cookies, headers, url, self.timeout, proxy=self.proxy)
             return parse_stars_history(data.get("h", ""))
         except FragmentError:
             raise
@@ -740,7 +909,7 @@ class FragmentClient:
         try:
             url = f"{PREMIUM_HISTORY_PAGE}?sort={sort}"
             headers = build_headers(PREMIUM_HISTORY_PAGE)
-            data = await fetch_page_ajax(self.cookies, headers, url, self.timeout)
+            data = await fetch_page_ajax(self.cookies, headers, url, self.timeout, proxy=self.proxy)
             return parse_premium_history(data.get("h", ""))
         except FragmentError:
             raise
@@ -753,7 +922,7 @@ class FragmentClient:
         try:
             url = f"{ADS_HISTORY_PAGE}?type=topup&sort={sort}"
             headers = build_headers(ADS_HISTORY_PAGE)
-            data = await fetch_page_ajax(self.cookies, headers, url, self.timeout)
+            data = await fetch_page_ajax(self.cookies, headers, url, self.timeout, proxy=self.proxy)
             return parse_topup_history(data.get("h", ""))
         except FragmentError:
             raise
@@ -765,7 +934,7 @@ class FragmentClient:
         self._require_ton_token()
         try:
             headers = build_headers(PROFILE_PAGE)
-            data = await fetch_page_ajax(self.cookies, headers, PROFILE_PAGE, self.timeout)
+            data = await fetch_page_ajax(self.cookies, headers, PROFILE_PAGE, self.timeout, proxy=self.proxy)
             html = data.get("h", "")
             js = data.get("j", "")
             return parse_profile(html + js)
@@ -787,7 +956,7 @@ class FragmentClient:
                 params.append(f"sort={sort}")
             url = MY_BIDS_PAGE + ("?" + "&".join(params) if params else "")
             headers = build_headers(MY_BIDS_PAGE)
-            data = await fetch_page_ajax(self.cookies, headers, url, self.timeout)
+            data = await fetch_page_ajax(self.cookies, headers, url, self.timeout, proxy=self.proxy)
             html = data.get("h", "")
             items, total_count = parse_my_bids(html, item_type)
             gram_rate = data.get("s", {}).get("tonRate", 0.0)
@@ -806,7 +975,7 @@ class FragmentClient:
                 raise ConfigurationError(f"Invalid item_type: {item_type}")
             url = page_map[item_type]
             headers = build_headers(url)
-            data = await fetch_page_ajax(self.cookies, headers, url, self.timeout)
+            data = await fetch_page_ajax(self.cookies, headers, url, self.timeout, proxy=self.proxy)
             html = data.get("h", "")
             items, total_count = parse_my_assets(html, item_type)
             gram_rate = data.get("s", {}).get("tonRate", 0.0)
@@ -822,7 +991,7 @@ class FragmentClient:
         try:
             url = MY_USERNAMES_PAGE if item_type == 1 else MY_GIFTS_PAGE
             headers = build_headers(url)
-            data = await fetch_page_ajax(self.cookies, headers, url, self.timeout)
+            data = await fetch_page_ajax(self.cookies, headers, url, self.timeout, proxy=self.proxy)
             accounts, can_disable = parse_assign_accounts(data.get("h", ""))
             return AssignAccountsResult(accounts=accounts, can_disable=can_disable)
         except FragmentError:
@@ -832,18 +1001,28 @@ class FragmentClient:
 
     async def assign_to_telegram(
         self, item_type: int, slug: str, assign_to: str | None = None,
+        wait_for_bot_payment: bool = True,
     ) -> AssignResult:
-        """Assign a username or gift to a Telegram account."""
+        """Assign a username or gift to a Telegram account.
+
+        If the target is a bot, Fragment requires a payment. When
+        wait_for_bot_payment is True and a wallet is configured,
+        the payment is executed automatically.
+        """
         self._require_ton_token()
         try:
             url = f"{FRAGMENT_BASE_URL}/" + (
                 f"username/{slug}" if item_type == 1 else f"gift/{slug}"
             )
             headers = build_headers(url)
-            fragment_hash = await fetch_fragment_hash(self.cookies, headers, url, self.timeout)
+            fragment_hash = await fetch_fragment_hash(
+                self.cookies, headers, url, self.timeout, proxy=self.proxy,
+            )
+            proxy_args = build_curl_proxy_args(self.proxy)
 
             async with requests.AsyncSession(
                 cookies=self.cookies, timeout=self.timeout, impersonate="chrome120",
+                **proxy_args,
             ) as session:
                 data = {
                     "type": str(item_type), "username": slug,
@@ -855,11 +1034,34 @@ class FragmentClient:
 
             if result.get("error"):
                 return AssignResult(ok=False, message=result["error"])
+
+            if result.get("need_pay") and wait_for_bot_payment and self.has_wallet:
+                req_id = result.get("req_id")
+                if req_id:
+                    account = await build_account_info(self)
+                    transaction = await self.call(
+                        "getBotUsernameLink",
+                        {
+                            "account": json.dumps(account),
+                            "device": DEVICE_FINGERPRINT,
+                            "transaction": "1",
+                            "id": req_id,
+                        },
+                        page_url=url,
+                    )
+                    if not transaction.get("error"):
+                        tx_result = await execute_transaction(self, transaction)
+                        if tx_result.confirmed:
+                            return await self.assign_to_telegram(
+                                item_type, slug, assign_to, wait_for_bot_payment=False,
+                            )
+
             if result.get("need_pay"):
                 return AssignResult(
                     ok=True, need_pay=True,
                     req_id=result.get("req_id"), amount=result.get("amount"),
                 )
+
             return AssignResult(
                 ok=result.get("ok", False),
                 message=result.get("msg"), assign_name=result.get("assign_name"),
@@ -880,7 +1082,9 @@ class FragmentClient:
                 f"username/{slug}" if item_type == 1 else f"gift/{slug}"
             )
             headers = build_headers(url)
-            fragment_hash = await fetch_fragment_hash(self.cookies, headers, url, self.timeout)
+            fragment_hash = await fetch_fragment_hash(
+                self.cookies, headers, url, self.timeout, proxy=self.proxy,
+            )
 
             can_sell = await self.call(
                 "canSellItem",
@@ -891,9 +1095,11 @@ class FragmentClient:
                 return StartAuctionResult(ok=False)
 
             account = await build_account_info(self)
+            proxy_args = build_curl_proxy_args(self.proxy)
 
             async with requests.AsyncSession(
                 cookies=self.cookies, timeout=self.timeout, impersonate="chrome120",
+                **proxy_args,
             ) as session:
                 transaction = await post_fragment_api(
                     session, fragment_hash, headers,
@@ -928,10 +1134,12 @@ class FragmentClient:
         try:
             headers = build_headers(FRAGMENT_BASE_URL)
             fragment_hash = await fetch_fragment_hash(
-                self.cookies, headers, FRAGMENT_BASE_URL, self.timeout,
+                self.cookies, headers, FRAGMENT_BASE_URL, self.timeout, proxy=self.proxy,
             )
+            proxy_args = build_curl_proxy_args(self.proxy)
             async with requests.AsyncSession(
                 cookies=self.cookies, timeout=self.timeout, impersonate="chrome120",
+                **proxy_args,
             ) as session:
                 result = await post_fragment_api(
                     session, fragment_hash, headers,
@@ -958,9 +1166,13 @@ class FragmentClient:
         try:
             url = f"{FRAGMENT_BASE_URL}/gift/{slug}/transfer"
             headers = build_headers(url)
-            fragment_hash = await fetch_fragment_hash(self.cookies, headers, url, self.timeout)
+            fragment_hash = await fetch_fragment_hash(
+                self.cookies, headers, url, self.timeout, proxy=self.proxy,
+            )
+            proxy_args = build_curl_proxy_args(self.proxy)
             async with requests.AsyncSession(
                 cookies=self.cookies, timeout=self.timeout, impersonate="chrome120",
+                **proxy_args,
             ) as session:
                 result = await post_fragment_api(
                     session, fragment_hash, headers,
@@ -1009,7 +1221,7 @@ class FragmentClient:
         self._require_ton_token()
         try:
             headers = build_headers(SESSIONS_PAGE)
-            data = await fetch_page_ajax(self.cookies, headers, SESSIONS_PAGE, self.timeout)
+            data = await fetch_page_ajax(self.cookies, headers, SESSIONS_PAGE, self.timeout, proxy=self.proxy)
             return parse_sessions(data.get("h", ""))
         except FragmentError:
             raise
@@ -1022,10 +1234,12 @@ class FragmentClient:
         try:
             headers = build_headers(SESSIONS_PAGE)
             fragment_hash = await fetch_fragment_hash(
-                self.cookies, headers, SESSIONS_PAGE, self.timeout,
+                self.cookies, headers, SESSIONS_PAGE, self.timeout, proxy=self.proxy,
             )
+            proxy_args = build_curl_proxy_args(self.proxy)
             async with requests.AsyncSession(
                 cookies=self.cookies, timeout=self.timeout, impersonate="chrome120",
+                **proxy_args,
             ) as session:
                 result = await post_fragment_api(
                     session, fragment_hash, headers,
@@ -1049,9 +1263,13 @@ class FragmentClient:
             else:
                 url = f"{FRAGMENT_BASE_URL}/gift/{username}"
             headers = build_headers(url)
-            fragment_hash = await fetch_fragment_hash(self.cookies, headers, url, self.timeout)
+            fragment_hash = await fetch_fragment_hash(
+                self.cookies, headers, url, self.timeout, proxy=self.proxy,
+            )
+            proxy_args = build_curl_proxy_args(self.proxy)
             async with requests.AsyncSession(
                 cookies=self.cookies, timeout=self.timeout, impersonate="chrome120",
+                **proxy_args,
             ) as session:
                 return await post_fragment_api(
                     session, fragment_hash, headers,
@@ -1077,9 +1295,13 @@ class FragmentClient:
             else:
                 url = f"{FRAGMENT_BASE_URL}/gift/{username}"
             headers = build_headers(url)
-            fragment_hash = await fetch_fragment_hash(self.cookies, headers, url, self.timeout)
+            fragment_hash = await fetch_fragment_hash(
+                self.cookies, headers, url, self.timeout, proxy=self.proxy,
+            )
+            proxy_args = build_curl_proxy_args(self.proxy)
             async with requests.AsyncSession(
                 cookies=self.cookies, timeout=self.timeout, impersonate="chrome120",
+                **proxy_args,
             ) as session:
                 return await post_fragment_api(
                     session, fragment_hash, headers,
@@ -1117,7 +1339,7 @@ class FragmentClient:
         try:
             page_url = f"{NFT_WITHDRAW_PAGE}?transaction={transaction}"
             headers = build_headers(page_url)
-            data = await fetch_page_ajax(self.cookies, headers, page_url, self.timeout)
+            data = await fetch_page_ajax(self.cookies, headers, page_url, self.timeout, proxy=self.proxy)
             if data.get("mode") == "done" and "expired" in data.get("html", ""):
                 raise FragmentAPIError(
                     "NFT withdrawal session has expired. Please start the withdrawal process again."
@@ -1136,22 +1358,14 @@ class FragmentClient:
         self._require_wallet()
         try:
             wallet_info = await self.get_wallet()
-            headers = build_headers(FRAGMENT_BASE_URL)
-            fragment_hash = await fetch_fragment_hash(
-                self.cookies, headers, FRAGMENT_BASE_URL, self.timeout,
+            result = await self.call(
+                "initNftWithdrawalRequest",
+                {
+                    "transaction": transaction,
+                    "wallet_address": wallet_info.address,
+                    "keep_gift": "1" if keep_gift else "0",
+                },
             )
-            async with requests.AsyncSession(
-                cookies=self.cookies, timeout=self.timeout, impersonate="chrome120",
-            ) as session:
-                result = await post_fragment_api(
-                    session, fragment_hash, headers,
-                    {
-                        "method": "initNftWithdrawalRequest",
-                        "transaction": transaction,
-                        "wallet_address": wallet_info.address,
-                        "keep_gift": "1" if keep_gift else "0",
-                    },
-                )
             if result.get("error"):
                 return NftWithdrawalInitResult(ok=False, error=result["error"])
             return NftWithdrawalInitResult(
@@ -1173,23 +1387,15 @@ class FragmentClient:
         self._require_wallet()
         try:
             wallet_info = await self.get_wallet()
-            headers = build_headers(FRAGMENT_BASE_URL)
-            fragment_hash = await fetch_fragment_hash(
-                self.cookies, headers, FRAGMENT_BASE_URL, self.timeout,
+            result = await self.call(
+                "initNftWithdrawalRequest",
+                {
+                    "transaction": transaction,
+                    "wallet_address": wallet_info.address,
+                    "keep_gift": "1" if keep_gift else "0",
+                    "confirm_hash": confirm_hash,
+                },
             )
-            async with requests.AsyncSession(
-                cookies=self.cookies, timeout=self.timeout, impersonate="chrome120",
-            ) as session:
-                result = await post_fragment_api(
-                    session, fragment_hash, headers,
-                    {
-                        "method": "initNftWithdrawalRequest",
-                        "transaction": transaction,
-                        "wallet_address": wallet_info.address,
-                        "keep_gift": "1" if keep_gift else "0",
-                        "confirm_hash": confirm_hash,
-                    },
-                )
             if result.get("error"):
                 return NftWithdrawalConfirmResult(
                     ok=False, need_update=False, mode="error", error=result["error"],
@@ -1210,7 +1416,7 @@ class FragmentClient:
         try:
             page_url = f"{STARS_WITHDRAW_PAGE}?transaction={transaction}"
             headers = build_headers(page_url)
-            data = await fetch_page_ajax(self.cookies, headers, page_url, self.timeout)
+            data = await fetch_page_ajax(self.cookies, headers, page_url, self.timeout, proxy=self.proxy)
             if data.get("mode") == "done" and "expired" in data.get("html", ""):
                 raise FragmentAPIError(
                     "Stars withdrawal session has expired. Please start the withdrawal process again."
@@ -1236,22 +1442,14 @@ class FragmentClient:
         self._require_wallet()
         try:
             wallet_info = await self.get_wallet()
-            headers = build_headers(FRAGMENT_BASE_URL)
-            fragment_hash = await fetch_fragment_hash(
-                self.cookies, headers, FRAGMENT_BASE_URL, self.timeout,
+            result = await self.call(
+                "initStarsRevenueWithdrawalRequest",
+                {
+                    "transaction": transaction,
+                    "wallet_address": wallet_info.address,
+                    "withdrawal_data": withdrawal_data,
+                },
             )
-            async with requests.AsyncSession(
-                cookies=self.cookies, timeout=self.timeout, impersonate="chrome120",
-            ) as session:
-                result = await post_fragment_api(
-                    session, fragment_hash, headers,
-                    {
-                        "method": "initStarsRevenueWithdrawalRequest",
-                        "transaction": transaction,
-                        "wallet_address": wallet_info.address,
-                        "withdrawal_data": withdrawal_data,
-                    },
-                )
             if result.get("error"):
                 return StarsWithdrawalInitResult(ok=False, error=result["error"])
             return StarsWithdrawalInitResult(
@@ -1273,23 +1471,15 @@ class FragmentClient:
         self._require_wallet()
         try:
             wallet_info = await self.get_wallet()
-            headers = build_headers(FRAGMENT_BASE_URL)
-            fragment_hash = await fetch_fragment_hash(
-                self.cookies, headers, FRAGMENT_BASE_URL, self.timeout,
+            result = await self.call(
+                "initStarsRevenueWithdrawalRequest",
+                {
+                    "transaction": transaction,
+                    "wallet_address": wallet_info.address,
+                    "withdrawal_data": withdrawal_data,
+                    "confirm_hash": confirm_hash,
+                },
             )
-            async with requests.AsyncSession(
-                cookies=self.cookies, timeout=self.timeout, impersonate="chrome120",
-            ) as session:
-                result = await post_fragment_api(
-                    session, fragment_hash, headers,
-                    {
-                        "method": "initStarsRevenueWithdrawalRequest",
-                        "transaction": transaction,
-                        "wallet_address": wallet_info.address,
-                        "withdrawal_data": withdrawal_data,
-                        "confirm_hash": confirm_hash,
-                    },
-                )
             if result.get("error"):
                 return StarsWithdrawalConfirmResult(
                     ok=False, need_update=False, mode="error", error=result["error"],
@@ -1313,10 +1503,12 @@ class FragmentClient:
             page_url = f"{FRAGMENT_BASE_URL}/{referer}"
             headers = build_headers(page_url)
             fragment_hash = await fetch_fragment_hash(
-                self.cookies, headers, page_url, self.timeout,
+                self.cookies, headers, page_url, self.timeout, proxy=self.proxy,
             )
+            proxy_args = build_curl_proxy_args(self.proxy)
             async with requests.AsyncSession(
                 cookies=self.cookies, timeout=self.timeout, impersonate="chrome120",
+                **proxy_args,
             ) as session:
                 return await post_fragment_api(
                     session, fragment_hash, headers,
@@ -1326,60 +1518,20 @@ class FragmentClient:
             raise
         except Exception as exc:
             raise UnexpectedError(UnexpectedError.UNEXPECTED.format(exc=exc)) from exc
-    
-    @property
-    def can_auto_refresh(self) -> bool:
-        """Return True if client is in full mode (has seed and stel_ton_token)."""
-        return bool(self.seed and self._has_ton_token)
 
-    async def refresh_cookies(self) -> dict[str, str]:
-        """Refresh cookies using the seed phrase (Full mode only).
-
-        Raises:
-            ConfigurationError: If the client is not in full mode.
-            CookieError: If full cookies could not be retrieved.
-        """
-        if not self.can_auto_refresh:
-            raise ConfigurationError(CookieError.AUTO_REFRESH_NOT_AVAILABLE)
-
-        async with self._refresh_lock:
-            logger.info("Automatically refreshing Fragment cookies via seed phrase...")
-            new_cookies = await refresh_wallet_session(
-                seed=self.seed,
-                wallet_version=self.wallet_version,
-                timeout=self.timeout,
-            )
-            self.cookies = new_cookies
-            self._has_ton_token = bool(str(new_cookies.get("stel_ton_token", "")).strip())
-            logger.info("Fragment cookies successfully refreshed.")
-            return self.cookies
-
-    async def _execute_with_retry(self, coro_func, *args, **kwargs):
-        """Helper to transparently refresh cookies on auth/session failures and retry once."""
-        try:
-            return await coro_func(*args, **kwargs)
-        except (FragmentPageError, FragmentAPIError) as exc:
-            err_msg = str(exc).lower()
-            is_auth_error = any(
-                k in err_msg for k in ("bad status: 401", "bad status: 403", "expired", "hash not found", "unauthorized")
-            )
-            if is_auth_error and self.can_auto_refresh:
-                logger.warning("Session/auth error detected, attempting auto-refresh of cookies...")
-                await self.refresh_cookies()
-                return await coro_func(*args, **kwargs)
-            raise
-    
     async def call(
         self, method: str, data: dict[str, Any] | None = None,
         *, page_url: str = FRAGMENT_BASE_URL,
     ) -> dict[str, Any]:
         """Send a raw request to the Fragment API."""
         headers = build_headers(page_url)
+        proxy_args = build_curl_proxy_args(self.proxy)
         async with requests.AsyncSession(
             cookies=self.cookies, timeout=self.timeout, impersonate="chrome120",
+            **proxy_args,
         ) as session:
             fragment_hash = await fetch_fragment_hash(
-                self.cookies, headers, page_url, self.timeout,
+                self.cookies, headers, page_url, self.timeout, proxy=self.proxy,
             )
             return await post_fragment_api(
                 session, fragment_hash, headers,
