@@ -13,6 +13,8 @@ from FragmentAPI.utils.http import (
     fetch_fragment_hash,
     post_fragment_api,
 )
+from FragmentAPI.utils.proxy import build_curl_proxy_args, parse_proxy
+from FragmentAPI.utils.retry import with_retry
 from FragmentAPI.utils.wallet import (
     build_account_info,
     execute_transaction,
@@ -22,6 +24,7 @@ from FragmentAPI.utils.wallet import (
 
 __all__ = [
     "build_account_info",
+    "build_curl_proxy_args",
     "build_headers",
     "decode_boc_comment",
     "execute_batch_transaction",
@@ -31,5 +34,7 @@ __all__ = [
     "fetch_wallet_info",
     "parse_auction_rows",
     "parse_gift_items",
+    "parse_proxy",
     "post_fragment_api",
+    "with_retry",
 ]
