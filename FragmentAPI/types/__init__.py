@@ -1,3 +1,9 @@
+"""
+Type exports for Fragment API library.
+
+Contains all dataclasses for API responses and exception classes.
+"""
+
 from FragmentAPI.types.results import (
     AdsTopupResult,
     AssignResult,
@@ -33,6 +39,8 @@ from FragmentAPI.types.results import (
     PreparedTransaction,
     PreparedTransactionMessage,
     ProfileInfo,
+    PurchaseItem,
+    PurchaseResult,
     RecipientInfo,
     SessionInfo,
     StartAuctionResult,
@@ -52,16 +60,18 @@ from FragmentAPI.types.results import (
     WalletInfo,
 )
 from FragmentAPI.exceptions import (
+    AlreadySubscribedError,
+    AnonymousNumberError,
     ClientError,
+    ConfigurationError,
     ConfigError,
     ConfirmationTimeout,
     CookieError,
     FragmentAPIError,
-    FragmentBaseError,
+    FragmentError,
     FragmentPageError,
     OperationError,
     ParseError,
-    ProxyError,
     SeqnoError,
     TransactionError,
     UnexpectedError,
@@ -72,6 +82,8 @@ from FragmentAPI.exceptions import (
 
 __all__ = [
     "AdsTopupResult",
+    "AlreadySubscribedError",
+    "AnonymousNumberError",
     "AssignResult",
     "AssignAccountsResult",
     "AuctionInfo",
@@ -79,8 +91,16 @@ __all__ = [
     "BatchResult",
     "BidHistoryEntry",
     "BidResult",
+    "ClientError",
+    "ConfigurationError",
+    "ConfigError",
+    "ConfirmationTimeout",
+    "CookieError",
     "EvmInvoice",
     "EvmPaymentResult",
+    "FragmentAPIError",
+    "FragmentError",
+    "FragmentPageError",
     "GiftAttribute",
     "GiftInfo",
     "GiftsResult",
@@ -97,7 +117,9 @@ __all__ = [
     "NftWithdrawalConfirmResult",
     "NumberInfo",
     "NumbersResult",
+    "OperationError",
     "OwnerHistoryEntry",
+    "ParseError",
     "PremiumPriceOption",
     "PremiumPrices",
     "PremiumResult",
@@ -105,7 +127,10 @@ __all__ = [
     "PreparedTransaction",
     "PreparedTransactionMessage",
     "ProfileInfo",
+    "PurchaseItem",
+    "PurchaseResult",
     "RecipientInfo",
+    "SeqnoError",
     "SessionInfo",
     "StartAuctionResult",
     "StarsPrice",
@@ -118,8 +143,13 @@ __all__ = [
     "TelegramAccount",
     "TerminateSessionsResult",
     "TopupTransaction",
+    "TransactionError",
     "TransactionResult",
+    "UnexpectedError",
     "UsernameInfo",
     "UsernamesResult",
+    "UserNotFoundError",
+    "VerificationError",
+    "WalletError",
     "WalletInfo",
 ]

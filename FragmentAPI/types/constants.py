@@ -1,6 +1,8 @@
-'''
+"""
 Constants and configuration for Fragment API library.
-'''
+
+Contains URLs, validation limits, wallet configurations, and HTTP headers.
+"""
 
 from __future__ import annotations
 
@@ -26,14 +28,30 @@ WALLET_CLASSES: dict[str, Any] = {
     "V5R1": WalletV5R1,
 }
 
-MIN_TON_BALANCE: float = 0.01
+WALLET_MAX_MESSAGES: dict[str, int] = {
+    "V4R2": 4,
+    "V5R1": 255,
+}
+
+ApiProviderType = Literal["tonapi", "toncenter"]
+SUPPORTED_API_PROVIDERS: frozenset[str] = frozenset({"tonapi", "toncenter"})
+
+MIN_GRAM_BALANCE: float = 0.01
+MIN_TON_BALANCE: float = MIN_GRAM_BALANCE
+MIN_USDT_BALANCE: float = 0.01
+USDT_GRAM_MASTER_ADDRESS: str = "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs"
 
 DEFAULT_TIMEOUT: float = 30.0
-
 CONFIRMATION_INTERVAL: float = 3.0
 CONFIRMATION_MAX_ATTEMPTS: int = 40
 
 REQUIRED_COOKIE_KEYS: tuple[str, ...] = (
+    "stel_ssid",
+    "stel_dt",
+    "stel_token",
+)
+
+REQUIRED_COOKIE_KEYS_WALLET: tuple[str, ...] = (
     "stel_ssid",
     "stel_dt",
     "stel_token",
@@ -46,8 +64,7 @@ AUTH_REQUIRED_COOKIE_KEYS: tuple[str, ...] = (
 )
 
 TONAPI_BASE_URL: str = "https://tonapi.io/v2"
-TONAPI_PROXY_BASE: str = "https://tonapi.ru:444/v2"
-TONAPI_DEFAULT_KEY: str = "AH" + "0" * 48
+TONCENTER_BASE_URL: str = "https://toncenter.com/api/v2"
 
 FRAGMENT_DOMAIN: str = "fragment.com"
 FRAGMENT_BASE_URL: str = f"https://{FRAGMENT_DOMAIN}"
@@ -73,8 +90,6 @@ MY_NUMBERS_PAGE: str = f"{FRAGMENT_BASE_URL}/my/numbers"
 STARS_WITHDRAW_PAGE: str = f"{FRAGMENT_BASE_URL}/stars/withdraw"
 NFT_WITHDRAW_PAGE: str = f"{FRAGMENT_BASE_URL}/gift/withdraw"
 
-STATS_ENDPOINT: str = "https://fragment.s1qwy.ru/statistic/collect"
-
 STARS_GIVEAWAY_PACKAGES: frozenset[int] = frozenset({
     500,
     1_000,
@@ -95,7 +110,7 @@ DEVICE_FINGERPRINT: str = json.dumps(
     {
         "platform": "android",
         "appName": "Tonkeeper",
-        "appVersion": "26.04.3",
+        "appVersion": "26.07.1",
         "maxProtocolVersion": 2,
         "features": [
             "SendTransaction",
@@ -160,7 +175,9 @@ EVM_TOKEN_SYMBOLS: dict[str, str] = {
 }
 
 VALID_PAYMENT_METHODS: frozenset[str] = frozenset({
+    "gram",
     "ton",
+    "usdt_gram",
     "usdt_ton",
     "usdt_eth",
     "usdt_pol",
@@ -169,4 +186,31 @@ VALID_PAYMENT_METHODS: frozenset[str] = frozenset({
     "usdc_pol",
 })
 
-TON_PAYMENT_METHODS: frozenset[str] = frozenset({"ton", "usdt_ton"})
+BATCH_PAYMENT_METHODS: frozenset[str] = frozenset({
+    "gram",
+    "ton",
+    "usdt_gram",
+    "usdt_ton",
+})
+
+GRAM_PAYMENT_METHODS: frozenset[str] = frozenset({
+    "gram",
+    "ton",
+    "usdt_gram",
+    "usdt_ton",
+})
+
+TON_PAYMENT_METHODS: frozenset[str] = GRAM_PAYMENT_METHODS
+
+PURCHASE_TYPES: frozenset[str] = frozenset({
+    "stars",
+    "premium",
+    "gram",
+    "ton",
+})
+
+PREMIUM_MONTHS_VALID: frozenset[int] = frozenset({3, 6, 12})
+STARS_PURCHASE_MIN: int = 50
+STARS_PURCHASE_MAX: int = 10_000_000
+GRAM_TOPUP_MIN: int = 1
+GRAM_TOPUP_MAX: int = 1_000_000_000

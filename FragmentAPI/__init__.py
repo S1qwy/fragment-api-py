@@ -1,3 +1,10 @@
+"""
+Fragment API Python Library.
+
+Async client for interacting with Fragment.com marketplace and Telegram services.
+Supports Stars, Premium, Giveaways, Usernames, Numbers, and Gifts operations.
+"""
+
 from FragmentAPI.client import FragmentClient
 from FragmentAPI.types import (
     AdsTopupResult,
@@ -6,12 +13,12 @@ from FragmentAPI.types import (
     BatchResult,
     BidHistoryEntry,
     BidResult,
-    ConfigError,
+    ConfigurationError,
     CookieError,
     EvmInvoice,
     EvmPaymentResult,
     FragmentAPIError,
-    FragmentBaseError,
+    FragmentError,
     FragmentPageError,
     GiftAttribute,
     GiftInfo,
@@ -31,7 +38,8 @@ from FragmentAPI.types import (
     PreparedTransaction,
     PreparedTransactionMessage,
     ProfileInfo,
-    ProxyError,
+    PurchaseItem,
+    PurchaseResult,
     RecipientInfo,
     SessionInfo,
     StarsPrice,
@@ -47,9 +55,11 @@ from FragmentAPI.types import (
     VerificationError,
     WalletError,
     WalletInfo,
+    AlreadySubscribedError,
+    AnonymousNumberError,
 )
 
-__version__ = "v8.0.0"
+__version__ = "10.0.0"
 __author__ = "S1qwy"
 __email__ = "S1qwy@internet.ru"
 
@@ -57,17 +67,19 @@ __all__ = [
     "__version__",
     "FragmentClient",
     "AdsTopupResult",
+    "AlreadySubscribedError",
+    "AnonymousNumberError",
     "AuctionInfo",
     "BatchItemResult",
     "BatchResult",
     "BidHistoryEntry",
     "BidResult",
-    "ConfigError",
+    "ConfigurationError",
     "CookieError",
     "EvmInvoice",
     "EvmPaymentResult",
     "FragmentAPIError",
-    "FragmentBaseError",
+    "FragmentError",
     "FragmentPageError",
     "GiftAttribute",
     "GiftInfo",
@@ -87,7 +99,8 @@ __all__ = [
     "PreparedTransaction",
     "PreparedTransactionMessage",
     "ProfileInfo",
-    "ProxyError",
+    "PurchaseItem",
+    "PurchaseResult",
     "RecipientInfo",
     "SessionInfo",
     "StarsPrice",

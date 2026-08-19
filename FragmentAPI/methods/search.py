@@ -1,19 +1,17 @@
-'''
-Marketplace search methods — async only.
-'''
+"""
+Marketplace search methods for usernames, numbers, and gifts.
+"""
 
 from __future__ import annotations
 
-from typing import (
-    TYPE_CHECKING,
-    Any,
-)
+import logging
+from typing import TYPE_CHECKING, Any
 
-import httpx
+from curl_cffi import requests
 
 from FragmentAPI.exceptions import (
     FragmentAPIError,
-    FragmentBaseError,
+    FragmentError,
     UnexpectedError,
 )
 from FragmentAPI.types.constants import (
@@ -33,11 +31,13 @@ from FragmentAPI.utils.html import (
 from FragmentAPI.utils.http import (
     build_headers,
     fetch_fragment_hash,
-    post_FragmentAPI,
+    post_fragment_api,
 )
 
 if TYPE_CHECKING:
     from FragmentAPI.client import FragmentClient
+
+logger = logging.getLogger("FragmentAPI")
 
 
 def _build_search_data(
@@ -47,7 +47,7 @@ def _build_search_data(
     filter_: str | None = None,
     offset_id: str | None = None,
 ) -> dict[str, Any]:
-    '''Build search request data dict.'''
+    """Build search request data dict."""
     data: dict[str, Any] = {
         "method": "searchAuctions",
         "type": item_type,
@@ -69,11 +69,10 @@ async def search_usernames(
     filter: str | None = None,
     offset_id: str | None = None,
 ) -> UsernamesResult:
-    '''
-    Search Fragment marketplace for Telegram usernames.
+    """Search Fragment marketplace for Telegram usernames.
 
     Args:
-        client: Authenticated FragmentClient instance.
+        client: FragmentClient instance (cookies required).
         query: Search text. Empty string browses all.
         sort: "price_desc", "price_asc", "listed", or "ending".
         filter: "auction", "sale", "sold", or "" (available).
@@ -81,33 +80,18 @@ async def search_usernames(
 
     Returns:
         UsernamesResult with items and next_offset_id.
-    '''
+    """
     try:
         headers = build_headers(FRAGMENT_BASE_URL)
-        data = _build_search_data(
-            query,
-            "usernames",
-            sort,
-            filter,
-            offset_id,
-        )
+        data = _build_search_data(query, "usernames", sort, filter, offset_id)
 
-        async with httpx.AsyncClient(
-            cookies=client.cookies,
-            timeout=client.timeout,
+        async with requests.AsyncSession(
+            cookies=client.cookies, timeout=client.timeout, impersonate="chrome120",
         ) as session:
             fragment_hash = await fetch_fragment_hash(
-                client.cookies,
-                headers,
-                FRAGMENT_BASE_URL,
-                client.timeout,
+                client.cookies, headers, FRAGMENT_BASE_URL, client.timeout,
             )
-            result = await post_FragmentAPI(
-                session,
-                fragment_hash,
-                headers,
-                data,
-            )
+            result = await post_fragment_api(session, fragment_hash, headers, data)
 
         if result.get("error"):
             raise FragmentAPIError(result["error"])
@@ -116,17 +100,13 @@ async def search_usernames(
         raw_noi = result.get("next_offset_id")
         next_oid = str(raw_noi) if raw_noi else None
 
-        return UsernamesResult(
-            items=items,
-            next_offset_id=next_oid,
-        )
+        logger.debug("Username search returned %d items", len(items))
+        return UsernamesResult(items=items, next_offset_id=next_oid)
 
-    except FragmentBaseError:
+    except FragmentError:
         raise
     except Exception as exc:
-        raise UnexpectedError(
-            UnexpectedError.UNEXPECTED.format(exc=exc),
-        ) from exc
+        raise UnexpectedError(UnexpectedError.UNEXPECTED.format(exc=exc)) from exc
 
 
 async def search_numbers(
@@ -136,11 +116,10 @@ async def search_numbers(
     filter: str | None = None,
     offset_id: str | None = None,
 ) -> NumbersResult:
-    '''
-    Search Fragment marketplace for anonymous Telegram numbers.
+    """Search Fragment marketplace for anonymous Telegram numbers.
 
     Args:
-        client: Authenticated FragmentClient instance.
+        client: FragmentClient instance (cookies required).
         query: Search text. Empty string browses all.
         sort: "price_desc", "price_asc", "listed", or "ending".
         filter: "auction", "sale", "sold", or "" (available).
@@ -148,33 +127,18 @@ async def search_numbers(
 
     Returns:
         NumbersResult with items and next_offset_id.
-    '''
+    """
     try:
         headers = build_headers(NUMBERS_PAGE)
-        data = _build_search_data(
-            query,
-            "numbers",
-            sort,
-            filter,
-            offset_id,
-        )
+        data = _build_search_data(query, "numbers", sort, filter, offset_id)
 
-        async with httpx.AsyncClient(
-            cookies=client.cookies,
-            timeout=client.timeout,
+        async with requests.AsyncSession(
+            cookies=client.cookies, timeout=client.timeout, impersonate="chrome120",
         ) as session:
             fragment_hash = await fetch_fragment_hash(
-                client.cookies,
-                headers,
-                NUMBERS_PAGE,
-                client.timeout,
+                client.cookies, headers, NUMBERS_PAGE, client.timeout,
             )
-            result = await post_FragmentAPI(
-                session,
-                fragment_hash,
-                headers,
-                data,
-            )
+            result = await post_fragment_api(session, fragment_hash, headers, data)
 
         if result.get("error"):
             raise FragmentAPIError(result["error"])
@@ -183,17 +147,13 @@ async def search_numbers(
         raw_noi = result.get("next_offset_id")
         next_oid = str(raw_noi) if raw_noi else None
 
-        return NumbersResult(
-            items=items,
-            next_offset_id=next_oid,
-        )
+        logger.debug("Number search returned %d items", len(items))
+        return NumbersResult(items=items, next_offset_id=next_oid)
 
-    except FragmentBaseError:
+    except FragmentError:
         raise
     except Exception as exc:
-        raise UnexpectedError(
-            UnexpectedError.UNEXPECTED.format(exc=exc),
-        ) from exc
+        raise UnexpectedError(UnexpectedError.UNEXPECTED.format(exc=exc)) from exc
 
 
 async def search_gifts(
@@ -206,22 +166,21 @@ async def search_gifts(
     attr: dict[str, list[str]] | None = None,
     offset: int | None = None,
 ) -> GiftsResult:
-    '''
-    Search Fragment gifts marketplace.
+    """Search Fragment gifts marketplace.
 
     Args:
-        client: Authenticated FragmentClient instance.
+        client: FragmentClient instance (cookies required).
         query: Search text. Empty string browses all.
-        collection: Gift collection slug.
-        sort: Sort order.
-        filter: Filter value.
+        collection: Gift collection slug filter.
+        sort: Sort order string.
+        filter: Filter value string.
         view: Active attribute tab name.
-        attr: Attribute filters.
+        attr: Attribute filter dict mapping trait names to value lists.
         offset: Page offset from previous result.
 
     Returns:
         GiftsResult with items and next_offset.
-    '''
+    """
     data: dict[str, Any] = {
         "method": "searchAuctions",
         "type": "gifts",
@@ -244,36 +203,23 @@ async def search_gifts(
     try:
         headers = build_headers(GIFTS_PAGE)
 
-        async with httpx.AsyncClient(
-            cookies=client.cookies,
-            timeout=client.timeout,
+        async with requests.AsyncSession(
+            cookies=client.cookies, timeout=client.timeout, impersonate="chrome120",
         ) as session:
             fragment_hash = await fetch_fragment_hash(
-                client.cookies,
-                headers,
-                GIFTS_PAGE,
-                client.timeout,
+                client.cookies, headers, GIFTS_PAGE, client.timeout,
             )
-            result = await post_FragmentAPI(
-                session,
-                fragment_hash,
-                headers,
-                data,
-            )
+            result = await post_fragment_api(session, fragment_hash, headers, data)
 
         if result.get("error"):
             raise FragmentAPIError(result["error"])
 
         items, next_offset = parse_gift_items(result.get("html") or "")
 
-        return GiftsResult(
-            items=items,
-            next_offset=next_offset,
-        )
+        logger.debug("Gift search returned %d items", len(items))
+        return GiftsResult(items=items, next_offset=next_offset)
 
-    except FragmentBaseError:
+    except FragmentError:
         raise
     except Exception as exc:
-        raise UnexpectedError(
-            UnexpectedError.UNEXPECTED.format(exc=exc),
-        ) from exc
+        raise UnexpectedError(UnexpectedError.UNEXPECTED.format(exc=exc)) from exc

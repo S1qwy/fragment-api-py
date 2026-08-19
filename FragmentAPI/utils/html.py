@@ -1,6 +1,10 @@
-'''
+"""
 HTML parsing utilities for Fragment marketplace pages and item details.
-'''
+
+Extracts structured data from Fragment's server-rendered HTML responses
+using regex patterns. Handles marketplace listings, auction details,
+transaction history, profile info, and session management.
+"""
 
 from __future__ import annotations
 
@@ -11,8 +15,8 @@ from FragmentAPI.types.results import (
     AuctionInfo,
     BidHistoryEntry,
     GiftAttribute,
-    MyBid,
     MyAsset,
+    MyBid,
     OwnerHistoryEntry,
     PremiumPriceOption,
     PremiumTransaction,
@@ -117,29 +121,6 @@ SOLD_OWNER_RE = re.compile(
     re.DOTALL,
 )
 
-STARS_RADIO_RE = re.compile(
-    r'<input[^>]*name="stars"[^>]*value="(\d+)"[^>]*>.*?'
-    r'icon-before\s+icon-ton[^>]*>\s*([^<]+?)\s*<.*?'
-    r'(?:&#036;|\$)\s*([^<]+?)\s*<',
-    re.DOTALL,
-)
-
-PREMIUM_RADIO_RE = re.compile(
-    r'<input[^>]*name="months"[^>]*value="(\d+)"[^>]*>.*?'
-    r'<div class="tm-radio-label">([^<]*?)'
-    r'(?:<span[^>]*>([^<]*)</span>)?</div>\s*'
-    r'<div class="tm-value icon-before icon-ton">([^<]+)</div>\s*'
-    r'<div class="tm-radio-desc">&#036;([^<]+)</div>',
-    re.DOTALL,
-)
-
-STARS_PRICE_INLINE_RE = re.compile(
-    r"icon-before\s+icon-ton[^>]*>\s*([0-9][^<]*?)\s*<",
-)
-STARS_USD_INLINE_RE = re.compile(
-    r"(?:&#036;|\$)\s*([0-9][^<]*?)\s*<",
-)
-
 PROFILE_NAME_RE = re.compile(r'tm-settings-item-head">([^<]+)<')
 PROFILE_USERNAME_RE = re.compile(r'tm-settings-item-desc">@([^<]+)<')
 PROFILE_PHOTO_RE = re.compile(
@@ -186,7 +167,7 @@ LOGIN_ROW_RE = re.compile(r"<tr[\s>]")
 
 
 def parse_auction_rows(html: str) -> list[dict[str, Any]]:
-    '''Parse Fragment marketplace HTML into structured item dicts.'''
+    """Parse Fragment marketplace HTML into structured item dicts."""
     items: list[dict[str, Any]] = []
     for row_match in ROW_BLOCK_RE.finditer(html):
         row = row_match.group(1)
@@ -201,12 +182,7 @@ def parse_auction_rows(html: str) -> list[dict[str, Any]]:
 
         status: str | None = None
         for v in values[1:]:
-            if (
-                v
-                and v not in ("Unknown",)
-                and not v.startswith("@")
-                and not NUMERIC_RE.match(v)
-            ):
+            if v and v not in ("Unknown",) and not v.startswith("@") and not NUMERIC_RE.match(v):
                 status = v
                 break
 
@@ -232,10 +208,8 @@ def parse_auction_rows(html: str) -> list[dict[str, Any]]:
     return items
 
 
-def parse_gift_items(
-    html: str,
-) -> tuple[list[dict[str, Any]], int | None]:
-    '''Parse Fragment gifts grid HTML into structured item dicts.'''
+def parse_gift_items(html: str) -> tuple[list[dict[str, Any]], int | None]:
+    """Parse Fragment gifts grid HTML into structured item dicts."""
     items: list[dict[str, Any]] = []
     for item_match in GRID_ITEM_RE.finditer(html):
         block = item_match.group(0)
@@ -252,9 +226,7 @@ def parse_gift_items(
         name = f"{item_name}{item_num}"
 
         status_m = GRID_STATUS_RE.search(block)
-        status: str | None = (
-            status_m.group(1).strip() if status_m else None
-        )
+        status: str | None = status_m.group(1).strip() if status_m else None
 
         price_m = GRID_PRICE_RE.search(block)
         price: str | None = None
@@ -277,15 +249,13 @@ def parse_gift_items(
         })
 
     next_offset_m = re.search(r'data-next-offset="(\d+)"', html)
-    next_offset = (
-        int(next_offset_m.group(1)) if next_offset_m else None
-    )
+    next_offset = int(next_offset_m.group(1)) if next_offset_m else None
 
     return items, next_offset
 
 
 def _parse_table_rows(html: str) -> list[dict[str, Any]]:
-    '''Parse table rows from HTML body content.'''
+    """Parse table rows from HTML body content."""
     entries: list[dict[str, Any]] = []
     for row_m in HISTORY_ROW_RE.finditer(html):
         row = row_m.group(1)
@@ -314,9 +284,7 @@ def _parse_table_rows(html: str) -> list[dict[str, Any]]:
         wallet = None
         if wallet_href_m:
             full_url = wallet_href_m.group(1)
-            wallet = full_url.replace(
-                "https://tonviewer.com/", "",
-            )
+            wallet = full_url.replace("https://tonviewer.com/", "")
 
         entries.append({
             "price": price,
@@ -327,42 +295,26 @@ def _parse_table_rows(html: str) -> list[dict[str, Any]]:
     return entries
 
 
-def parse_bid_history(
-    html: str,
-) -> tuple[list[BidHistoryEntry], str | None]:
-    '''Parse bid history from page HTML.'''
+def parse_bid_history(html: str) -> tuple[list[BidHistoryEntry], str | None]:
+    """Parse bid history from page HTML."""
     bid_section = ""
-    m = re.search(
-        r"Bid History</h3>.*?</section>",
-        html,
-        re.DOTALL,
-    )
+    m = re.search(r"Bid History</h3>.*?</section>", html, re.DOTALL)
     if m:
         bid_section = m.group(0)
 
     entries = _parse_table_rows(bid_section)
     bids = [
-        BidHistoryEntry(
-            price=e["price"],
-            date=e["date"],
-            wallet=e["wallet"],
-        )
+        BidHistoryEntry(price=e["price"], date=e["date"], wallet=e["wallet"])
         for e in entries
     ]
     offset_m = NEXT_OFFSET_ORDERS_RE.search(bid_section)
     return bids, offset_m.group(1) if offset_m else None
 
 
-def parse_owner_history(
-    html: str,
-) -> tuple[list[OwnerHistoryEntry], str | None]:
-    '''Parse ownership history from page HTML.'''
+def parse_owner_history(html: str) -> tuple[list[OwnerHistoryEntry], str | None]:
+    """Parse ownership history from page HTML."""
     owner_section = ""
-    m = re.search(
-        r"Ownership History</h3>.*?</section>",
-        html,
-        re.DOTALL,
-    )
+    m = re.search(r"Ownership History</h3>.*?</section>", html, re.DOTALL)
     if m:
         owner_section = m.group(0)
 
@@ -380,13 +332,13 @@ def parse_owner_history(
 
 
 def parse_item_status(html: str) -> str:
-    '''Extract item status from page HTML.'''
+    """Extract item status from page HTML."""
     m = STATUS_RE.search(html)
     return m.group(1).strip() if m else "Unknown"
 
 
 def parse_auction_info(html: str) -> AuctionInfo:
-    '''Parse auction pricing info from HTML.'''
+    """Parse auction pricing info from HTML."""
     info = AuctionInfo()
 
     bid_table_match = re.search(
@@ -398,29 +350,20 @@ def parse_auction_info(html: str) -> AuctionInfo:
 
     if bid_table_match:
         table_html = bid_table_match.group(0)
-
         cell_values = re.findall(
             r'<div class="table-cell-value tm-value '
             r'icon-before icon-ton">([^<]+)</div>',
             table_html,
         )
-
         if len(cell_values) >= 1:
-            info.highest_bid = (
-                cell_values[0].strip().replace(",", "")
-            )
+            info.highest_bid = cell_values[0].strip().replace(",", "")
         if len(cell_values) >= 2:
-            info.bid_step = (
-                cell_values[1].strip().replace(",", "")
-            )
+            info.bid_step = cell_values[1].strip().replace(",", "")
         if len(cell_values) >= 3:
-            info.minimum_bid = (
-                cell_values[2].strip().replace(",", "")
-            )
+            info.minimum_bid = cell_values[2].strip().replace(",", "")
 
     sell_m = re.search(
-        r"Sell Price[^<]*</th>.*?"
-        r"icon-before\s+icon-ton[^>]*>\s*([^<]+)",
+        r"Sell Price[^<]*</th>.*?icon-before\s+icon-ton[^>]*>\s*([^<]+)",
         html,
         re.DOTALL,
     )
@@ -435,121 +378,103 @@ def parse_auction_info(html: str) -> AuctionInfo:
 
 
 def parse_sold_owner(html: str) -> str | None:
-    '''Parse owner wallet from sold item page.'''
+    """Parse owner wallet from sold item page."""
     m = SOLD_OWNER_RE.search(html)
     return m.group(1).strip() if m else None
 
 
 def parse_gift_attributes(html: str) -> list[GiftAttribute]:
-    '''Parse gift attributes from detail page HTML.'''
+    """Parse gift attributes from detail page HTML."""
     attrs: list[GiftAttribute] = []
     for m in GIFT_ATTR_ROW_RE.finditer(html):
         name = m.group(1).strip()
         value = (m.group(2) or m.group(3) or "").strip()
         rarity = m.group(4).strip() if m.group(4) else None
         if name and value and name not in ("Owner", "Issued"):
-            attrs.append(
-                GiftAttribute(
-                    name=name,
-                    value=value,
-                    rarity=rarity,
-                )
-            )
+            attrs.append(GiftAttribute(name=name, value=value, rarity=rarity))
     return attrs
 
 
 def parse_gift_issued(html: str) -> str | None:
-    '''Parse gift issued info.'''
+    """Parse gift issued info."""
     m = GIFT_ISSUED_RE.search(html)
     return m.group(1).strip() if m else None
 
 
 def parse_stars_packages(html: str) -> list[StarsPrice]:
-    '''Parse stars package prices from stars page HTML.'''
+    """Parse stars package prices from stars page HTML."""
     packages: list[StarsPrice] = []
-    for m in STARS_RADIO_RE.finditer(html):
+    pattern = re.compile(
+        r'<input[^>]*name="stars"[^>]*value="(\d+)"[^>]*>.*?(?=</label>)',
+        re.DOTALL,
+    )
+
+    for m in pattern.finditer(html):
         stars = int(m.group(1))
-        ton_raw = m.group(2).strip().replace(",", "")
-        ton_raw = re.sub(r"<[^>]+>", ".", ton_raw).replace(" ", "")
-        usd_raw = m.group(3).strip().replace(",", "")
-        packages.append(
-            StarsPrice(
-                stars=stars,
-                ton_price=ton_raw,
-                usd_price=usd_raw,
-            )
-        )
+        block = m.group(0)
+
+        ton_m = re.search(r'icon-ton[^>]*>([^<]*(?:<span[^>]*>[^<]*</span>)?)', block)
+        ton_raw = re.sub(r'<[^>]+>', '', ton_m.group(1)).replace(',', '').strip() if ton_m else "0"
+
+        usd_m = re.search(r'icon-usd[^>]*>([^<]+)', block)
+        if not usd_m:
+            usd_m = re.search(r'(?:&#036;|\$)\s*([\d.,]+)', block)
+        usd_raw = usd_m.group(1).replace(',', '').strip() if usd_m else "0"
+
+        packages.append(StarsPrice(stars=stars, gram_price=ton_raw, usd_price=usd_raw))
     return packages
 
 
-def parse_stars_price_from_html(
-    html: str,
-) -> tuple[str | None, str | None]:
-    '''Parse TON and USD price from inline HTML fragment.'''
-    ton_m = re.search(
-        r"icon-before\s+icon-ton[^>]*>\s*([0-9][^<]*?)"
-        r'(?:<span class="mini-frac">([^<]*)</span>)?',
-        html,
-        re.DOTALL,
-    )
-    ton_price = None
-    if ton_m:
-        integer_part = ton_m.group(1).strip().replace(",", "")
-        frac_part = ton_m.group(2).strip() if ton_m.group(2) else ""
-        ton_price = f"{integer_part}{frac_part}"
+def parse_stars_price_from_html(html: str) -> tuple[str | None, str | None]:
+    """Parse GRAM and USD price from inline HTML fragment."""
+    ton_m = re.search(r'icon-ton[^>]*>([^<]*(?:<span[^>]*>[^<]*</span>)?)', html)
+    gram_price = re.sub(r'<[^>]+>', '', ton_m.group(1)).replace(',', '').strip() if ton_m else None
 
-    usd_m = re.search(
-        r"(?:&#036;|\$)\s*([0-9][^<]*?)\s*<",
-        html,
-    )
-    usd_price = usd_m.group(1).strip() if usd_m else None
+    usd_m = re.search(r'icon-usd[^>]*>([^<]+)', html)
+    if not usd_m:
+        usd_m = re.search(r'(?:&#036;|\$)\s*([\d.,]+)', html)
+    usd_price = usd_m.group(1).replace(',', '').strip() if usd_m else None
 
-    return ton_price, usd_price
+    return gram_price, usd_price
 
 
 def parse_premium_options(html: str) -> list[PremiumPriceOption]:
-    '''Parse premium price options from premium page HTML.'''
+    """Parse premium price options from premium page HTML."""
     options: list[PremiumPriceOption] = []
-
     pattern = re.compile(
-        r'<input[^>]*name="months"[^>]*value="(\d+)"[^>]*>.*?'
-        r'<div class="tm-form-radio-label">\s*'
-        r'<div class="tm-radio-label">([^<]*?)'
-        r"(?:<span[^>]*>([^<]*)</span>)?</div>\s*"
-        r'<div class="tm-value icon-before icon-ton">'
-        r"([^<]+(?:<span class=\"mini-frac\">[^<]*</span>)?)"
-        r"</div>\s*"
-        r'<div class="tm-radio-desc">'
-        r"(?:&#036;|\$)([^<]+)</div>",
+        r'<input[^>]*name="months"[^>]*value="(\d+)"[^>]*>.*?(?=</label>)',
         re.DOTALL,
     )
 
     for m in pattern.finditer(html):
         months = int(m.group(1))
-        label = m.group(2).strip()
-        discount = m.group(3).strip() if m.group(3) else None
+        block = m.group(0)
 
-        ton_raw = m.group(4).strip()
-        ton_raw = re.sub(r'<span class="mini-frac">', "", ton_raw)
-        ton_raw = re.sub(r"</span>", "", ton_raw)
-        ton_raw = ton_raw.replace(",", "").strip()
+        label_m = re.search(r'<div class="tm-radio-label">([^<]+)', block)
+        label = label_m.group(1).strip() if label_m else f"{months} months"
 
-        usd_raw = m.group(5).strip().replace(",", "")
+        discount_m = re.search(r'<span class="tm-radio-label-badge">([^<]+)</span>', block)
+        discount = discount_m.group(1).strip() if discount_m else None
+
+        ton_m = re.search(r'icon-ton[^>]*>([^<]*(?:<span[^>]*>[^<]*</span>)?)', block)
+        ton_raw = re.sub(r'<[^>]+>', '', ton_m.group(1)).replace(',', '').strip() if ton_m else "0"
+
+        usd_m = re.search(r'(?:&#036;|\$)\s*([\d.,]+)', block)
+        if not usd_m:
+            usd_m = re.search(r'icon-usd[^>]*>([^<]+)', block)
+        usd_raw = usd_m.group(1).replace(',', '').strip() if usd_m else "0"
 
         options.append(
             PremiumPriceOption(
-                months=months,
-                label=label,
-                ton_price=ton_raw,
-                usd_price=usd_raw,
-                discount=discount,
+                months=months, label=label, gram_price=ton_raw,
+                usd_price=usd_raw, discount=discount,
             )
         )
     return options
 
 
 def parse_stars_history(html: str) -> list[StarsTransaction]:
-    '''Parse stars transaction history from HTML.'''
+    """Parse stars transaction history from HTML."""
     transactions: list[StarsTransaction] = []
     tbody_m = re.search(r"<tbody>(.*?)</tbody>", html, re.DOTALL)
     if not tbody_m:
@@ -564,11 +489,7 @@ def parse_stars_history(html: str) -> list[StarsTransaction]:
         recipient = recip_m.group(1).strip() if recip_m else ""
 
         stars_m = TX_STARS_RE.search(row)
-        stars_str = (
-            stars_m.group(1).strip().replace(",", "")
-            if stars_m
-            else "0"
-        )
+        stars_str = stars_m.group(1).strip().replace(",", "") if stars_m else "0"
         try:
             stars = int(stars_str)
         except ValueError:
@@ -578,29 +499,20 @@ def parse_stars_history(html: str) -> list[StarsTransaction]:
         price_raw = ""
         if price_m:
             price_raw = price_m.group(1).strip()
-            price_raw = (
-                re.sub(r"<[^>]+>", ".", price_raw)
-                .replace(" ", "")
-                .replace(",", "")
-            )
+            price_raw = re.sub(r"<[^>]+>", ".", price_raw).replace(" ", "").replace(",", "")
 
         date_m = TX_DATE_RE.search(row)
         date = date_m.group(1) if date_m else ""
 
         if recipient:
             transactions.append(
-                StarsTransaction(
-                    recipient=recipient,
-                    stars=stars,
-                    price_ton=price_raw,
-                    date=date,
-                )
+                StarsTransaction(recipient=recipient, stars=stars, price_gram=price_raw, date=date)
             )
     return transactions
 
 
 def parse_premium_history(html: str) -> list[PremiumTransaction]:
-    '''Parse premium transaction history from HTML.'''
+    """Parse premium transaction history from HTML."""
     transactions: list[PremiumTransaction] = []
     tbody_m = re.search(r"<tbody>(.*?)</tbody>", html, re.DOTALL)
     if not tbody_m:
@@ -621,30 +533,20 @@ def parse_premium_history(html: str) -> list[PremiumTransaction]:
         price_raw = ""
         if price_m:
             price_raw = price_m.group(1).strip()
-            price_raw = (
-                re.sub(r"<[^>]+>", ".", price_raw)
-                .replace(" ", "")
-                .replace(",", "")
-            )
+            price_raw = re.sub(r"<[^>]+>", ".", price_raw).replace(" ", "").replace(",", "")
 
         date_m = TX_DATE_RE.search(row)
         date = date_m.group(1) if date_m else ""
 
         if recipient:
             transactions.append(
-                PremiumTransaction(
-                    recipient=recipient,
-                    duration=duration,
-                    price_ton=price_raw,
-                    date=date,
-                )
+                PremiumTransaction(recipient=recipient, duration=duration, price_gram=price_raw, date=date)
             )
     return transactions
 
 
-def parse_topup_history(html: str) -> list["TopupTransaction"]:
-    '''Parse topup transaction history from Ads page HTML.'''
-    
+def parse_topup_history(html: str) -> list[TopupTransaction]:
+    """Parse topup transaction history from Ads page HTML."""
     transactions: list[TopupTransaction] = []
     tbody_m = re.search(r"<tbody>(.*?)</tbody>", html, re.DOTALL)
     if not tbody_m:
@@ -659,7 +561,7 @@ def parse_topup_history(html: str) -> list["TopupTransaction"]:
             r'<a[^>]+href="https://t\.me/([^"]+)"[^>]*>@([^<]+)</a>',
             row,
         )
-        recipient = recip_m.group(2) if recip_m else "ㅤ"
+        recipient = recip_m.group(2) if recip_m else ""
 
         amount_m = TX_PRICE_RE.search(row)
         amount = 0
@@ -672,18 +574,12 @@ def parse_topup_history(html: str) -> list["TopupTransaction"]:
         date_m = TX_DATE_RE.search(row)
         date = date_m.group(1) if date_m else ""
 
-        transactions.append(
-            TopupTransaction(
-                recipient=recipient,
-                amount=amount,
-                date=date,
-            )
-        )
+        transactions.append(TopupTransaction(recipient=recipient, amount=amount, date=date))
     return transactions
 
 
 def parse_profile(html: str) -> ProfileInfo:
-    '''Parse profile info from profile page HTML.'''
+    """Parse profile info from profile page HTML."""
     name_m = PROFILE_NAME_RE.search(html)
     name = name_m.group(1).strip() if name_m else ""
 
@@ -691,29 +587,18 @@ def parse_profile(html: str) -> ProfileInfo:
     username = user_m.group(1).strip() if user_m else ""
 
     photo_m = PROFILE_PHOTO_RE.search(html)
-    photo_url = (
-        photo_m.group(1).replace("\\/", "/") if photo_m else None
-    )
+    photo_url = photo_m.group(1).replace("\\/", "/") if photo_m else None
 
     verified_m = PROFILE_VERIFIED_RE.search(html)
-    identity_verified = bool(
-        verified_m and "Identity" in verified_m.group(1),
-    )
+    identity_verified = bool(verified_m and "Identity" in verified_m.group(1))
 
     wallet_label_m = PROFILE_WALLET_LABEL_RE.search(html)
-    wallet_label = (
-        wallet_label_m.group(1).strip() if wallet_label_m else None
-    )
+    wallet_label = wallet_label_m.group(1).strip() if wallet_label_m else None
 
-    wallet_verified = bool(
-        PROFILE_WALLET_VERIFIED_RE.search(html),
-    )
+    wallet_verified = bool(PROFILE_WALLET_VERIFIED_RE.search(html))
 
     wallet_address = None
-    addr_m = re.search(
-        r'Wallet\.init\(\{[^}]*"address"\s*:\s*"([^"]+)"',
-        html,
-    )
+    addr_m = re.search(r'Wallet\.init\(\{[^}]*"address"\s*:\s*"([^"]+)"', html)
     if addr_m:
         addr_val = addr_m.group(1)
         if addr_val and addr_val != "false":
@@ -730,54 +615,49 @@ def parse_profile(html: str) -> ProfileInfo:
     )
 
 
-def parse_my_bids(html: str, item_type: str) -> tuple[list["MyBid"], int]:
-    '''Parse My Bid History HTML into structured bid objects.'''
-
+def parse_my_bids(html: str, item_type: str) -> tuple[list[MyBid], int]:
+    """Parse My Bid History HTML into structured bid objects."""
     items: list[MyBid] = []
-    
+
     total_count = 0
-    tab_pattern = r'<a href="/my/bids\?type={}"[^>]*>.*?<span[^>]*>(\d+)</span>'.format(item_type if item_type != "usernames" else "")
     if item_type == "usernames":
         tab_pattern = r'<a href="/my/bids"[^>]*>.*?Usernames.*?<span[^>]*>(\d+)</span>'
-    
+    else:
+        tab_pattern = r'<a href="/my/bids\?type={}"[^>]*>.*?<span[^>]*>(\d+)</span>'.format(item_type)
+
     tab_match = re.search(tab_pattern, html, re.DOTALL)
     if tab_match:
         total_count = int(tab_match.group(1))
 
-    rows = re.findall(r'<tr[^>]*class="[^"]*tm-row-selectable[^"]*"[^>]*>(.*?)</tr>', html, re.DOTALL)
-    
+    rows = re.findall(
+        r'<tr[^>]*class="[^"]*tm-row-selectable[^"]*"[^>]*>(.*?)</tr>',
+        html,
+        re.DOTALL,
+    )
+
     for row in rows:
         if item_type == "usernames":
             href_match = re.search(r'href="/(username/[^"]+)"', row)
             slug = href_match.group(1) if href_match else ""
-            
             name_match = re.search(r'<div class="table-cell-value tm-value">@([^<]+)</div>', row)
             name = f"@{name_match.group(1)}" if name_match else slug
-            
             desc_match = re.search(r'<div class="table-cell-desc tm-nowrap">([^<]+)</div>', row)
             description = desc_match.group(1).strip() if desc_match else None
             image_url = None
-
         elif item_type == "gifts":
             href_match = re.search(r'href="(/gift/[^"]+)"', row)
             slug = href_match.group(1) if href_match else ""
-            
             name_match = re.search(r'<div class="table-cell-value tm-value">([^<]+)</div>', row)
             name = name_match.group(1).strip() if name_match else slug
-            
             img_match = re.search(r'<img src="([^"]+)"', row)
             image_url = img_match.group(1) if img_match else None
-            
             desc_match = re.search(r'<div class="table-cell-desc tm-nowrap">([^<]+)</div>', row)
             description = desc_match.group(1).strip() if desc_match else None
-
         else:
             href_match = re.search(r'href="/(number/[^"]+)"', row)
             slug = href_match.group(1) if href_match else ""
-            
             name_match = re.search(r'<div class="table-cell-value tm-value">\+?([^<]+)</div>', row)
             name = name_match.group(1).strip() if name_match else slug
-            
             image_url = None
             description = None
 
@@ -793,23 +673,16 @@ def parse_my_bids(html: str, item_type: str) -> tuple[list["MyBid"], int]:
         if slug:
             items.append(
                 MyBid(
-                    item_type=item_type,
-                    slug=slug,
-                    name=name,
-                    bid=bid,
-                    status=status,
-                    date=date,
-                    image_url=image_url,
-                    description=description,
+                    item_type=item_type, slug=slug, name=name, bid=bid,
+                    status=status, date=date, image_url=image_url, description=description,
                 )
             )
 
     return items, total_count
 
 
-def parse_my_assets(html: str, item_type: str) -> tuple[list["MyAsset"], int]:
-    '''Parse My Assets HTML into structured asset objects.'''
-
+def parse_my_assets(html: str, item_type: str) -> tuple[list[MyAsset], int]:
+    """Parse My Assets HTML into structured asset objects."""
     items: list[MyAsset] = []
 
     if item_type == "usernames":
@@ -822,13 +695,21 @@ def parse_my_assets(html: str, item_type: str) -> tuple[list["MyAsset"], int]:
     total_match = re.search(tab_pattern, html, re.DOTALL)
     total_count = int(total_match.group(1)) if total_match else 0
 
-    tbody_m = re.search(r'<tbody[^>]*class="[^"]*js-assets-table-body[^"]*"[^>]*>(.*?)</tbody>', html, re.DOTALL)
+    tbody_m = re.search(
+        r'<tbody[^>]*class="[^"]*js-assets-table-body[^"]*"[^>]*>(.*?)</tbody>',
+        html,
+        re.DOTALL,
+    )
     if not tbody_m:
         tbody_m = re.search(r'<tbody[^>]*>(.*?)</tbody>', html, re.DOTALL)
     if not tbody_m:
         return items, total_count
 
-    rows = re.findall(r'<tr[^>]*class="[^"]*tm-row-selectable[^"]*"[^>]*>(.*?)</tr>', tbody_m.group(1), re.DOTALL)
+    rows = re.findall(
+        r'<tr[^>]*class="[^"]*tm-row-selectable[^"]*"[^>]*>(.*?)</tr>',
+        tbody_m.group(1),
+        re.DOTALL,
+    )
 
     assign_popup_match = re.search(
         r'<div[^>]*class="[^"]*popup-container[^"]*js-assign-popup[^"]*"[^>]*>'
@@ -838,11 +719,10 @@ def parse_my_assets(html: str, item_type: str) -> tuple[list["MyAsset"], int]:
     )
     assign_popup_html = assign_popup_match.group(1) if assign_popup_match else ""
 
-    assign_name_map = {}
+    assign_name_map: dict[str, str] = {}
     if assign_popup_html:
         label_pattern = re.compile(
-            r'<label[^>]*class="[^"]*tm-assign-account-item[^"]*"[^>]*>'
-            r'(.*?)</label>',
+            r'<label[^>]*class="[^"]*tm-assign-account-item[^"]*"[^>]*>(.*?)</label>',
             re.DOTALL,
         )
         for label_match in label_pattern.finditer(assign_popup_html):
@@ -856,42 +736,31 @@ def parse_my_assets(html: str, item_type: str) -> tuple[list["MyAsset"], int]:
         if item_type == "usernames":
             href_match = re.search(r'href="/(username/[^"]+)"', row)
             slug = href_match.group(1) if href_match else ""
-
             name_match = re.search(r'<div class="table-cell-value tm-value">@([^<]+)</div>', row)
             name = f"@{name_match.group(1)}" if name_match else slug
-
             description = None
             image_url = None
-
             assigned_to_match = re.search(r'data-assigned-to="([^"]+)"', row)
             assigned_to = assigned_to_match.group(1) if assigned_to_match else None
             assigned_name = assign_name_map.get(assigned_to) if assigned_to else None
-
         elif item_type == "gifts":
             href_match = re.search(r'href="(/gift/[^"?]+)', row)
             slug = href_match.group(1).lstrip("/") if href_match else ""
-
             name_match = re.search(r'<div class="table-cell-value tm-value">([^<]+)</div>', row)
             name = name_match.group(1).strip() if name_match else slug
-
             img_match = re.search(r'<img src="([^"]+)"', row)
             image_url = img_match.group(1) if img_match else None
-
             desc_match = re.search(r'<div class="table-cell-desc tm-nowrap">([^<]+)</div>', row)
             description = desc_match.group(1).strip() if desc_match else None
-
             assigned_to_match = re.search(r'data-assigned-to="([^"]+)"', row)
             assigned_to = assigned_to_match.group(1) if assigned_to_match else None
             assigned_name_match = re.search(r'<span class="js-assigned-to">([^<]+)</span>', row)
             assigned_name = assigned_name_match.group(1).strip() if assigned_name_match else "Wallet"
-
         else:
             href_match = re.search(r'href="/(number/[^"]+)"', row)
             slug = href_match.group(1) if href_match else ""
-
             name_match = re.search(r'<div class="table-cell-value tm-value">\+?([^<]+)</div>', row)
             name = name_match.group(1).strip() if name_match else slug
-
             image_url = None
             description = None
             assigned_to = None
@@ -900,22 +769,17 @@ def parse_my_assets(html: str, item_type: str) -> tuple[list["MyAsset"], int]:
         if slug:
             items.append(
                 MyAsset(
-                    item_type=item_type,
-                    slug=slug,
-                    name=name,
-                    description=description,
-                    image_url=image_url,
-                    assigned_to=assigned_to,
-                    assigned_name=assigned_name,
+                    item_type=item_type, slug=slug, name=name,
+                    description=description, image_url=image_url,
+                    assigned_to=assigned_to, assigned_name=assigned_name,
                 )
             )
 
     return items, total_count
-    
-    
-def parse_assign_accounts(html: str) -> tuple[list["TelegramAccount"], bool]:
-    '''Parse available Telegram accounts from assign popup HTML.'''
 
+
+def parse_assign_accounts(html: str) -> tuple[list[TelegramAccount], bool]:
+    """Parse available Telegram accounts from assign popup HTML."""
     accounts: list[TelegramAccount] = []
     can_disable = False
 
@@ -930,52 +794,37 @@ def parse_assign_accounts(html: str) -> tuple[list["TelegramAccount"], bool]:
         return accounts, can_disable
 
     popup_html = assign_popup_match.group(1)
-    can_disable = bool(re.search(r'Don’t display on Telegram', popup_html))
+    can_disable = bool(re.search(r"Don't display on Telegram", popup_html))
 
     label_pattern = re.compile(
-        r'<label[^>]*class="[^"]*tm-assign-account-item[^"]*"[^>]*>'
-        r'(.*?)</label>',
+        r'<label[^>]*class="[^"]*tm-assign-account-item[^"]*"[^>]*>(.*?)</label>',
         re.DOTALL,
     )
 
     for label_match in label_pattern.finditer(popup_html):
         label_html = label_match.group(1)
-
         value_match = re.search(r'value="([^"]+)"', label_html)
         if not value_match:
             continue
-
         account_id = value_match.group(1)
-
         name_match = re.search(r'tm-assign-account-name">([^<]+)</div>', label_html)
         name = name_match.group(1).strip() if name_match else "Unknown"
-
         type_match = re.search(r'tm-assign-account-desc">([^<]+)</div>', label_html)
         acc_type = type_match.group(1).strip() if type_match else "Unknown"
-
         img_match = re.search(r'<img[^>]*src="([^"]+)"', label_html)
         photo_url = img_match.group(1) if img_match else None
 
         accounts.append(
-            TelegramAccount(
-                id=account_id,
-                name=name,
-                type=acc_type,
-                photo_url=photo_url,
-            )
+            TelegramAccount(id=account_id, name=name, type=acc_type, photo_url=photo_url)
         )
 
     return accounts, can_disable
 
 
 def parse_sessions(html: str) -> list[SessionInfo]:
-    '''Parse active sessions from sessions page HTML.'''
+    """Parse active sessions from sessions page HTML."""
     sessions: list[SessionInfo] = []
-    tbody_m = re.search(
-        r"<tbody[^>]*>(.*?)</tbody>",
-        html,
-        re.DOTALL,
-    )
+    tbody_m = re.search(r"<tbody[^>]*>(.*?)</tbody>", html, re.DOTALL)
     if not tbody_m:
         return sessions
 
@@ -1000,25 +849,20 @@ def parse_sessions(html: str) -> list[SessionInfo]:
         is_current = bool(SESSION_CURRENT_RE.search(row))
 
         date_m = TX_DATE_RE.search(row)
-        date = date_m.group(1) if date_m else (
-            "now" if is_current else None
-        )
+        date = date_m.group(1) if date_m else ("now" if is_current else None)
 
         if device or session_id:
             sessions.append(
                 SessionInfo(
-                    session_id=session_id,
-                    device=device,
-                    location=location,
-                    date=date,
-                    is_current=is_current,
+                    session_id=session_id, device=device, location=location,
+                    date=date, is_current=is_current,
                 )
             )
     return sessions
 
 
 def parse_login_code(html: str) -> tuple[str | None, int]:
-    '''Extract the pending login code and active session count.'''
+    """Extract the pending login code and active session count."""
     match = LOGIN_CODE_RE.search(html)
     code = match.group(1).strip() if match else None
     active_sessions = len(LOGIN_ROW_RE.findall(html))

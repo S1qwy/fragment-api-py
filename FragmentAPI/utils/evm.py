@@ -1,17 +1,18 @@
-'''
+"""
 EVM payment invoice parser for Fragment.
 
-Extracts invoice parameters from the /stars/buy, /premium/gift, etc.
-pages when an EVM payment method is selected.
-'''
+Extracts invoice parameters from Fragment payment pages when an EVM
+payment method (USDT/USDC on ETH/POL/BASE) is selected.
+"""
 
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any
 
-import httpx
+from curl_cffi import requests
 
 from FragmentAPI.exceptions import (
     FragmentAPIError,
@@ -28,11 +29,13 @@ from FragmentAPI.types.constants import (
 from FragmentAPI.types.results import EvmInvoice
 from FragmentAPI.utils.http import build_headers
 
+logger = logging.getLogger("FragmentAPI")
+
 AJ_INIT_RE = re.compile(r"ajInit\((\{.*?\})\);", re.DOTALL)
 
 
 def _parse_aj_init(html: str) -> dict[str, Any]:
-    '''Extract the ajInit JSON payload from a Fragment page.'''
+    """Extract the ajInit JSON payload from a Fragment page."""
     match = AJ_INIT_RE.search(html)
     if not match:
         raise ParseError(
@@ -45,15 +48,12 @@ def _parse_aj_init(html: str) -> dict[str, Any]:
         return json.loads(match.group(1))
     except Exception as exc:
         raise ParseError(
-            ParseError.UNPARSEABLE.format(
-                context="evm invoice ajInit JSON",
-                exc=exc,
-            )
+            ParseError.UNPARSEABLE.format(context="evm invoice ajInit JSON", exc=exc)
         ) from exc
 
 
 def _hex_to_int(hex_str: str) -> int:
-    '''Convert a 0x-prefixed hex string to int.'''
+    """Convert a 0x-prefixed hex string to int."""
     s = hex_str.strip()
     if s.lower().startswith("0x"):
         s = s[2:]
@@ -68,7 +68,7 @@ def _build_invoice_url(
     amount: int | None = None,
     winners: int | None = None,
 ) -> str:
-    '''Build the Fragment invoice page URL with query parameters.'''
+    """Build the Fragment invoice page URL with query parameters."""
     params: list[str] = [f"recipient={recipient}"]
     if quantity is not None:
         params.append(f"quantity={quantity}")
@@ -93,13 +93,29 @@ async def fetch_evm_invoice(
     winners: int | None = None,
     timeout: float = DEFAULT_TIMEOUT,
 ) -> EvmInvoice:
-    '''
-    Fetch a Fragment payment page and extract EVM invoice data.
+    """Fetch a Fragment payment page and extract EVM invoice data.
 
-    Fragment redirects to an invoice page after the initial
-    getBuyStarsLink / getGiftPremiumLink / etc. call returns
-    {"ok": true, "evm": true} for EVM payment methods.
-    '''
+    Fragment redirects to an invoice page after the initial getXxxLink call
+    returns {"ok": true, "evm": true} for EVM payment methods.
+
+    Args:
+        cookies: Fragment session cookies.
+        page_path: Fragment page path (e.g. "/stars/buy").
+        recipient: Resolved Fragment recipient ID.
+        payment_method: EVM payment method string.
+        quantity: Stars quantity (for stars purchases).
+        months: Premium months (for premium purchases).
+        amount: GRAM amount (for ads topup).
+        winners: Giveaway winners count.
+        timeout: HTTP request timeout.
+
+    Returns:
+        EvmInvoice with all payment details needed for on-chain approval.
+
+    Raises:
+        FragmentPageError: If the invoice page cannot be loaded.
+        FragmentAPIError: If invoice data is missing from the response.
+    """
     invoice_url = _build_invoice_url(
         page_path=page_path,
         recipient=recipient,
@@ -109,32 +125,26 @@ async def fetch_evm_invoice(
         winners=winners,
     )
 
+    logger.info("Fetching EVM invoice from %s", invoice_url)
+
     headers = build_headers(invoice_url)
     full_headers = {
-        "accept": (
-            "text/html,application/xhtml+xml,"
-            "application/xml;q=0.9,*/*;q=0.8"
-        ),
+        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "accept-language": "en-US,en;q=0.9",
         "user-agent": headers["user-agent"],
     }
 
-    async with httpx.AsyncClient(
+    async with requests.AsyncSession(
         cookies=cookies,
         timeout=timeout,
-        follow_redirects=True,
+        impersonate="chrome120",
+        allow_redirects=True,
     ) as session:
-        response = await session.get(
-            invoice_url,
-            headers=full_headers,
-        )
+        response = await session.get(invoice_url, headers=full_headers)
 
     if response.status_code != 200:
         raise FragmentPageError(
-            FragmentPageError.BAD_STATUS.format(
-                status=response.status_code,
-                url=invoice_url,
-            )
+            FragmentPageError.BAD_STATUS.format(status=response.status_code, url=invoice_url)
         )
 
     aj_data = _parse_aj_init(response.text)
@@ -159,17 +169,16 @@ async def fetch_evm_invoice(
 
     token_key = invoice_token.lower()
     token_decimals = EVM_TOKEN_DECIMALS.get(token_key, 6)
-    token_symbol = EVM_TOKEN_SYMBOLS.get(
-        token_key,
-        payment_method.split("_")[0].upper(),
-    )
-    chain_name = EVM_CHAIN_NAMES.get(
-        invoice_chain_id,
-        f"chain_{invoice_chain_id}",
-    )
+    token_symbol = EVM_TOKEN_SYMBOLS.get(token_key, payment_method.split("_")[0].upper())
+    chain_name = EVM_CHAIN_NAMES.get(invoice_chain_id, f"chain_{invoice_chain_id}")
 
     invoice_amount_raw = _hex_to_int(invoice_amount_hex)
     invoice_amount = invoice_amount_raw / (10 ** token_decimals)
+
+    logger.info(
+        "EVM invoice ready: %s %s on %s, expires %d",
+        invoice_amount, token_symbol, chain_name, expires_at,
+    )
 
     return EvmInvoice(
         req_id=req_id,
