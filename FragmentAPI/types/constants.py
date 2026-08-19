@@ -45,6 +45,12 @@ DEFAULT_TIMEOUT: float = 30.0
 CONFIRMATION_INTERVAL: float = 3.0
 CONFIRMATION_MAX_ATTEMPTS: int = 40
 
+RETRY_MAX_ATTEMPTS: int = 3
+RETRY_BASE_DELAY: float = 1.0
+RETRY_MAX_DELAY: float = 30.0
+RETRY_MULTIPLIER: float = 2.0
+RETRY_STATUS_CODES: frozenset[int] = frozenset({429, 500, 502, 503, 504})
+
 REQUIRED_COOKIE_KEYS: tuple[str, ...] = (
     "stel_ssid",
     "stel_dt",
@@ -62,6 +68,8 @@ AUTH_REQUIRED_COOKIE_KEYS: tuple[str, ...] = (
     "stel_ssid",
     "stel_dt",
 )
+
+COOKIE_REFRESH_MARGIN: int = 300
 
 TONAPI_BASE_URL: str = "https://tonapi.io/v2"
 TONCENTER_BASE_URL: str = "https://toncenter.com/api/v2"
@@ -89,6 +97,7 @@ MY_GIFTS_PAGE: str = f"{FRAGMENT_BASE_URL}/my/gifts"
 MY_NUMBERS_PAGE: str = f"{FRAGMENT_BASE_URL}/my/numbers"
 STARS_WITHDRAW_PAGE: str = f"{FRAGMENT_BASE_URL}/stars/withdraw"
 NFT_WITHDRAW_PAGE: str = f"{FRAGMENT_BASE_URL}/gift/withdraw"
+GATEWAY_PAGE: str = f"{FRAGMENT_BASE_URL}/gateway"
 
 STARS_GIVEAWAY_PACKAGES: frozenset[int] = frozenset({
     500,
@@ -214,3 +223,14 @@ STARS_PURCHASE_MIN: int = 50
 STARS_PURCHASE_MAX: int = 10_000_000
 GRAM_TOPUP_MIN: int = 1
 GRAM_TOPUP_MAX: int = 1_000_000_000
+
+ITEM_TYPE_USERNAME: int = 1
+ITEM_TYPE_NUMBER: int = 3
+ITEM_TYPE_GIFT: int = 5
+VALID_ITEM_TYPES: frozenset[int] = frozenset({ITEM_TYPE_USERNAME, ITEM_TYPE_NUMBER, ITEM_TYPE_GIFT})
+
+ITEM_TYPE_URL_PREFIX: dict[int, str] = {
+    ITEM_TYPE_USERNAME: "username",
+    ITEM_TYPE_NUMBER: "number",
+    ITEM_TYPE_GIFT: "gift",
+}
