@@ -1,11 +1,13 @@
 """
 Type exports for Fragment API library.
 
-Contains all dataclasses for API responses and exception classes.
+Contains all Pydantic models for API responses and exception classes.
 """
 
-from FragmentAPI.types.results import (
+from FragmentAPI.types.models import (
     AdsTopupResult,
+    AdsWithdrawalConfirmResult,
+    AdsWithdrawalInitResult,
     AssignResult,
     AssignAccountsResult,
     AuctionInfo,
@@ -15,6 +17,8 @@ from FragmentAPI.types.results import (
     BidResult,
     EvmInvoice,
     EvmPaymentResult,
+    GatewayPriceInfo,
+    GatewayRechargeResult,
     GiftAttribute,
     GiftInfo,
     GiftsResult,
@@ -31,6 +35,7 @@ from FragmentAPI.types.results import (
     NftWithdrawalConfirmResult,
     NumberInfo,
     NumbersResult,
+    OfferResult,
     OwnerHistoryEntry,
     PremiumPriceOption,
     PremiumPrices,
@@ -51,6 +56,7 @@ from FragmentAPI.types.results import (
     StarsWithdrawalState,
     StarsWithdrawalInitResult,
     StarsWithdrawalConfirmResult,
+    SubscriptionResult,
     TelegramAccount,
     TerminateSessionsResult,
     TopupTransaction,
@@ -72,7 +78,9 @@ from FragmentAPI.exceptions import (
     FragmentPageError,
     OperationError,
     ParseError,
+    RetryExhaustedError,
     SeqnoError,
+    SessionStorageError,
     TransactionError,
     UnexpectedError,
     UserNotFoundError,
@@ -82,6 +90,8 @@ from FragmentAPI.exceptions import (
 
 __all__ = [
     "AdsTopupResult",
+    "AdsWithdrawalConfirmResult",
+    "AdsWithdrawalInitResult",
     "AlreadySubscribedError",
     "AnonymousNumberError",
     "AssignResult",
@@ -101,6 +111,8 @@ __all__ = [
     "FragmentAPIError",
     "FragmentError",
     "FragmentPageError",
+    "GatewayPriceInfo",
+    "GatewayRechargeResult",
     "GiftAttribute",
     "GiftInfo",
     "GiftsResult",
@@ -117,6 +129,7 @@ __all__ = [
     "NftWithdrawalConfirmResult",
     "NumberInfo",
     "NumbersResult",
+    "OfferResult",
     "OperationError",
     "OwnerHistoryEntry",
     "ParseError",
@@ -130,8 +143,10 @@ __all__ = [
     "PurchaseItem",
     "PurchaseResult",
     "RecipientInfo",
+    "RetryExhaustedError",
     "SeqnoError",
     "SessionInfo",
+    "SessionStorageError",
     "StartAuctionResult",
     "StarsPrice",
     "StarsPrices",
@@ -140,6 +155,7 @@ __all__ = [
     "StarsWithdrawalState",
     "StarsWithdrawalInitResult",
     "StarsWithdrawalConfirmResult",
+    "SubscriptionResult",
     "TelegramAccount",
     "TerminateSessionsResult",
     "TopupTransaction",
