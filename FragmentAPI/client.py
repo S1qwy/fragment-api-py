@@ -138,6 +138,7 @@ from FragmentAPI.utils.html import (
     parse_my_assets,
     parse_my_bids,
     parse_owner_history,
+    parse_offer_history,
     parse_premium_history,
     parse_premium_options,
     parse_profile,
@@ -732,6 +733,7 @@ class FragmentClient:
             auction = parse_auction_info(html)
             bids, bid_offset = parse_bid_history(html)
             owners, owner_offset = parse_owner_history(html)
+            offers, offer_offset = parse_offer_history(html)
 
             timer_m = re.search(r'class="tm-countdown-timer"[^>]*datetime="([^"]+)"', html)
             auction_end = timer_m.group(1) if timer_m else None
@@ -745,9 +747,10 @@ class FragmentClient:
                 gram_rate=state.get("tonRate", 0.0),
                 auction=auction, auction_end=auction_end,
                 owner_wallet=owner_wallet, purchased_date=purchased_date,
-                bid_history=bids, owner_history=owners,
+                bid_history=bids, owner_history=owners, offer_history=offers,
                 bid_history_next_offset=bid_offset,
                 owner_history_next_offset=owner_offset,
+                offer_history_next_offset=offer_offset,
             )
         except FragmentError:
             raise
@@ -770,6 +773,7 @@ class FragmentClient:
             auction = parse_auction_info(html)
             bids, bid_offset = parse_bid_history(html)
             owners, owner_offset = parse_owner_history(html)
+            offers, offer_offset = parse_offer_history(html)
 
             timer_m = re.search(r'class="tm-countdown-timer"[^>]*datetime="([^"]+)"', html)
             auction_end = timer_m.group(1) if timer_m else None
@@ -784,9 +788,10 @@ class FragmentClient:
                 gram_rate=state.get("tonRate", 0.0),
                 restricted=restricted, auction=auction, auction_end=auction_end,
                 owner_wallet=owner_wallet, purchased_date=purchased_date,
-                bid_history=bids, owner_history=owners,
+                bid_history=bids, owner_history=owners, offer_history=offers,
                 bid_history_next_offset=bid_offset,
                 owner_history_next_offset=owner_offset,
+                offer_history_next_offset=offer_offset,
             )
         except FragmentError:
             raise
@@ -807,6 +812,7 @@ class FragmentClient:
             auction = parse_auction_info(html)
             bids, bid_offset = parse_bid_history(html)
             owners, owner_offset = parse_owner_history(html)
+            offers, offer_offset = parse_offer_history(html)
             attributes = parse_gift_attributes(html)
             issued = parse_gift_issued(html)
 
@@ -829,9 +835,10 @@ class FragmentClient:
                 owner_wallet=owner_wallet, purchased_date=purchased_date,
                 auction=auction, auction_end=auction_end,
                 attributes=attributes, issued=issued,
-                bid_history=bids, owner_history=owners,
+                bid_history=bids, owner_history=owners, offer_history=offers,
                 bid_history_next_offset=bid_offset,
                 owner_history_next_offset=owner_offset,
+                offer_history_next_offset=offer_offset,
             )
         except FragmentError:
             raise
@@ -1308,6 +1315,38 @@ class FragmentClient:
                     {
                         "type": str(item_type), "username": username,
                         "offset_id": offset_id, "method": "getOwnersHistory",
+                    },
+                )
+        except FragmentError:
+            raise
+        except Exception as exc:
+            raise UnexpectedError(UnexpectedError.UNEXPECTED.format(exc=exc)) from exc
+
+    async def get_offers_history(
+        self, item_type: int, username: str, offset_id: str,
+    ) -> dict[str, Any]:
+        """Load more offer history for an item."""
+        try:
+            if item_type == 1:
+                url = f"{FRAGMENT_BASE_URL}/username/{username}"
+            elif item_type == 3:
+                url = f"{FRAGMENT_BASE_URL}/number/{username}"
+            else:
+                url = f"{FRAGMENT_BASE_URL}/gift/{username}"
+            headers = build_headers(url)
+            fragment_hash = await fetch_fragment_hash(
+                self.cookies, headers, url, self.timeout, proxy=self.proxy,
+            )
+            proxy_args = build_curl_proxy_args(self.proxy)
+            async with requests.AsyncSession(
+                cookies=self.cookies, timeout=self.timeout, impersonate="chrome120",
+                **proxy_args,
+            ) as session:
+                return await post_fragment_api(
+                    session, fragment_hash, headers,
+                    {
+                        "type": str(item_type), "username": username,
+                        "offset_id": offset_id, "method": "getOffersHistory",
                     },
                 )
         except FragmentError:
