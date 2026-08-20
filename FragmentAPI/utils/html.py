@@ -19,6 +19,7 @@ from FragmentAPI.types.models import (
     GiftAttribute,
     MyAsset,
     MyBid,
+    OfferHistoryEntry,
     OwnerHistoryEntry,
     PremiumPriceOption,
     PremiumTransaction,
@@ -132,19 +133,21 @@ def parse_gift_items(html: str) -> tuple[list[dict[str, Any]], int | None]:
 
 def _parse_history_rows(html: str, section_title: str) -> tuple[list[dict[str, Any]], str | None]:
     """Parse table rows from a named section."""
-    tree = LexborHTMLParser(html)
     entries: list[dict[str, Any]] = []
     offset: str | None = None
 
-    section_html = ""
     m = re.search(rf"{re.escape(section_title)}</h3>.*?</section>", html, re.DOTALL)
-    if m:
-        section_html = m.group(0)
-        section_tree = LexborHTMLParser(section_html)
-    else:
-        section_tree = tree
+    if not m:
+        return entries, offset
+        
+    section_html = m.group(0)
+    section_tree = LexborHTMLParser(section_html)
 
-    for row in section_tree.css("tr"):
+    tbody = section_tree.css_first("tbody")
+    if not tbody:
+        return entries, offset
+
+    for row in tbody.css("tr"):
         cells = row.css("td")
         if not cells:
             continue
@@ -175,12 +178,36 @@ def _parse_history_rows(html: str, section_title: str) -> tuple[list[dict[str, A
 
         entries.append({"price": price, "price_label": price_label, "date": date, "wallet": wallet})
 
-    if section_html:
-        offset_match = re.search(r'js-load-more-o(?:wners|rders)["\s][^>]*data-next-offset="([^"]+)"', section_html)
-        if offset_match:
-            offset = offset_match.group(1)
+    offset_match = re.search(r'js-load-more-o(?:wners|rders|ffers)["\s][^>]*data-next-offset="([^"]+)"', section_html)
+    if offset_match:
+        offset = offset_match.group(1)
 
     return entries, offset
+
+
+def parse_offer_history(html: str) -> tuple[list[OfferHistoryEntry], str | None]:
+    """Parse offer history from page HTML."""
+    entries, offset = _parse_history_rows(html, "Latest Offers")
+    offers = [
+        OfferHistoryEntry(price=e["price"], date=e["date"], wallet=e["wallet"])
+        for e in entries
+    ]
+    return offers, offset
+
+
+def parse_sold_owner(html: str) -> str | None:
+    """Parse owner wallet from sold item page."""
+    tree = LexborHTMLParser(html)
+    info_box = tree.css_first(".tm-section-bid-info")
+    if not info_box:
+        return None
+        
+    wallet_link = info_box.css_first('a.tm-wallet[href*="tonviewer.com"]')
+    if wallet_link:
+        href = _attr(wallet_link, "href")
+        return href.replace("https://tonviewer.com/", "").strip()
+        
+    return None
 
 
 def parse_bid_history(html: str) -> tuple[list[BidHistoryEntry], str | None]:
@@ -188,7 +215,7 @@ def parse_bid_history(html: str) -> tuple[list[BidHistoryEntry], str | None]:
     entries, offset = _parse_history_rows(html, "Bid History")
     bids = [BidHistoryEntry(price=e["price"], date=e["date"], wallet=e["wallet"]) for e in entries]
     return bids, offset
-
+    
 
 def parse_owner_history(html: str) -> tuple[list[OwnerHistoryEntry], str | None]:
     """Parse ownership history from page HTML."""
@@ -235,16 +262,6 @@ def parse_auction_info(html: str) -> AuctionInfo:
         info.buy_now_price = _attr(buy_node, "data-bid-amount")
 
     return info
-
-
-def parse_sold_owner(html: str) -> str | None:
-    """Parse owner wallet from sold item page."""
-    m = re.search(
-        r'(?:Sale Price|Owner).*?class="tm-wallet"[^>]*>.*?'
-        r'<span class="(?:head|short)">([^<]+)</span>',
-        html, re.DOTALL,
-    )
-    return m.group(1).strip() if m else None
 
 
 def parse_gift_attributes(html: str) -> list[GiftAttribute]:

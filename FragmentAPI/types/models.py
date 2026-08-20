@@ -379,11 +379,19 @@ class OwnerHistoryEntry(FragmentBaseModel):
     wallet: str | None = None
 
 
+class OfferHistoryEntry(FragmentBaseModel):
+    """Single offer history entry."""
+
+    price: str | None = None
+    date: str | None = None
+    wallet: str | None = None
+
+
 class AuctionInfo(FragmentBaseModel):
     """Auction pricing information."""
 
     highest_bid: str | None = None
-    bid_step: str | None = None
+    bid_step: str | None = None 
     minimum_bid: str | None = None
     sell_price: str | None = None
     buy_now_price: str | None = None
@@ -402,8 +410,10 @@ class UsernameInfo(FragmentBaseModel):
     purchased_date: str | None = None
     bid_history: list[BidHistoryEntry] = Field(default_factory=list)
     owner_history: list[OwnerHistoryEntry] = Field(default_factory=list)
+    offer_history: list[OfferHistoryEntry] = Field(default_factory=list)
     bid_history_next_offset: str | None = None
     owner_history_next_offset: str | None = None
+    offer_history_next_offset: str | None = None
 
     @property
     def ton_rate(self) -> float:
@@ -426,8 +436,10 @@ class NumberInfo(FragmentBaseModel):
     purchased_date: str | None = None
     bid_history: list[BidHistoryEntry] = Field(default_factory=list)
     owner_history: list[OwnerHistoryEntry] = Field(default_factory=list)
+    offer_history: list[OfferHistoryEntry] = Field(default_factory=list)
     bid_history_next_offset: str | None = None
     owner_history_next_offset: str | None = None
+    offer_history_next_offset: str | None = None
 
     @property
     def ton_rate(self) -> float:
@@ -461,8 +473,10 @@ class GiftInfo(FragmentBaseModel):
     issued: str | None = None
     bid_history: list[BidHistoryEntry] = Field(default_factory=list)
     owner_history: list[OwnerHistoryEntry] = Field(default_factory=list)
+    offer_history: list[OfferHistoryEntry] = Field(default_factory=list)
     bid_history_next_offset: str | None = None
     owner_history_next_offset: str | None = None
+    offer_history_next_offset: str | None = None
 
     @property
     def ton_rate(self) -> float:
