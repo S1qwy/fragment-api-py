@@ -1,6 +1,6 @@
 # Fragment API Python SDK — Full Documentation
 
-Complete reference for **fragment-api-py v10.0.0**.
+Complete reference for **fragment-api-py v11.0.0**.
 
 ---
 
@@ -11,6 +11,7 @@ Complete reference for **fragment-api-py v10.0.0**.
 - [Client Configuration](#client-configuration)
   - [FragmentClient Constructor](#fragmentclient-constructor)
   - [Cookie Formats](#cookie-formats)
+  - [Session Storage](#session-storage)
   - [Properties](#properties)
 - [Authentication](#authentication)
 - [Payment Methods](#payment-methods)
@@ -27,9 +28,12 @@ Complete reference for **fragment-api-py v10.0.0**.
   - [My Assets & Bids](#my-assets--bids)
   - [Assignment](#assignment)
   - [Auction & Selling](#auction--selling)
+  - [Offers](#offers)
+  - [Gateway](#gateway)
   - [NFT Transfers](#nft-transfers)
   - [NFT Withdrawals](#nft-withdrawals)
   - [Stars Withdrawals](#stars-withdrawals)
+  - [Ads Withdrawals](#ads-withdrawals)
   - [Anonymous Numbers (+888)](#anonymous-numbers-888)
   - [Sessions](#sessions)
   - [Low-Level / Advanced](#low-level--advanced)
@@ -43,6 +47,9 @@ Complete reference for **fragment-api-py v10.0.0**.
   - [Account & Profile Models](#account--profile-models)
   - [Asset Management Models](#asset-management-models)
   - [NFT & Withdrawal Models](#nft--withdrawal-models)
+  - [Gateway Models](#gateway-models)
+  - [Offer Models](#offer-models)
+  - [Subscription Models](#subscription-models)
   - [Anonymous Number Models](#anonymous-number-models)
   - [Batch Models](#batch-models)
   - [Auction Models](#auction-models)
@@ -89,7 +96,7 @@ The library supports three operating modes depending on which parameters you pro
 
 | Mode | Required Parameters | Available Operations |
 |---|---|---|
-| **Full mode** | `cookies` (with `stel_ton_token`) + `seed` + `api_key` | All operations: purchases, giveaways, bids, wallet, NFT, withdrawals |
+| **Full mode** | `cookies` (with `stel_ton_token`) + `seed` + `api_key` | All operations: purchases, giveaways, bids, wallet, NFT, withdrawals, gateway, offers |
 | **EVM-only mode** | `cookies` (without `stel_ton_token`) | EVM payment methods, read-only search/info methods |
 | **Read-only mode** | `cookies` only (no `seed`) | Search, item info, price queries |
 
@@ -107,6 +114,10 @@ FragmentClient(
     api_provider: str = "tonapi",
     wallet_version: str = "V5R1",
     timeout: float = 30.0,
+    proxy: str | None = None,
+    session_storage: SessionStorage | None = None,
+    session_id: str | None = None,
+    auto_refresh_cookies: bool = False,
 )
 ```
 
@@ -118,6 +129,10 @@ FragmentClient(
 | `api_provider` | `str` | `"tonapi"` | Blockchain API provider. Accepted values: `"tonapi"`, `"toncenter"`. |
 | `wallet_version` | `str` | `"V5R1"` | TON wallet contract version. Accepted values: `"V4R2"`, `"V5R1"`. V5R1 supports up to 255 messages per transaction; V4R2 supports up to 4. |
 | `timeout` | `float` | `30.0` | HTTP request timeout in seconds for all Fragment API calls. |
+| `proxy` | `str \| None` | `None` | Proxy URL (http, socks5). Example: `"socks5://user:pass@host:port"`. |
+| `session_storage` | `SessionStorage \| None` | `None` | Storage backend for cookie persistence. |
+| `session_id` | `str \| None` | `None` | Identifier for the session in storage. |
+| `auto_refresh_cookies` | `bool` | `False` | Automatically refresh expired cookies. |
 
 ### Cookie Formats
 
@@ -152,12 +167,93 @@ cookies = "stel_ssid=abc123; stel_dt=-180; stel_token=xyz789; stel_ton_token=tok
 | `stel_token` | Always | Authentication token |
 | `stel_ton_token` | For wallet/write ops | TON wallet connection token. Set after connecting a TON wallet on fragment.com |
 
+### Session Storage
+
+The library provides built-in session storage backends for persisting cookies across restarts.
+
+#### `FragmentClient.from_storage()` (classmethod)
+
+Creates a client instance using stored session cookies.
+
+```python
+client = await FragmentClient.from_storage(
+    session_storage=storage,
+    session_id="my_session",
+    seed="word1 word2 ... word24",
+    api_key="AF...",
+    api_provider="tonapi",
+    wallet_version="V5R1",
+    timeout=30.0,
+    proxy=None,
+    auto_refresh_cookies=False,
+)
+```
+
+#### `FileSessionStorage`
+
+Stores cookies as JSON files on disk.
+
+```python
+from FragmentAPI import FileSessionStorage
+
+storage = FileSessionStorage(
+    directory=".fragment_sessions",
+    file_extension=".json",
+)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `directory` | `str \| Path` | `".fragment_sessions"` | Directory for session files. |
+| `file_extension` | `str` | `".json"` | File extension for session files. |
+
+#### `RedisSessionStorage`
+
+Stores cookies in Redis with optional TTL.
+
+```python
+from FragmentAPI import RedisSessionStorage
+
+storage = RedisSessionStorage(
+    redis_url="redis://localhost:6379/0",
+    prefix="fragment:session:",
+    ttl=3600,
+)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `redis_url` | `str` | `"redis://localhost:6379/0"` | Redis connection URL. |
+| `prefix` | `str` | `"fragment:session:"` | Key prefix for session entries. |
+| `ttl` | `int \| None` | `None` | Time-to-live in seconds. |
+
+**Example:**
+
+```python
+from FragmentAPI import FragmentClient, FileSessionStorage
+
+storage = FileSessionStorage(directory=".fragment_sessions")
+
+# Load existing session or authenticate
+client = await FragmentClient.from_storage(
+    session_storage=storage,
+    session_id="my_account",
+    seed="word1 word2 ... word24",
+    api_key="AF...",
+)
+
+# Cookies are automatically saved on exit when used as context manager
+async with client:
+    profile = await client.get_profile()
+```
+
 ### Properties
 
 | Property | Type | Description |
 |---|---|---|
 | `has_wallet` | `bool` | `True` if both `seed` and `api_key` are configured. |
 | `has_ton_token` | `bool` | `True` if `stel_ton_token` cookie is present and non-empty. |
+| `session_storage` | `SessionStorage \| None` | Returns the configured session storage backend. |
 
 ---
 
@@ -564,6 +660,10 @@ Load more bid/order history for an item (paginated).
 
 Load more ownership history for an item (paginated). Same parameters as `get_orders_history`.
 
+#### `get_offers_history(item_type, username, offset_id) -> dict[str, Any]`
+
+Load more offer history for an item (paginated). Same parameters as above.
+
 ---
 
 ### My Assets & Bids
@@ -598,7 +698,7 @@ Get list of Telegram accounts available for asset assignment.
 | `item_type` | `int` | `1` (username) or `5` (gift). |
 | `slug` | `str` | Item identifier. |
 
-#### `assign_to_telegram(item_type, slug, assign_to=None) -> AssignResult`
+#### `assign_to_telegram(item_type, slug, assign_to=None, wait_for_bot_payment=True) -> AssignResult`
 
 Assign an owned username or gift to a Telegram account.
 
@@ -609,6 +709,7 @@ Assign an owned username or gift to a Telegram account.
 | `item_type` | `int` | **(required)** | `1` (username) or `5` (gift). |
 | `slug` | `str` | **(required)** | Item identifier. |
 | `assign_to` | `str \| None` | `None` | Target Telegram account ID from `get_assign_accounts()`. If `None`, assigns to the default account. |
+| `wait_for_bot_payment` | `bool` | `True` | If the target is a bot, Fragment requires a payment. When `True` and wallet is configured, payment is executed automatically. |
 
 ---
 
@@ -648,6 +749,87 @@ Sell an owned username or gift at a fixed price. Convenience wrapper: calls `sta
 | `item_type` | `int` | `1` (username) or `5` (gift). |
 | `slug` | `str` | Item identifier. |
 | `price` | `int` | Fixed sell price in GRAM. |
+
+#### `cancel_auction(item_type, slug) -> TransactionResult`
+
+Cancel an active auction if no bids have been placed.
+
+**Requires:** `seed` + `api_key` + `stel_ton_token`.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `item_type` | `int` | `1` (username), `3` (number), or `5` (gift). |
+| `slug` | `str` | Item identifier. |
+
+**Returns:** `TransactionResult`.
+
+#### `subscribe_to_item(item_type, slug) -> SubscriptionResult`
+
+Subscribe to auction update notifications for an item via Telegram.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `item_type` | `int` | `1` (username), `3` (number), or `5` (gift). |
+| `slug` | `str` | Item identifier. |
+
+**Returns:** `SubscriptionResult` with `ok`, `subscribed`, `item_type`, `slug`.
+
+#### `unsubscribe_from_item(item_type, slug) -> SubscriptionResult`
+
+Unsubscribe from auction update notifications.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `item_type` | `int` | `1` (username), `3` (number), or `5` (gift). |
+| `slug` | `str` | Item identifier. |
+
+**Returns:** `SubscriptionResult`.
+
+---
+
+### Offers
+
+#### `make_offer(item_type, slug, amount) -> OfferResult`
+
+Make an offer to buy an unlisted username, number, or gift.
+
+**Requires:** `seed` + `api_key` + `stel_ton_token`.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `item_type` | `int` | `1` (username), `3` (number), or `5` (gift). |
+| `slug` | `str` | Item identifier on Fragment. |
+| `amount` | `int` | Offer amount in GRAM. |
+
+**Returns:** `OfferResult` with `transaction_id`, `item_type`, `slug`, `amount`, `req_id`.
+
+---
+
+### Gateway
+
+#### `get_gateway_price(account_id, credits) -> GatewayPriceInfo`
+
+Get price info for Telegram Gateway credits.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `account_id` | `str` | Gateway account identifier. |
+| `credits` | `int` | Number of credits to purchase. |
+
+**Returns:** `GatewayPriceInfo` with `credits`, `gram_price`, `usd_price`.
+
+#### `recharge_gateway(account_id, credits) -> GatewayRechargeResult`
+
+Recharge Telegram Gateway credits via TON payment.
+
+**Requires:** `seed` + `api_key` + `stel_ton_token`.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `account_id` | `str` | Gateway account identifier. |
+| `credits` | `int` | Number of credits to purchase. |
+
+**Returns:** `GatewayRechargeResult` with `transaction_id`, `account_id`, `credits`, `req_id`.
 
 ---
 
@@ -761,6 +943,35 @@ Confirm Stars withdrawal.
 
 ---
 
+### Ads Withdrawals
+
+#### `init_ads_withdrawal(transaction_id) -> AdsWithdrawalInitResult`
+
+Initialize Ads revenue withdrawal to wallet.
+
+**Requires:** `seed` + `api_key` + `stel_ton_token`.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `transaction_id` | `str` | Fragment internal transaction identifier. |
+
+**Returns:** `AdsWithdrawalInitResult` with `confirm_hash` if confirmation is needed.
+
+#### `confirm_ads_withdrawal(transaction_id, confirm_hash) -> AdsWithdrawalConfirmResult`
+
+Confirm Ads revenue withdrawal after user approval.
+
+**Requires:** `seed` + `api_key` + `stel_ton_token`.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `transaction_id` | `str` | Fragment internal transaction identifier. |
+| `confirm_hash` | `str` | Hash from `init_ads_withdrawal()` response. |
+
+**Returns:** `AdsWithdrawalConfirmResult` with completion status.
+
+---
+
 ### Anonymous Numbers (+888)
 
 All methods require `stel_ton_token`.
@@ -810,6 +1021,14 @@ Terminate a specific Fragment session.
 
 **Returns:** `True` if session was terminated successfully.
 
+#### `refresh_cookies() -> dict[str, str]`
+
+Re-authenticate and refresh session cookies. Requires seed to be configured. Updates internal cookies and saves to storage if configured.
+
+**Requires:** `seed`.
+
+**Returns:** Updated cookies dict.
+
 ---
 
 ### Low-Level / Advanced
@@ -840,7 +1059,7 @@ Send a raw request to the Fragment API.
 
 ## Data Types & Models
 
-All models are Python `dataclass` instances imported from `FragmentAPI.types.results`.
+All models are Pydantic V2 models imported from `FragmentAPI.types.models` or `FragmentAPI.types.results`.
 
 ### Purchase & Transaction Results
 
@@ -902,7 +1121,7 @@ All models are Python `dataclass` instances imported from `FragmentAPI.types.res
 
 #### `TransactionResult`
 
-Returned by low-level transaction methods (`transfer_nft`, etc.).
+Returned by low-level transaction methods (`transfer_nft`, `cancel_auction`, etc.).
 
 | Field | Type | Description |
 |---|---|---|
@@ -1003,8 +1222,10 @@ Unsigned transaction payload for external signing scenarios.
 | `purchased_date` | `str \| None` | ISO datetime of last purchase. |
 | `bid_history` | `list[BidHistoryEntry]` | List of historical bids. |
 | `owner_history` | `list[OwnerHistoryEntry]` | List of past owners. |
+| `offer_history` | `list[OfferHistoryEntry]` | List of offers. |
 | `bid_history_next_offset` | `str \| None` | Pagination cursor for more bid history. |
 | `owner_history_next_offset` | `str \| None` | Pagination cursor for more owner history. |
+| `offer_history_next_offset` | `str \| None` | Pagination cursor for more offer history. |
 
 **Property:** `ton_rate` — Alias for `gram_rate`.
 
@@ -1024,8 +1245,10 @@ Unsigned transaction payload for external signing scenarios.
 | `purchased_date` | `str \| None` | Purchase datetime. |
 | `bid_history` | `list[BidHistoryEntry]` | Bid history. |
 | `owner_history` | `list[OwnerHistoryEntry]` | Owner history. |
+| `offer_history` | `list[OfferHistoryEntry]` | Offer history. |
 | `bid_history_next_offset` | `str \| None` | Pagination cursor. |
 | `owner_history_next_offset` | `str \| None` | Pagination cursor. |
+| `offer_history_next_offset` | `str \| None` | Pagination cursor. |
 
 **Property:** `ton_rate` — Alias for `gram_rate`.
 
@@ -1048,8 +1271,10 @@ Unsigned transaction payload for external signing scenarios.
 | `issued` | `str \| None` | Issuance info string. |
 | `bid_history` | `list[BidHistoryEntry]` | Bid history. |
 | `owner_history` | `list[OwnerHistoryEntry]` | Owner history. |
+| `offer_history` | `list[OfferHistoryEntry]` | Offer history. |
 | `bid_history_next_offset` | `str \| None` | Pagination cursor. |
 | `owner_history_next_offset` | `str \| None` | Pagination cursor. |
+| `offer_history_next_offset` | `str \| None` | Pagination cursor. |
 
 **Property:** `ton_rate` — Alias for `gram_rate`.
 
@@ -1356,6 +1581,76 @@ Same structure as `NftWithdrawalConfirmResult`.
 
 ---
 
+### Gateway Models
+
+#### `GatewayPriceInfo`
+
+| Field | Type | Description |
+|---|---|---|
+| `credits` | `int` | Number of credits. |
+| `gram_price` | `str` | Price in GRAM. |
+| `usd_price` | `str \| None` | Price in USD. |
+
+#### `GatewayRechargeResult`
+
+| Field | Type | Description |
+|---|---|---|
+| `transaction_id` | `str` | Transaction hash. |
+| `account_id` | `str` | Gateway account identifier. |
+| `credits` | `int` | Credits purchased. |
+| `req_id` | `str \| None` | Request ID for confirmation. |
+
+---
+
+### Offer Models
+
+#### `OfferResult`
+
+| Field | Type | Description |
+|---|---|---|
+| `transaction_id` | `str` | Transaction hash. |
+| `item_type` | `int` | Item type: `1` (username), `3` (number), `5` (gift). |
+| `slug` | `str` | Item identifier. |
+| `amount` | `int` | Offer amount in GRAM. |
+| `req_id` | `str \| None` | Request ID. |
+
+---
+
+### Subscription Models
+
+#### `SubscriptionResult`
+
+| Field | Type | Description |
+|---|---|---|
+| `ok` | `bool` | `True` if operation succeeded. |
+| `subscribed` | `bool` | `True` if subscribed after operation. |
+| `item_type` | `int` | Item type. |
+| `slug` | `str` | Item identifier. |
+
+### Ads Withdrawal Models
+
+#### `AdsWithdrawalInitResult`
+
+| Field | Type | Description |
+|---|---|---|
+| `ok` | `bool` | `True` if initialization succeeded. |
+| `confirm_message` | `str \| None` | Confirmation message. |
+| `confirm_button` | `str \| None` | Button label. |
+| `confirm_hash` | `str \| None` | Hash for confirmation step. |
+| `error` | `str \| None` | Error message if failed. |
+
+#### `AdsWithdrawalConfirmResult`
+
+| Field | Type | Description |
+|---|---|---|
+| `ok` | `bool` | `True` if confirmation succeeded. |
+| `need_update` | `bool` | Page needs refresh. |
+| `mode` | `str` | Result mode. |
+| `html` | `str \| None` | Updated page HTML. |
+| `error` | `str \| None` | Error message. |
+
+---
+
 ### Anonymous Number Models
 
 #### `LoginCodeResult`
@@ -1429,6 +1724,14 @@ Same structure as `NftWithdrawalConfirmResult`.
 | `date` | `str \| None` | ISO datetime. |
 | `wallet` | `str \| None` | Owner wallet address. |
 
+#### `OfferHistoryEntry`
+
+| Field | Type | Description |
+|---|---|---|
+| `price` | `str \| None` | Offer amount in GRAM. |
+| `date` | `str \| None` | ISO datetime of the offer. |
+| `wallet` | `str \| None` | Offerer wallet address. |
+
 ---
 
 ### Helper Models
@@ -1466,6 +1769,8 @@ FragmentError (base)
 │   └── VerificationError
 └── OperationError
     ├── WalletError
+    ├── SessionStorageError
+    ├── RetryExhaustedError
     └── UnexpectedError
 ```
 
@@ -1500,15 +1805,21 @@ Raised when required client parameters are missing or invalid.
 | `INVALID_MONTHS` | Premium months not in {3, 6, 12}. |
 | `INVALID_STARS_AMOUNT` | Stars amount outside 50–10,000,000 range. |
 | `INVALID_GRAM_AMOUNT` | GRAM amount outside 1–1,000,000,000 range. |
+| `INVALID_TON_AMOUNT` | Alias for `INVALID_GRAM_AMOUNT`. |
 | `INVALID_WINNERS_STARS` | Stars giveaway winners outside valid range. |
 | `INVALID_WINNERS_PREMIUM` | Premium giveaway winners outside 1–24,000 range. |
 | `INVALID_STARS_PER_WINNER` | Stars per winner outside 500–1,000,000 range. |
 | `INVALID_PAYMENT_METHOD` | Unrecognized payment method string. |
 | `INVALID_GIVEAWAY_PACKAGE` | Stars giveaway amount not in allowed packages. |
 | `INVALID_GIVEAWAY_WINNERS` | Winners count exceeds maximum for given amount. |
+| `INVALID_ITEM_TYPE` | Item type not in {1, 3, 5}. |
+| `INVALID_BID_AMOUNT` | Bid amount must be a positive integer. |
+| `INVALID_OFFER_AMOUNT` | Offer amount must be a positive integer. |
+| `INVALID_CREDITS_AMOUNT` | Credits amount must be a positive integer. |
 | `SEED_REQUIRED` | Operation requires seed but none configured. |
 | `TON_TOKEN_REQUIRED` | Operation requires `stel_ton_token` cookie. |
 | `API_KEY_REQUIRED` | Operation requires API key but none configured. |
+| `INVALID_PROXY` | Proxy URL format is invalid. |
 
 ---
 
@@ -1524,6 +1835,7 @@ Raised when cookies are unreadable or missing required fields.
 | `BROWSER_READ_FAILED` | Failed to read cookies from browser. |
 | `MISSING_BROWSER_KEYS` | Required cookies not found in browser. |
 | `EXPIRED` | Session cookie has expired. |
+| `REFRESH_FAILED` | Failed to refresh session cookies. |
 
 ---
 
@@ -1640,11 +1952,34 @@ Raised for TON wallet issues.
 | Message Constant | Description |
 |---|---|
 | `LOW_GRAM_BALANCE` | Insufficient GRAM balance for transaction + gas. |
+| `LOW_TON_BALANCE` | Alias for `LOW_GRAM_BALANCE`. |
 | `LOW_USDT_BALANCE` | Insufficient USDT balance. |
 | `GRAM_BALANCE_CHECK_FAILED` | Failed to fetch GRAM balance from network. |
+| `TON_BALANCE_CHECK_FAILED` | Alias for `GRAM_BALANCE_CHECK_FAILED`. |
 | `USDT_BALANCE_CHECK_FAILED` | Failed to fetch USDT balance from network. |
 | `ACCOUNT_INFO_FAILED` | Failed to build wallet account info. |
 | `WALLET_INFO_FAILED` | Failed to retrieve wallet info. |
+
+---
+
+#### `SessionStorageError`
+
+Raised for session storage read/write errors.
+
+| Message Constant | Description |
+|---|---|
+| `SAVE_FAILED` | Failed to save session to storage. |
+| `LOAD_FAILED` | Failed to load session from storage. |
+
+---
+
+#### `RetryExhaustedError`
+
+Raised when all retry attempts have been exhausted.
+
+| Message Constant | Description |
+|---|---|
+| `EXHAUSTED` | All retry attempts exhausted for the operation. |
 
 ---
 
