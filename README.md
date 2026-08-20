@@ -31,8 +31,6 @@
 | **Cancel Auction** | Cancel active auctions with no bids. |
 | **Subscribe/Unsubscribe** | Get Telegram notifications for auction updates. |
 | **Ads Withdrawal** | Withdraw Ads revenue to your wallet. |
-| **Batch Operations** | Improved chunking (V4R2: 4, V5R1: 255 messages per transaction). |
-| **EVM Payments** | USDT/USDC on Ethereum, Polygon, and BASE chains. |
 
 ---
 
