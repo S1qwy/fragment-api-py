@@ -6,50 +6,54 @@
 
 <p align="center">
   <strong>Async Python library for Fragment.com automation</strong><br>
-  <strong>v10.0.0 — GRAM Rebrand | Batch Operations | EVM Payments | Full Marketplace</strong>
+  <strong>v11.0.0 — Pydantic V2 | Selectolax Parser | Session Storage | Full Marketplace</strong>
 </p>
 
 <p align="center">
   <a href="https://pypi.org/project/fragment-api-py/"><img src="https://img.shields.io/pypi/v/fragment-api-py.svg?style=flat-square" alt="PyPI"></a>
-  <a href="https://pypi.org/project/fragment-api-py/"><img src="https://img.shields.io/pypi/pyversions/fragment-api-py.svg?style=flat-square" alt="Python Versions"></a>
+  <a href="https://pypi.org/project/fragment-api-py/"><img src="https://img.shields.io/badge/Python-3.10+-blue?style=flat-square" alt="Python Versions"></a>
   <a href="https://pepy.tech/projects/fragment-api-py/"><img src="https://static.pepy.tech/personalized-badge/fragment-api-py?period=total&units=INTERNATIONAL_SYSTEM&left_color=GREY&right_color=BLUE&left_text=downloads" alt="Downloads"></a>
   <a href="https://t.me/fragment_api_lib"><img src="https://img.shields.io/badge/Telegram-Channel-2CA5E0?style=flat-square&logo=telegram" alt="Telegram"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-green.svg?style=flat-square" alt="License"></a>
 </p>
 
-<p align="center">
-  <a href="https://github.com/s1qwy/fragment-api-py"><img src="https://img.shields.io/badge/GitHub-s1qwy/fragment--api--py-181717?style=flat-square&logo=github" alt="GitHub"></a>
-  <a href="DOC.md"><img src="https://img.shields.io/badge/Documentation-DOC.md-6366f1?style=flat-square" alt="Docs"></a>
-</p>
-
 ---
 
-## What's New in v10.0.0
+## What's New in v11.0.0
 
 | Feature | Description |
 |---------|-------------|
-| **GRAM Rebrand** | All TON references updated to GRAM following the Telegram Open Network rebrand. `ton` payment method and `balance_ton` properties remain as backward-compatible aliases. |
-| **Three Operating Modes** | Full mode (cookies + seed + api_key), EVM-only mode (cookies without `stel_ton_token`), Read-only mode (cookies only). |
-| **NFT Management** | Transfer gifts between users, withdraw NFTs to wallet, manage Stars revenue withdrawals. |
-| **Auction & Selling** | Start auctions, sell assets at fixed prices, place bids on usernames, numbers, and gifts. |
-| **Asset Assignment** | Assign owned usernames and gifts to specific Telegram accounts. |
+| **Pydantic V2** | Complete migration from dataclasses to Pydantic V2 models with full type validation. |
+| **Selectolax Parser** | Replaced fragile regex parsing with fast CSS-selector based Selectolax (Lexbor backend). |
+| **Session Storage** | Built-in cookie persistence with `FileSessionStorage` and `RedisSessionStorage` backends. |
+| **Gateway API** | Full support for Telegram Gateway credit purchases and price queries. |
+| **Offers** | Make offers on unlisted usernames, numbers, and gifts. |
+| **Cancel Auction** | Cancel active auctions with no bids. |
+| **Subscribe/Unsubscribe** | Get Telegram notifications for auction updates. |
+| **Ads Withdrawal** | Withdraw Ads revenue to your wallet. |
+| **Batch Operations** | Improved chunking (V4R2: 4, V5R1: 255 messages per transaction). |
+| **EVM Payments** | USDT/USDC on Ethereum, Polygon, and BASE chains. |
 
 ---
 
 ## Features
 
 - **Async-first** — Full async/await support with `FragmentClient`.
+- **Pydantic Models** — All API responses return strongly-typed Pydantic models.
+- **Selectolax Parsing** — Robust CSS-selector based HTML parsing.
+- **Session Storage** — Persist cookies in files or Redis.
 - **Purchases** — Stars (50–10M), Premium (3/6/12 months), GRAM Ads top-up.
 - **Batch Operations** — Multiple purchases in grouped on-chain transactions.
 - **EVM Payments** — USDT/USDC on Ethereum, Polygon, and BASE chains.
 - **Giveaways** — Stars and Premium giveaways for channels (up to 24K winners).
-- **Marketplace** — Search/bid on usernames, numbers, and gifts with full pagination.
+- **Marketplace** — Search/bid on usernames, numbers, and gifts.
 - **Auctions** — Start auctions, set fixed prices, place bids, buy-now.
-- **NFTs** — Transfer, withdraw to wallet, manage Stars revenue.
-- **Wallet** — V4R2 and V5R1 support via `tonutils`. GRAM and USDT balances.
-- **Authentication** — Auto-authenticate via TON wallet proof + Telegram OAuth (QR/phone).
-- **Anonymous Numbers** — Login codes, toggle delivery, terminate sessions (+888).
-- **Asset Management** — List owned assets, bid history, assign to Telegram accounts.
+- **Offers** — Make offers on unlisted items.
+- **Gateway** — Recharge Telegram Gateway credits.
+- **NFTs** — Transfer gifts, withdraw to wallet.
+- **Wallet** — V4R2 and V5R1 support via `tonutils`.
+- **Authentication** — Auto-authenticate via TON wallet proof + Telegram OAuth.
+- **Anonymous Numbers** — Login codes, toggle delivery, terminate sessions.
 
 ---
 
@@ -61,9 +65,9 @@ pip install fragment-api-py
 
 **Requirements:**
 - Python 3.10+
-- Fragment cookies (`stel_ssid`, `stel_dt`, `stel_token`; `stel_ton_token` for wallet operations)
-- TON wallet seed phrase (12/18/24 words) — for on-chain transactions
-- Tonconsole or Toncenter API key — for blockchain interactions
+- Fragment cookies (`stel_ssid`, `stel_dt`, `stel_token`; `stel_ton_token` for wallet ops)
+- TON wallet seed phrase (12/18/24 words)
+- Tonconsole or Toncenter API key
 
 Get a free API key at [tonconsole.com](https://tonconsole.com/).
 
@@ -115,6 +119,34 @@ asyncio.run(main())
 
 ---
 
+## Session Storage
+
+Persist cookies across restarts:
+
+```python
+from FragmentAPI import FragmentClient, FileSessionStorage, RedisSessionStorage
+
+# File-based storage
+storage = FileSessionStorage(directory=".fragment_sessions")
+client = await FragmentClient.from_storage(
+    session_storage=storage,
+    session_id="my_session",
+    seed="word1 word2 ... word24",
+    api_key="AF...",
+)
+
+# Redis storage
+storage = RedisSessionStorage(redis_url="redis://localhost:6379/0", ttl=3600)
+client = await FragmentClient.from_storage(
+    session_storage=storage,
+    session_id="my_session",
+    seed="word1 word2 ... word24",
+    api_key="AF...",
+)
+```
+
+---
+
 ## Authentication
 
 ```python
@@ -158,8 +190,6 @@ asyncio.run(main())
 
 ## API Overview
 
-For complete method signatures, parameters, return types, and models, see the **[Full Documentation (DOC.md)](DOC.md)**.
-
 ### Purchases & Giveaways
 | Method | Description |
 |--------|-------------|
@@ -167,6 +197,7 @@ For complete method signatures, parameters, return types, and models, see the **
 | `purchase_stars()` | Send Stars to a user |
 | `purchase_premium()` | Gift Premium to a user |
 | `topup_gram()` | Top up GRAM to Ads balance |
+| `topup_ton()` | Alias for `topup_gram()` |
 | `batch_purchase()` | Batched multi-item purchases |
 | `giveaway_stars()` | Stars giveaway for a channel |
 | `giveaway_premium()` | Premium giveaway for a channel |
@@ -180,6 +211,10 @@ For complete method signatures, parameters, return types, and models, see the **
 | `place_bid()` | Bid or buy-now on an item |
 | `start_auction()` | Start an auction |
 | `sell_asset()` | Sell at a fixed price |
+| `make_offer()` | Make offer on unlisted item |
+| `cancel_auction()` | Cancel active auction |
+| `subscribe_to_item()` | Get auction notifications |
+| `unsubscribe_from_item()` | Stop auction notifications |
 
 ### Asset Info & History
 | Method | Description |
@@ -188,6 +223,7 @@ For complete method signatures, parameters, return types, and models, see the **
 | `get_number_info()` | Detailed number info |
 | `get_gift_info()` | Detailed gift info |
 | `get_stars_prices()` | Stars package prices |
+| `get_stars_price()` | Price for specific Stars quantity |
 | `get_premium_prices()` | Premium prices |
 | `get_stars_history()` | Stars transaction history |
 | `get_premium_history()` | Premium transaction history |
@@ -199,16 +235,30 @@ For complete method signatures, parameters, return types, and models, see the **
 | `get_wallet()` | Wallet address & balances |
 | `get_profile()` | Account profile info |
 | `get_sessions()` | Active sessions |
+| `terminate_session()` | Terminate a session |
 | `get_my_assets()` | Owned assets |
 | `get_my_bids()` | Bid history |
 | `assign_to_telegram()` | Assign asset to account |
+| `get_assign_accounts()` | Get available accounts |
 
 ### NFTs & Withdrawals
 | Method | Description |
 |--------|-------------|
-| `transfer_nft()` | Transfer gift to user |
+| `search_nft_transfer_recipient()` | Find transfer recipient |
+| `init_nft_transfer()` | Initialize NFT transfer |
+| `transfer_nft()` | Execute NFT transfer |
 | `init_nft_withdrawal()` | Withdraw NFT to wallet |
+| `confirm_nft_withdrawal()` | Confirm NFT withdrawal |
 | `init_stars_withdrawal()` | Withdraw Stars revenue |
+| `confirm_stars_withdrawal()` | Confirm Stars withdrawal |
+| `init_ads_withdrawal()` | Withdraw Ads revenue |
+| `confirm_ads_withdrawal()` | Confirm Ads withdrawal |
+
+### Gateway
+| Method | Description |
+|--------|-------------|
+| `get_gateway_price()` | Get Gateway credits price |
+| `recharge_gateway()` | Recharge Gateway credits |
 
 ### Anonymous Numbers
 | Method | Description |
@@ -217,11 +267,39 @@ For complete method signatures, parameters, return types, and models, see the **
 | `toggle_login_codes()` | Enable/disable code delivery |
 | `terminate_sessions()` | Terminate all sessions |
 
+### Low-Level
+| Method | Description |
+|--------|-------------|
+| `call()` | Send raw Fragment API request |
+| `confirm_request()` | Confirm transaction after broadcast |
+
+---
+
+## Exceptions
+
+All exceptions inherit from `FragmentError`:
+
+| Exception | Description |
+|-----------|-------------|
+| `ConfigurationError` | Invalid client configuration |
+| `CookieError` | Missing or invalid cookies |
+| `FragmentPageError` | Page loading or hash extraction failed |
+| `UserNotFoundError` | Target user not found |
+| `AlreadySubscribedError` | User already has Premium |
+| `AnonymousNumberError` | Anonymous number operation failed |
+| `TransactionError` | TON transaction failed |
+| `ConfirmationTimeout` | Transaction not confirmed in time |
+| `WalletError` | Balance insufficient or wallet issues |
+| `VerificationError` | KYC verification required |
+| `ParseError` | Failed to parse API response |
+| `SessionStorageError` | Storage read/write failed |
+| `UnexpectedError` | Unexpected internal error |
+
 ---
 
 ## Support & License
 
-**Issues:** [GitHub Issues](https://github.com/s1qwy/fragment-api-py/issues) or [Telegram Chat](https://t.me/fragment_api_lib)
+**Issues:** [GitHub Issues](https://github.com/s1qwy/fragment-api-py/issues)
 
 **Support the Project:**
 
@@ -241,6 +319,6 @@ For complete method signatures, parameters, return types, and models, see the **
 
 <p align="center">
   <a href="https://github.com/s1qwy/fragment-api-py">GitHub</a> •
-  <a href="DOC.md">Documentation</a> •
+  <a href="https://github.com/s1qwy/fragment-api-py/DOC.md">Documentation</a> •
   <a href="https://t.me/fragment_api_lib">Telegram</a>
 </p>
