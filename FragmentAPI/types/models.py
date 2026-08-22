@@ -752,6 +752,15 @@ class GatewayPriceInfo(FragmentBaseModel):
     usd_price: str | None = None
 
 
+class AdsRechargeResult(FragmentBaseModel):
+    """Result of a Telegram Ads account recharge."""
+
+    transaction_id: str
+    account_id: str
+    amount: int
+    req_id: str | None = None
+
+
 class SubscriptionResult(FragmentBaseModel):
     """Result of subscribe/unsubscribe to item updates."""
 

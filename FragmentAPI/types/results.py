@@ -9,6 +9,7 @@ from FragmentAPI.types.models import (
     AdsTopupResult,
     AdsWithdrawalConfirmResult,
     AdsWithdrawalInitResult,
+    AdsRechargeResult
     AssignAccountsResult,
     AssignResult,
     AuctionInfo,

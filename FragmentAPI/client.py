@@ -46,6 +46,7 @@ from FragmentAPI.methods.marketplace import (
     init_ads_withdrawal as _init_ads_withdrawal,
     make_offer as _make_offer,
     recharge_gateway as _recharge_gateway,
+    recharge_ads as _recharge_ads,
     subscribe_to_item as _subscribe_to_item,
     unsubscribe_from_item as _unsubscribe_from_item,
 )
@@ -89,6 +90,7 @@ from FragmentAPI.types.models import (
     EvmPaymentResult,
     GatewayPriceInfo,
     GatewayRechargeResult,
+    AdsRechargeResult,
     GiftInfo,
     GiftsResult,
     GiveawayPremiumResult,
@@ -686,6 +688,10 @@ class FragmentClient:
     async def recharge_gateway(self, account_id: str, credits: int) -> GatewayRechargeResult:
         """Recharge Telegram Gateway credits via TON payment."""
         return await _recharge_gateway(self, account_id, credits)
+    
+    async def recharge_ads(self, account_id: str, amount: int) -> AdsRechargeResult:
+        """Recharge Telegram Ads account via TON payment."""
+        return await _recharge_ads(self, account_id, amount)
 
     async def get_wallet(self) -> WalletInfo:
         """Return address, state, GRAM and USDT balance of the wallet."""

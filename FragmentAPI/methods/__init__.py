@@ -22,6 +22,7 @@ from FragmentAPI.methods.marketplace import (
     init_ads_withdrawal,
     make_offer,
     recharge_gateway,
+    recharge_ads,
     subscribe_to_item,
     unsubscribe_from_item,
 )
@@ -40,6 +41,7 @@ __all__ = [
     "purchase_premium",
     "purchase_stars",
     "recharge_gateway",
+    "recharge_ads",
     "search_gifts",
     "search_numbers",
     "search_usernames",

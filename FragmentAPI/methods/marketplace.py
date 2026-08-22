@@ -26,6 +26,7 @@ from FragmentAPI.types.models import (
     AdsWithdrawalInitResult,
     GatewayPriceInfo,
     GatewayRechargeResult,
+    AdsRechargeResult
     OfferResult,
     SubscriptionResult,
     TransactionResult,
@@ -408,6 +409,77 @@ async def recharge_gateway(
             transaction_id=tx_result.tx_hash,
             account_id=account_id,
             credits=credits,
+            req_id=req_id,
+        )
+
+    except FragmentError:
+        raise
+    except Exception as exc:
+        raise UnexpectedError(UnexpectedError.UNEXPECTED.format(exc=exc)) from exc
+
+        
+async def recharge_ads(
+    client: "FragmentClient",
+    account_id: str,
+    amount: int,
+) -> AdsRechargeResult:
+    """Recharge Telegram Ads account via TON payment.
+
+    Args:
+        client: Authenticated FragmentClient instance.
+        account_id: Ads account identifier.
+        amount: Amount in GRAM.
+
+    Returns:
+        AdsRechargeResult with transaction details.
+    """
+    if not isinstance(amount, int) or amount < 1:
+        raise ConfigurationError(ConfigurationError.INVALID_GRAM_AMOUNT)
+
+    client._require_wallet()
+
+    try:
+        page_url = f"{FRAGMENT_BASE_URL}/ads/pay" 
+        
+        init_res = await client.call(
+            "initAdsRechargeRequest",
+            {"account": account_id, "amount": str(amount)},
+            page_url=page_url,
+        )
+        if init_res.get("error"):
+            raise FragmentAPIError(init_res["error"])
+            
+        req_id = init_res.get("req_id")
+        if not req_id:
+            raise FragmentAPIError(FragmentAPIError.NO_REQUEST_ID.format(context="Ads recharge"))
+
+        account = await build_account_info(client)
+        transaction = await client.call(
+            "getAdsRechargeLink",
+            {
+                "account": json.dumps(account),
+                "device": DEVICE_FINGERPRINT,
+                "transaction": "1",
+                "id": req_id,
+            },
+            page_url=page_url,
+        )
+        if transaction.get("error"):
+            raise FragmentAPIError(str(transaction["error"]))
+
+        tx_result = await execute_transaction(client, transaction)
+
+        # Подтверждаем транзакцию, если Fragment этого требует
+        if tx_result.boc and req_id:
+            try:
+                await client.confirm_request(req_id, tx_result.boc, referer="ads")
+            except Exception:
+                pass
+
+        return AdsRechargeResult(
+            transaction_id=tx_result.tx_hash,
+            account_id=account_id,
+            amount=amount,
             req_id=req_id,
         )
 
