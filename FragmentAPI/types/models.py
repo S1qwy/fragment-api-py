@@ -31,7 +31,11 @@ class PreparedTransactionMessage(FragmentBaseModel):
 
 
 class PreparedTransaction(FragmentBaseModel):
-    """Unsigned Fragment transaction payload for external signing."""
+    """Unsigned Fragment transaction payload for external signing.
+
+    Used both in EVM-only mode and No-KYC mode to return transaction
+    details that the caller can sign and broadcast externally.
+    """
 
     req_id: str
     item_kind: str
@@ -391,7 +395,7 @@ class AuctionInfo(FragmentBaseModel):
     """Auction pricing information."""
 
     highest_bid: str | None = None
-    bid_step: str | None = None 
+    bid_step: str | None = None
     minimum_bid: str | None = None
     sell_price: str | None = None
     buy_now_price: str | None = None
@@ -735,6 +739,22 @@ class BatchResult(FragmentBaseModel):
     items: list[BatchItemResult] = Field(default_factory=list)
 
 
+class NoKycBatchResult(FragmentBaseModel):
+    """Result of a No-KYC batch purchase operation.
+
+    In No-KYC mode each item is processed individually via MarketApp API.
+    If auto_pay is enabled (wallet configured), items contains PurchaseResult-like results.
+    If auto_pay is disabled, prepared_transactions contains PreparedTransaction objects
+    for external signing.
+    """
+
+    total: int
+    succeeded: int
+    failed: int
+    items: list[BatchItemResult] = Field(default_factory=list)
+    prepared_transactions: list[PreparedTransaction] = Field(default_factory=list)
+
+
 class GatewayRechargeResult(FragmentBaseModel):
     """Result of a Telegram Gateway credits recharge."""
 
@@ -750,6 +770,15 @@ class GatewayPriceInfo(FragmentBaseModel):
     credits: int
     gram_price: str
     usd_price: str | None = None
+
+
+class AdsRechargeResult(FragmentBaseModel):
+    """Result of a Telegram Ads account recharge."""
+
+    transaction_id: str
+    account_id: str
+    amount: int
+    req_id: str | None = None
 
 
 class SubscriptionResult(FragmentBaseModel):
