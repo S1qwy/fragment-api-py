@@ -95,6 +95,17 @@ class ConfigurationError(ClientError):
         "This operation requires an API key (Tonconsole or Toncenter). "
         "Initialize FragmentClient with api_key=... parameter."
     )
+    COOKIES_REQUIRED = (
+        "This operation requires Fragment cookies. "
+        "Initialize FragmentClient with cookies=... parameter."
+    )
+    NOKYC_UNSUPPORTED_METHOD = (
+        "No-KYC mode only supports GRAM/TON payment methods. Got: '{method}'."
+    )
+    NOKYC_UNSUPPORTED_OPERATION = (
+        "Operation '{operation}' is not available in No-KYC mode. "
+        "Provide Fragment cookies to use this feature."
+    )
     INVALID_PROXY = (
         "Invalid proxy format: '{proxy}'. "
         "Expected format: 'http://host:port', 'socks5://host:port', "
@@ -139,6 +150,14 @@ class FragmentAPIError(FragmentError):
         "Fragment did not return a request ID for '{context}'. "
         "Your session may have expired. Refresh your cookies and try again."
     )
+
+
+class MarketAppAPIError(FragmentError):
+    """Raised for errors returned by MarketApp API in No-KYC mode."""
+
+    API_CALL_FAILED = "MarketApp API call failed for '{method}': {error}"
+    RECIPIENT_NOT_FOUND = "Recipient '{username}' not found via MarketApp API."
+    TRANSACTION_BUILD_FAILED = "Failed to build transaction via MarketApp API: {error}"
 
 
 class FragmentPageError(FragmentAPIError):
@@ -294,6 +313,7 @@ __all__ = [
     "ConfigError",
     "CookieError",
     "FragmentAPIError",
+    "MarketAppAPIError",
     "FragmentPageError",
     "UserNotFoundError",
     "AlreadySubscribedError",
