@@ -4,7 +4,7 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "fragment-api-py"
-version = "11.0.0"
+version = "12.0.0"
 description = "Async Python library for Fragment.com API with seqno/balance confirmation and confirmReq"
 readme = "README.md"
 authors = [{name = "S1qwy", email = "S1qwy@internet.ru"}]
@@ -17,7 +17,8 @@ dependencies = [
     "ton-core>=0.1.0",
     "pydantic>=2.0",
     "selectolax>=0.3.0",
-    "aiofiles>=23.0"
+    "aiofiles>=23.0",
+    "marketapp-api>=1.0.1"
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
