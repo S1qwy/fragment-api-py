@@ -1,6 +1,6 @@
 # Fragment API Python SDK — Full Documentation
 
-Complete reference for **fragment-api-py v11.0.0**.
+Complete reference for **fragment-api-py v12.0.0**.
 
 ---
 
@@ -30,6 +30,7 @@ Complete reference for **fragment-api-py v11.0.0**.
   - [Auction & Selling](#auction--selling)
   - [Offers](#offers)
   - [Gateway](#gateway)
+  - [Ads Recharge](#ads-recharge)
   - [NFT Transfers](#nft-transfers)
   - [NFT Withdrawals](#nft-withdrawals)
   - [Stars Withdrawals](#stars-withdrawals)
@@ -47,7 +48,7 @@ Complete reference for **fragment-api-py v11.0.0**.
   - [Account & Profile Models](#account--profile-models)
   - [Asset Management Models](#asset-management-models)
   - [NFT & Withdrawal Models](#nft--withdrawal-models)
-  - [Gateway Models](#gateway-models)
+  - [Gateway & Ads Recharge Models](#gateway--ads-recharge-models)
   - [Offer Models](#offer-models)
   - [Subscription Models](#subscription-models)
   - [Anonymous Number Models](#anonymous-number-models)
@@ -62,6 +63,8 @@ Complete reference for **fragment-api-py v11.0.0**.
   - [Operation Exceptions](#operation-exceptions)
 - [Constants & Limits](#constants--limits)
 - [Examples](#examples)
+  - [No-KYC Mode — Purchase Stars](#no-kyc-mode--purchase-stars)
+  - [No-KYC Mode — Prepared Transaction](#no-kyc-mode--prepared-transaction)
   - [Full Mode — Purchase Stars](#full-mode--purchase-stars)
   - [Batch Purchase](#batch-purchase-example)
   - [EVM Payment Flow](#evm-payment-flow)
@@ -92,13 +95,16 @@ Get a free Tonconsole API key at [tonconsole.com](https://tonconsole.com/).
 
 ## Operating Modes
 
-The library supports three operating modes depending on which parameters you provide:
+The library supports four operating modes depending on which parameters you provide:
 
 | Mode | Required Parameters | Available Operations |
 |---|---|---|
 | **Full mode** | `cookies` (with `stel_ton_token`) + `seed` + `api_key` | All operations: purchases, giveaways, bids, wallet, NFT, withdrawals, gateway, offers |
 | **EVM-only mode** | `cookies` (without `stel_ton_token`) | EVM payment methods, read-only search/info methods |
 | **Read-only mode** | `cookies` only (no `seed`) | Search, item info, price queries |
+| **No-KYC mode** | `marketapp_token` (optional, uses default) + `seed` + `api_key` (optional) | Stars, Premium, Giveaways, Ads topup/recharge, price lookups, recipient search. If seed+api_key provided, executes automatically; otherwise returns `PreparedTransaction` |
+
+**No-KYC mode** is the major new feature in v12.0.0. It allows you to use the library without Fragment.com cookies or KYC verification. All operations are powered by the MarketApp API.
 
 ---
 
@@ -108,7 +114,7 @@ The library supports three operating modes depending on which parameters you pro
 
 ```python
 FragmentClient(
-    cookies: dict | str,
+    cookies: dict | str | None = None,
     seed: str | None = None,
     api_key: str | None = None,
     api_provider: str = "tonapi",
@@ -118,12 +124,13 @@ FragmentClient(
     session_storage: SessionStorage | None = None,
     session_id: str | None = None,
     auto_refresh_cookies: bool = False,
+    marketapp_token: str | None = None,
 )
 ```
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `cookies` | `dict \| str` | **(required)** | Fragment session cookies. Accepts a Python dict, a JSON string, or a semicolon-separated cookie string (e.g. `"stel_ssid=abc; stel_dt=-180; stel_token=xyz"`). |
+| `cookies` | `dict \| str \| None` | `None` | Fragment session cookies. Optional in No-KYC mode. |
 | `seed` | `str \| None` | `None` | TON wallet mnemonic phrase (12, 18, or 24 words separated by spaces). Required for any on-chain transaction. |
 | `api_key` | `str \| None` | `None` | API key for TON blockchain interactions. Required alongside `seed` for wallet operations. |
 | `api_provider` | `str` | `"tonapi"` | Blockchain API provider. Accepted values: `"tonapi"`, `"toncenter"`. |
@@ -133,6 +140,7 @@ FragmentClient(
 | `session_storage` | `SessionStorage \| None` | `None` | Storage backend for cookie persistence. |
 | `session_id` | `str \| None` | `None` | Identifier for the session in storage. |
 | `auto_refresh_cookies` | `bool` | `False` | Automatically refresh expired cookies. |
+| `marketapp_token` | `str \| None` | `None` | Custom MarketApp API key for No-KYC mode. Uses default token if not provided. |
 
 ### Cookie Formats
 
@@ -186,6 +194,7 @@ client = await FragmentClient.from_storage(
     timeout=30.0,
     proxy=None,
     auto_refresh_cookies=False,
+    marketapp_token=None,
 )
 ```
 
@@ -253,6 +262,8 @@ async with client:
 |---|---|---|
 | `has_wallet` | `bool` | `True` if both `seed` and `api_key` are configured. |
 | `has_ton_token` | `bool` | `True` if `stel_ton_token` cookie is present and non-empty. |
+| `has_cookies` | `bool` | `True` if Fragment cookies are configured. |
+| `nokyc_mode` | `bool` | `True` if operating in No-KYC mode (no cookies). |
 | `session_storage` | `SessionStorage \| None` | Returns the configured session storage backend. |
 
 ---
@@ -301,8 +312,7 @@ cookies = await FragmentClient.authenticate(
 |---|---|---|---|
 | `"gram"` | TON (Gram) | GRAM | Automatic on-chain transaction. Alias for `"ton"`. |
 | `"ton"` | TON (Gram) | GRAM | Automatic on-chain transaction. Internal API value. |
-| `"usdt_gram"` | TON (Gram) | USDT | Automatic on-chain USDT transfer. Alias for `"usdt_ton"`. |
-| `"usdt_ton"` | TON (Gram) | USDT | Automatic on-chain USDT transfer. Internal API value. |
+| `"usdt_ton"` | TON (Gram) | USDT | Automatic on-chain USDT transfer. |
 | `"usdt_eth"` | Ethereum | USDT | Returns `EvmPaymentResult` with invoice details. |
 | `"usdt_pol"` | Polygon | USDT | Returns `EvmPaymentResult` with invoice details. |
 | `"usdc_eth"` | Ethereum | USDC | Returns `EvmPaymentResult` with invoice details. |
@@ -310,11 +320,12 @@ cookies = await FragmentClient.authenticate(
 | `"usdc_pol"` | Polygon | USDC | Returns `EvmPaymentResult` with invoice details. |
 
 **Notes:**
-- `"gram"` and `"ton"` are interchangeable; `"usdt_gram"` and `"usdt_ton"` are interchangeable.
-- GRAM on-chain methods (`gram`, `ton`, `usdt_gram`, `usdt_ton`) require `seed` + `api_key`.
+- `"gram"` and `"ton"` are interchangeable.
+- GRAM on-chain methods (`gram`, `ton`, `usdt_ton`) require `seed` + `api_key`.
 - EVM methods return an `EvmPaymentResult` containing an `EvmInvoice` that you must fulfill externally.
-- Batch purchases only support GRAM methods (`gram`, `ton`, `usdt_gram`, `usdt_ton`).
+- Batch purchases only support GRAM methods (`gram`, `ton`, `usdt_ton`).
 - Ads top-up only supports GRAM methods.
+- **v12.0.0:** `usdt_gram` has been removed; use `usdt_ton` instead.
 
 ---
 
@@ -326,7 +337,7 @@ cookies = await FragmentClient.authenticate(
 
 Returns address, state, GRAM balance, and USDT balance of the configured wallet.
 
-**Requires:** `seed` + `api_key` + `stel_ton_token`.
+**Requires:** `seed` + `api_key` + `stel_ton_token` (or No-KYC mode with wallet configured).
 
 ```python
 wallet = await client.get_wallet()
@@ -340,9 +351,11 @@ print(wallet.usdt_balance)  # 100.0
 
 ### Purchases & Top-ups
 
-#### `purchase(items_or_type, username=None, amount=None, months=None, show_sender=True, payment_method="gram") -> PurchaseResult | BatchResult | EvmPaymentResult`
+#### `purchase(items_or_type, username=None, amount=None, months=None, show_sender=True, payment_method="gram") -> PurchaseResult | BatchResult | EvmPaymentResult | PreparedTransaction | NoKycBatchResult`
 
 Unified purchase method supporting both single and batch operations.
+
+**In No-KYC mode:** Uses MarketApp API. Returns `PreparedTransaction` if wallet is not configured, otherwise executes automatically and returns `PurchaseResult`.
 
 **Single purchase (type string):**
 ```python
@@ -381,11 +394,13 @@ result = await client.purchase([
 **Returns:**
 - `PurchaseResult` — For single GRAM on-chain purchases.
 - `EvmPaymentResult` — For single EVM purchases.
-- `BatchResult` — For list inputs.
+- `BatchResult` — For list inputs in full mode.
+- `NoKycBatchResult` — For list inputs in No-KYC mode.
+- `PreparedTransaction` — In No-KYC mode when wallet is not configured.
 
 ---
 
-#### `purchase_stars(username, amount, show_sender=True, payment_method="gram") -> PurchaseResult | EvmPaymentResult`
+#### `purchase_stars(username, amount, show_sender=True, payment_method="gram") -> PurchaseResult | EvmPaymentResult | PreparedTransaction`
 
 Send Telegram Stars to a user. Convenience wrapper around `purchase()`.
 
@@ -398,7 +413,7 @@ Send Telegram Stars to a user. Convenience wrapper around `purchase()`.
 
 ---
 
-#### `purchase_premium(username, months, show_sender=True, payment_method="gram") -> PurchaseResult | EvmPaymentResult`
+#### `purchase_premium(username, months, show_sender=True, payment_method="gram") -> PurchaseResult | EvmPaymentResult | PreparedTransaction`
 
 Gift Telegram Premium to a user.
 
@@ -413,11 +428,11 @@ Gift Telegram Premium to a user.
 
 ---
 
-#### `topup_gram(username, amount, show_sender=True) -> PurchaseResult`
+#### `topup_gram(username, amount, show_sender=True) -> PurchaseResult | PreparedTransaction`
 
 Top up GRAM to a recipient's Telegram Ads balance.
 
-**Requires:** `stel_ton_token`.
+**Requires:** `stel_ton_token` (full mode) or No-KYC mode with wallet configured.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
@@ -429,7 +444,7 @@ Top up GRAM to a recipient's Telegram Ads balance.
 
 ---
 
-#### `topup_ton(username, amount, show_sender=True) -> PurchaseResult`
+#### `topup_ton(username, amount, show_sender=True) -> PurchaseResult | PreparedTransaction`
 
 Alias for `topup_gram()`. Backward-compatible.
 
@@ -437,14 +452,16 @@ Alias for `topup_gram()`. Backward-compatible.
 
 ### Batch Purchases
 
-#### `batch_purchase(items, payment_method="gram") -> BatchResult`
+#### `batch_purchase(items, payment_method="gram") -> BatchResult | NoKycBatchResult`
 
 Execute multiple purchases as batched on-chain TON transactions. Messages are automatically chunked based on wallet version limits (V4R2: 4 messages, V5R1: 255 messages per transaction).
+
+In No-KYC mode, each item is processed individually via MarketApp API.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `items` | `list[dict \| PurchaseItem]` | **(required)** | List of purchase items. Each item must contain `type`, `username`, and either `amount` or `months`. |
-| `payment_method` | `str` | `"gram"` | Only GRAM methods supported: `"gram"`, `"ton"`, `"usdt_gram"`, `"usdt_ton"`. |
+| `payment_method` | `str` | `"gram"` | Only GRAM methods supported: `"gram"`, `"ton"`, `"usdt_ton"`. |
 
 **Item dict format:**
 ```python
@@ -453,22 +470,13 @@ Execute multiple purchases as batched on-chain TON transactions. Messages are au
 {"type": "gram", "username": "adschannel", "amount": 50}
 ```
 
-**Returns:** `BatchResult` with per-item results and chunk statistics.
-
-**Behavior:**
-1. Validates all items upfront.
-2. Resolves recipients and initializes requests for each item.
-3. Collects all transaction messages.
-4. Checks total GRAM balance (including gas).
-5. Chunks messages by wallet version limit.
-6. Broadcasts each chunk as a single on-chain transaction.
-7. Confirms each request with Fragment.
+**Returns:** `BatchResult` (full mode) or `NoKycBatchResult` (No-KYC mode) with per-item results.
 
 ---
 
 ### Giveaways
 
-#### `giveaway_stars(channel, winners, amount, payment_method="gram") -> GiveawayStarsResult | EvmPaymentResult`
+#### `giveaway_stars(channel, winners, amount, payment_method="gram") -> GiveawayStarsResult | EvmPaymentResult | PreparedTransaction`
 
 Run a Telegram Stars giveaway for a channel.
 
@@ -481,7 +489,7 @@ Run a Telegram Stars giveaway for a channel.
 
 ---
 
-#### `giveaway_premium(channel, winners, months=3, payment_method="gram") -> GiveawayPremiumResult | EvmPaymentResult`
+#### `giveaway_premium(channel, winners, months=3, payment_method="gram") -> GiveawayPremiumResult | EvmPaymentResult | PreparedTransaction`
 
 Run a Telegram Premium giveaway for a channel.
 
@@ -513,7 +521,7 @@ These methods resolve a Telegram username to a Fragment-internal recipient ID. R
 
 #### `get_ads_topup_recipient(username) -> RecipientInfo | None`
 
-**Requires:** `stel_ton_token`.
+**Requires:** `stel_ton_token` (full mode) or No-KYC mode.
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -628,7 +636,7 @@ Get Telegram Premium subscription prices for all durations (3, 6, 12 months).
 
 ### Transaction History
 
-All history methods require `stel_ton_token`.
+All history methods require `stel_ton_token` (full mode).
 
 #### `get_stars_history(sort="desc") -> list[StarsTransaction]`
 
@@ -668,7 +676,7 @@ Load more offer history for an item (paginated). Same parameters as above.
 
 ### My Assets & Bids
 
-Both methods require `stel_ton_token`.
+Both methods require `stel_ton_token` (full mode).
 
 #### `get_my_assets(item_type="usernames") -> MyAssetsResult`
 
@@ -691,7 +699,7 @@ Both methods require `stel_ton_token`.
 
 Get list of Telegram accounts available for asset assignment.
 
-**Requires:** `stel_ton_token`.
+**Requires:** `stel_ton_token` (full mode).
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -702,7 +710,7 @@ Get list of Telegram accounts available for asset assignment.
 
 Assign an owned username or gift to a Telegram account.
 
-**Requires:** `stel_ton_token`.
+**Requires:** `stel_ton_token` (full mode).
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
@@ -719,7 +727,7 @@ Assign an owned username or gift to a Telegram account.
 
 Place a bid or buy-now on a Fragment marketplace item.
 
-**Requires:** `seed` + `api_key` + `stel_ton_token`.
+**Requires:** `seed` + `api_key` + `stel_ton_token` (full mode).
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -731,7 +739,7 @@ Place a bid or buy-now on a Fragment marketplace item.
 
 Start an auction for an owned username or gift.
 
-**Requires:** `seed` + `api_key` + `stel_ton_token`.
+**Requires:** `seed` + `api_key` + `stel_ton_token` (full mode).
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
@@ -754,7 +762,7 @@ Sell an owned username or gift at a fixed price. Convenience wrapper: calls `sta
 
 Cancel an active auction if no bids have been placed.
 
-**Requires:** `seed` + `api_key` + `stel_ton_token`.
+**Requires:** `seed` + `api_key` + `stel_ton_token` (full mode).
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -793,7 +801,7 @@ Unsubscribe from auction update notifications.
 
 Make an offer to buy an unlisted username, number, or gift.
 
-**Requires:** `seed` + `api_key` + `stel_ton_token`.
+**Requires:** `seed` + `api_key` + `stel_ton_token` (full mode).
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -822,7 +830,7 @@ Get price info for Telegram Gateway credits.
 
 Recharge Telegram Gateway credits via TON payment.
 
-**Requires:** `seed` + `api_key` + `stel_ton_token`.
+**Requires:** `seed` + `api_key` + `stel_ton_token` (full mode).
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -833,13 +841,32 @@ Recharge Telegram Gateway credits via TON payment.
 
 ---
 
+### Ads Recharge
+
+#### `recharge_ads(account_id, amount) -> AdsRechargeResult | PreparedTransaction`
+
+Recharge Telegram Ads account via TON payment.
+
+In No-KYC mode, uses MarketApp API. Returns `PreparedTransaction` if wallet is not configured.
+
+**Requires:** `seed` + `api_key` + `stel_ton_token` (full mode) or No-KYC mode with wallet configured.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `account_id` | `str` | Ads account identifier or full Fragment link. |
+| `amount` | `int` | GRAM amount to recharge. |
+
+**Returns:** `AdsRechargeResult` or `PreparedTransaction`.
+
+---
+
 ### NFT Transfers
 
 #### `search_nft_transfer_recipient(query) -> NftTransferRecipient | None`
 
 Search for a recipient to transfer an NFT gift to.
 
-**Requires:** `stel_ton_token`.
+**Requires:** `stel_ton_token` (full mode).
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -849,7 +876,7 @@ Search for a recipient to transfer an NFT gift to.
 
 Initialize an NFT transfer request.
 
-**Requires:** `stel_ton_token`.
+**Requires:** `stel_ton_token` (full mode).
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -860,7 +887,7 @@ Initialize an NFT transfer request.
 
 Execute the NFT transfer on-chain.
 
-**Requires:** `seed` + `api_key` + `stel_ton_token`.
+**Requires:** `seed` + `api_key` + `stel_ton_token` (full mode).
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
@@ -875,7 +902,7 @@ Execute the NFT transfer on-chain.
 
 Get NFT withdrawal state from Fragment page.
 
-**Requires:** `stel_ton_token`.
+**Requires:** `stel_ton_token` (full mode).
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -885,7 +912,7 @@ Get NFT withdrawal state from Fragment page.
 
 Initialize NFT withdrawal to your wallet.
 
-**Requires:** `seed` + `api_key` + `stel_ton_token`.
+**Requires:** `seed` + `api_key` + `stel_ton_token` (full mode).
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
@@ -896,7 +923,7 @@ Initialize NFT withdrawal to your wallet.
 
 Confirm NFT withdrawal after initialization.
 
-**Requires:** `seed` + `api_key` + `stel_ton_token`.
+**Requires:** `seed` + `api_key` + `stel_ton_token` (full mode).
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
@@ -912,7 +939,7 @@ Confirm NFT withdrawal after initialization.
 
 Get Stars withdrawal state.
 
-**Requires:** `stel_ton_token`.
+**Requires:** `stel_ton_token` (full mode).
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -922,7 +949,7 @@ Get Stars withdrawal state.
 
 Initialize Stars revenue withdrawal.
 
-**Requires:** `seed` + `api_key` + `stel_ton_token`.
+**Requires:** `seed` + `api_key` + `stel_ton_token` (full mode).
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -933,7 +960,7 @@ Initialize Stars revenue withdrawal.
 
 Confirm Stars withdrawal.
 
-**Requires:** `seed` + `api_key` + `stel_ton_token`.
+**Requires:** `seed` + `api_key` + `stel_ton_token` (full mode).
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -949,7 +976,7 @@ Confirm Stars withdrawal.
 
 Initialize Ads revenue withdrawal to wallet.
 
-**Requires:** `seed` + `api_key` + `stel_ton_token`.
+**Requires:** `seed` + `api_key` + `stel_ton_token` (full mode).
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -961,7 +988,7 @@ Initialize Ads revenue withdrawal to wallet.
 
 Confirm Ads revenue withdrawal after user approval.
 
-**Requires:** `seed` + `api_key` + `stel_ton_token`.
+**Requires:** `seed` + `api_key` + `stel_ton_token` (full mode).
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -974,7 +1001,7 @@ Confirm Ads revenue withdrawal after user approval.
 
 ### Anonymous Numbers (+888)
 
-All methods require `stel_ton_token`.
+All methods require `stel_ton_token` (full mode).
 
 #### `get_login_code(number) -> LoginCodeResult`
 
@@ -1007,13 +1034,13 @@ Terminate all active Telegram sessions for an anonymous number. Requires a two-s
 
 #### `get_sessions() -> list[SessionInfo]`
 
-Get active Fragment sessions. **Requires:** `stel_ton_token`.
+Get active Fragment sessions. **Requires:** `stel_ton_token` (full mode).
 
 #### `terminate_session(session_id) -> bool`
 
 Terminate a specific Fragment session.
 
-**Requires:** `stel_ton_token`.
+**Requires:** `stel_ton_token` (full mode).
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -1037,7 +1064,7 @@ Re-authenticate and refresh session cookies. Requires seed to be configured. Upd
 
 Send `confirmReq` to Fragment after broadcasting a TON transaction.
 
-**Requires:** `stel_ton_token`.
+**Requires:** `stel_ton_token` (full mode).
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
@@ -1181,7 +1208,7 @@ Returned when an EVM payment method is used.
 
 #### `PreparedTransaction`
 
-Unsigned transaction payload for external signing scenarios.
+Unsigned transaction payload for external signing scenarios (used in EVM-only mode and No-KYC mode).
 
 | Field | Type | Description |
 |---|---|---|
@@ -1581,7 +1608,7 @@ Same structure as `NftWithdrawalConfirmResult`.
 
 ---
 
-### Gateway Models
+### Gateway & Ads Recharge Models
 
 #### `GatewayPriceInfo`
 
@@ -1598,6 +1625,15 @@ Same structure as `NftWithdrawalConfirmResult`.
 | `transaction_id` | `str` | Transaction hash. |
 | `account_id` | `str` | Gateway account identifier. |
 | `credits` | `int` | Credits purchased. |
+| `req_id` | `str \| None` | Request ID for confirmation. |
+
+#### `AdsRechargeResult`
+
+| Field | Type | Description |
+|---|---|---|
+| `transaction_id` | `str` | Transaction hash. |
+| `account_id` | `str` | Ads account identifier. |
+| `amount` | `int` | GRAM amount recharged. |
 | `req_id` | `str \| None` | Request ID for confirmation. |
 
 ---
@@ -1681,6 +1717,16 @@ Same structure as `NftWithdrawalConfirmResult`.
 | `failed` | `int` | Number of items that failed. |
 | `chunks_sent` | `int` | Number of on-chain transaction chunks successfully broadcast. |
 | `items` | `list[BatchItemResult]` | Per-item results. |
+
+#### `NoKycBatchResult`
+
+| Field | Type | Description |
+|---|---|---|
+| `total` | `int` | Total number of items in the batch. |
+| `succeeded` | `int` | Number of items that completed successfully. |
+| `failed` | `int` | Number of items that failed. |
+| `items` | `list[BatchItemResult]` | Per-item results. |
+| `prepared_transactions` | `list[PreparedTransaction]` | Prepared transactions for external signing (if wallet not configured). |
 
 #### `BatchItemResult`
 
@@ -1767,6 +1813,7 @@ FragmentError (base)
 │   │   └── SeqnoError
 │   ├── ParseError
 │   └── VerificationError
+├── MarketAppAPIError (No-KYC mode API errors)
 └── OperationError
     ├── WalletError
     ├── SessionStorageError
@@ -1819,6 +1866,9 @@ Raised when required client parameters are missing or invalid.
 | `SEED_REQUIRED` | Operation requires seed but none configured. |
 | `TON_TOKEN_REQUIRED` | Operation requires `stel_ton_token` cookie. |
 | `API_KEY_REQUIRED` | Operation requires API key but none configured. |
+| `COOKIES_REQUIRED` | Operation requires Fragment cookies. |
+| `NOKYC_UNSUPPORTED_METHOD` | No-KYC mode only supports GRAM/TON payment methods. |
+| `NOKYC_UNSUPPORTED_OPERATION` | Operation not available in No-KYC mode. |
 | `INVALID_PROXY` | Proxy URL format is invalid. |
 
 ---
@@ -1943,6 +1993,18 @@ Transaction was sent but confirmation was not received within the timeout window
 
 ---
 
+#### `MarketAppAPIError`
+
+Raised for errors returned by MarketApp API in No-KYC mode.
+
+| Message Constant | Description |
+|---|---|
+| `API_CALL_FAILED` | MarketApp API call failed. |
+| `RECIPIENT_NOT_FOUND` | Recipient not found via MarketApp API. |
+| `TRANSACTION_BUILD_FAILED` | Failed to build transaction via MarketApp API. |
+
+---
+
 ### Operation Exceptions
 
 #### `WalletError`
@@ -2020,6 +2082,48 @@ Wraps any unexpected internal exception.
 ---
 
 ## Examples
+
+### No-KYC Mode — Purchase Stars
+
+```python
+import asyncio
+from FragmentAPI import FragmentClient
+
+async def main():
+    # No cookies required! Just seed + API key for auto-execution
+    async with FragmentClient(
+        marketapp_token="your_marketapp_token",  # optional, uses default if not provided
+        seed="word1 word2 word3 ... word24",
+        api_key="AF...",
+        wallet_version="V5R1",
+    ) as client:
+        result = await client.purchase_stars("durov", 500)
+        print(f"Sent 500 Stars! TX: {result.transaction_id}")
+
+asyncio.run(main())
+```
+
+### No-KYC Mode — Prepared Transaction
+
+```python
+import asyncio
+from FragmentAPI import FragmentClient
+
+async def main():
+    # No seed + api_key -> returns PreparedTransaction for external signing
+    async with FragmentClient(
+        marketapp_token="your_marketapp_token",
+        # no seed, no api_key
+    ) as client:
+        result = await client.purchase_stars("durov", 500)
+        
+        if isinstance(result, PreparedTransaction):
+            print(f"Prepared transaction for {result.target}:")
+            for msg in result.messages:
+                print(f"  Send {msg.amount} GRAM to {msg.address}")
+
+asyncio.run(main())
+```
 
 ### Full Mode — Purchase Stars
 
@@ -2221,7 +2325,7 @@ asyncio.run(main())
 ## Support & License
 
 **Reporting Issues**
-Create an [Issue](https://github.com/s1qwy/fragment-api-py/issues) or message in the [Telegram chat](https://t.me/fragment_api_py).
+Create an [Issue](https://github.com/s1qwy/fragment-api-py/issues) or message in the [Telegram chat](https://t.me/fragment_api_lib).
 
 **Support the Project**
 
@@ -2231,4 +2335,4 @@ TON Wallet: `UQBsyxZvyQxDwAeOxoaWwO2HJoAmCKUoJlS_OpLzWHD9i2Xj`
 
 ---
 
-[GitHub](https://github.com/s1qwy/fragment-api-py) • [Telegram](https://t.me/fragment_api_py)
+[GitHub](https://github.com/s1qwy/fragment-api-py) • [Telegram](https://t.me/fragment_api_lib)
