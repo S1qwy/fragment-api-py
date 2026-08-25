@@ -9,7 +9,7 @@ description = "Async Python library for Fragment.com API with seqno/balance conf
 readme = "README.md"
 authors = [{name = "S1qwy", email = "S1qwy@internet.ru"}]
 license = {text = "MIT"}
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "curl_cffi>=0.7.4",
     "tonutils>=0.4.0",
@@ -26,7 +26,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -36,4 +35,4 @@ classifiers = [
 ]
 
 [tool.flit.module]
-name = "FragmentAPI" 
+name = "FragmentAPI"
