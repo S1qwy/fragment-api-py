@@ -10,6 +10,10 @@ Operating modes:
   - EVM-only mode: cookies without stel_ton_token. Only EVM payment methods
     and read-only operations work. Wallet operations are disabled.
   - Read-only mode: cookies only, no seed. Only search and info methods work.
+  - No-KYC mode: no cookies, uses MarketApp API. Supports Stars, Premium,
+    Giveaways, Ads topup/recharge, price lookups, and recipient search.
+    If seed + api_key provided, transactions are executed automatically.
+    Otherwise, returns PreparedTransaction for external signing.
 """
 
 from __future__ import annotations
@@ -46,6 +50,7 @@ from FragmentAPI.methods.marketplace import (
     init_ads_withdrawal as _init_ads_withdrawal,
     make_offer as _make_offer,
     recharge_gateway as _recharge_gateway,
+    recharge_ads as _recharge_ads,
     subscribe_to_item as _subscribe_to_item,
     unsubscribe_from_item as _unsubscribe_from_item,
 )
@@ -53,6 +58,7 @@ from FragmentAPI.storage.base import SessionStorage
 from FragmentAPI.types.constants import (
     ADS_HISTORY_PAGE,
     ADS_TOPUP_PAGE,
+    DEFAULT_MARKETAPP_TOKEN,
     DEFAULT_TIMEOUT,
     DEVICE_FINGERPRINT,
     FRAGMENT_BASE_URL,
@@ -62,6 +68,7 @@ from FragmentAPI.types.constants import (
     MY_NUMBERS_PAGE,
     MY_USERNAMES_PAGE,
     NFT_WITHDRAW_PAGE,
+    NOKYC_PAYMENT_METHODS,
     NUMBERS_PAGE,
     PREMIUM_GIFT_PAGE,
     PREMIUM_GIVEAWAY_PAGE,
@@ -80,6 +87,7 @@ from FragmentAPI.types.constants import (
     SUPPORTED_WALLET_VERSIONS,
 )
 from FragmentAPI.types.models import (
+    AdsRechargeResult,
     AdsWithdrawalConfirmResult,
     AdsWithdrawalInitResult,
     AssignAccountsResult,
@@ -100,12 +108,14 @@ from FragmentAPI.types.models import (
     NftTransferRequest,
     NftWithdrawalConfirmResult,
     NftWithdrawalInitResult,
+    NoKycBatchResult,
     NumberInfo,
     NumbersResult,
     OfferResult,
     PremiumPrices,
     PremiumResult,
     PremiumTransaction,
+    PreparedTransaction,
     ProfileInfo,
     PurchaseItem,
     PurchaseResult,
@@ -155,6 +165,18 @@ from FragmentAPI.utils.http import (
     fetch_page_ajax,
     post_fragment_api,
 )
+from FragmentAPI.utils.nokyc import (
+    nokyc_batch_purchase,
+    nokyc_get_premium_prices,
+    nokyc_get_stars_price,
+    nokyc_giveaway_premium,
+    nokyc_giveaway_stars,
+    nokyc_purchase_premium,
+    nokyc_purchase_stars,
+    nokyc_recharge_ads,
+    nokyc_search_recipient,
+    nokyc_topup_gram,
+)
 from FragmentAPI.utils.proxy import build_curl_proxy_args, parse_proxy
 from FragmentAPI.utils.wallet import (
     build_account_info,
@@ -187,9 +209,12 @@ class FragmentClient:
     - Full mode: cookies + seed + api_key. All operations available.
     - EVM-only mode: cookies without stel_ton_token. EVM payments and reads only.
     - Read-only mode: cookies only. Search and info methods only.
+    - No-KYC mode: no cookies. Uses MarketApp API for Stars, Premium,
+      Giveaways, Ads topup/recharge. If seed + api_key are provided,
+      transactions execute automatically. Otherwise returns PreparedTransaction.
 
     Args:
-        cookies: Fragment session cookies (dict, JSON string, or cookie string). Required.
+        cookies: Fragment session cookies (dict, JSON string, or cookie string). Optional.
         seed: 24-word mnemonic phrase for the TON wallet. Optional.
         api_key: API key for TON blockchain interactions (Tonconsole or Toncenter). Optional.
         api_provider: "tonapi" or "toncenter". Default "tonapi".
@@ -199,11 +224,12 @@ class FragmentClient:
         session_storage: SessionStorage backend for cookie persistence. Optional.
         session_id: Identifier for session in storage. Optional.
         auto_refresh_cookies: Enable automatic cookie refresh on expiry. Default False.
+        marketapp_token: Custom MarketApp API key for No-KYC mode. Optional.
     """
 
     def __init__(
         self,
-        cookies: dict | str,
+        cookies: dict | str | None = None,
         seed: str | None = None,
         api_key: str | None = None,
         api_provider: str = "tonapi",
@@ -213,46 +239,12 @@ class FragmentClient:
         session_storage: SessionStorage | None = None,
         session_id: str | None = None,
         auto_refresh_cookies: bool = False,
+        marketapp_token: str | None = None,
     ) -> None:
-        if not cookies:
-            raise ConfigurationError(
-                "Fragment cookies are required. "
-                "Provide cookies=... when creating FragmentClient."
-            )
-
-        parsed_cookies: dict[str, str]
-        if isinstance(cookies, str):
-            cookies_str = cookies.strip()
-            if not cookies_str:
-                raise CookieError("Cookies string is empty.")
-            elif cookies_str.startswith("{"):
-                try:
-                    parsed_cookies = json.loads(cookies_str)
-                except Exception as exc:
-                    raise CookieError(CookieError.READ_FAILED.format(exc=exc)) from exc
-            else:
-                parsed_cookies = {}
-                for item in cookies_str.split(";"):
-                    if "=" in item:
-                        k, v = item.strip().split("=", 1)
-                        parsed_cookies[k] = v
-        else:
-            parsed_cookies = cast(dict, cookies)
-
-        missing_base = [
-            k for k in REQUIRED_COOKIE_KEYS
-            if not str(parsed_cookies.get(k, "")).strip()
-        ]
-        if missing_base:
-            raise CookieError(
-                CookieError.MISSING_KEYS.format(keys=", ".join(missing_base))
-            )
-
-        self.cookies: dict[str, str] = parsed_cookies
+        self.cookies: dict[str, str] | None = None
         self.timeout: float = timeout
-
-        has_ton_token = bool(str(parsed_cookies.get("stel_ton_token", "")).strip())
-        self._has_ton_token: bool = has_ton_token
+        self._has_ton_token: bool = False
+        self._nokyc_mode: bool = False
 
         self.seed: str | None = None
         self.api_key: str | None = None
@@ -262,6 +254,45 @@ class FragmentClient:
         self._session_storage: SessionStorage | None = session_storage
         self._session_id: str | None = session_id
         self._auto_refresh: bool = auto_refresh_cookies
+        self.marketapp_token: str = (
+            marketapp_token.strip() if marketapp_token and marketapp_token.strip()
+            else DEFAULT_MARKETAPP_TOKEN
+        )
+
+        if cookies:
+            parsed_cookies: dict[str, str]
+            if isinstance(cookies, str):
+                cookies_str = cookies.strip()
+                if not cookies_str:
+                    self._nokyc_mode = True
+                elif cookies_str.startswith("{"):
+                    try:
+                        parsed_cookies = json.loads(cookies_str)
+                    except Exception as exc:
+                        raise CookieError(CookieError.READ_FAILED.format(exc=exc)) from exc
+                    self.cookies = parsed_cookies
+                else:
+                    parsed_cookies = {}
+                    for item in cookies_str.split(";"):
+                        if "=" in item:
+                            k, v = item.strip().split("=", 1)
+                            parsed_cookies[k] = v
+                    self.cookies = parsed_cookies
+            else:
+                self.cookies = cast(dict, cookies)
+
+            if self.cookies is not None:
+                missing_base = [
+                    k for k in REQUIRED_COOKIE_KEYS
+                    if not str(self.cookies.get(k, "")).strip()
+                ]
+                if missing_base:
+                    raise CookieError(
+                        CookieError.MISSING_KEYS.format(keys=", ".join(missing_base))
+                    )
+                self._has_ton_token = bool(str(self.cookies.get("stel_ton_token", "")).strip())
+        else:
+            self._nokyc_mode = True
 
         if proxy:
             parse_proxy(proxy)
@@ -300,10 +331,11 @@ class FragmentClient:
 
         logger.info(
             "FragmentClient initialized: wallet_version=%s, api_provider=%s, "
-            "has_seed=%s, has_api_key=%s, has_ton_token=%s, proxy=%s",
+            "has_seed=%s, has_api_key=%s, has_ton_token=%s, nokyc_mode=%s, proxy=%s",
             self.wallet_version, self.api_provider,
             self.seed is not None, self.api_key is not None,
-            self._has_ton_token, "set" if self.proxy else "none",
+            self._has_ton_token, self._nokyc_mode,
+            "set" if self.proxy else "none",
         )
 
     @property
@@ -317,6 +349,16 @@ class FragmentClient:
         return self._has_ton_token
 
     @property
+    def has_cookies(self) -> bool:
+        """Return True if Fragment cookies are configured."""
+        return self.cookies is not None
+
+    @property
+    def nokyc_mode(self) -> bool:
+        """Return True if operating in No-KYC mode (no cookies)."""
+        return self._nokyc_mode
+
+    @property
     def session_storage(self) -> SessionStorage | None:
         """Return the configured session storage backend."""
         return self._session_storage
@@ -324,9 +366,7 @@ class FragmentClient:
     def _require_cookies(self) -> dict:
         """Internal: return cookies or raise if not configured."""
         if self.cookies is None:
-            raise ConfigurationError(
-                "This operation requires Fragment cookies."
-            )
+            raise ConfigurationError(ConfigurationError.COOKIES_REQUIRED)
         return self.cookies
 
     def _require_wallet(self) -> None:
@@ -341,9 +381,16 @@ class FragmentClient:
         if not self._has_ton_token:
             raise ConfigurationError(ConfigurationError.TON_TOKEN_REQUIRED)
 
+    def _require_not_nokyc(self, operation: str) -> None:
+        """Internal: raise if in No-KYC mode for operations that need cookies."""
+        if self._nokyc_mode:
+            raise ConfigurationError(
+                ConfigurationError.NOKYC_UNSUPPORTED_OPERATION.format(operation=operation)
+            )
+
     async def _save_cookies(self) -> None:
         """Persist current cookies to session storage if configured."""
-        if self._session_storage and self._session_id:
+        if self._session_storage and self._session_id and self.cookies:
             try:
                 await self._session_storage.save(self._session_id, self.cookies)
             except Exception as exc:
@@ -370,6 +417,7 @@ class FragmentClient:
 
         self.cookies = new_cookies
         self._has_ton_token = bool(str(new_cookies.get("stel_ton_token", "")).strip())
+        self._nokyc_mode = False
 
         await self._save_cookies()
         logger.info("Cookies refreshed successfully")
@@ -387,23 +435,9 @@ class FragmentClient:
         timeout: float = DEFAULT_TIMEOUT,
         proxy: str | None = None,
         auto_refresh_cookies: bool = False,
+        marketapp_token: str | None = None,
     ) -> "FragmentClient":
-        """Create a FragmentClient from stored session cookies.
-
-        Args:
-            session_storage: Storage backend to load cookies from.
-            session_id: Session identifier in storage.
-            seed: TON wallet mnemonic. Optional.
-            api_key: TON API key. Optional.
-            api_provider: API provider name.
-            wallet_version: Wallet version string.
-            timeout: HTTP timeout.
-            proxy: Proxy URL.
-            auto_refresh_cookies: Enable auto refresh.
-
-        Returns:
-            FragmentClient instance with loaded cookies.
-        """
+        """Create a FragmentClient from stored session cookies."""
         cookies = await session_storage.load(session_id)
         if not cookies:
             if seed:
@@ -425,6 +459,7 @@ class FragmentClient:
             session_storage=session_storage,
             session_id=session_id,
             auto_refresh_cookies=auto_refresh_cookies,
+            marketapp_token=marketapp_token,
         )
 
     async def __aenter__(self) -> "FragmentClient":
@@ -441,6 +476,7 @@ class FragmentClient:
             f"seed={'set' if self.seed else 'none'}, "
             f"api_key={'set' if self.api_key else 'none'}, "
             f"ton_token={self._has_ton_token}, "
+            f"nokyc={self._nokyc_mode}, "
             f"proxy={'set' if self.proxy else 'none'}"
             f")"
         )
@@ -460,8 +496,15 @@ class FragmentClient:
             phone=phone, print_qr=print_qr, on_status=on_status, timeout=timeout,
         )
 
+
     async def get_stars_recipient(self, username: str) -> RecipientInfo | None:
-        """Search for a Stars gift recipient on Fragment."""
+        """Search for a Stars gift recipient on Fragment.
+
+        In No-KYC mode, uses MarketApp API.
+        """
+        if self._nokyc_mode:
+            return await nokyc_search_recipient(self, username, "stars")
+
         try:
             headers = build_headers(STARS_PAGE)
             fragment_hash = await fetch_fragment_hash(
@@ -483,7 +526,13 @@ class FragmentClient:
             raise UnexpectedError(UnexpectedError.UNEXPECTED.format(exc=exc)) from exc
 
     async def get_premium_recipient(self, username: str, months: int = 3) -> RecipientInfo | None:
-        """Search for a Premium gift recipient on Fragment."""
+        """Search for a Premium gift recipient on Fragment.
+
+        In No-KYC mode, uses MarketApp API.
+        """
+        if self._nokyc_mode:
+            return await nokyc_search_recipient(self, username, "premium")
+
         try:
             headers = build_headers(PREMIUM_GIFT_PAGE)
             fragment_hash = await fetch_fragment_hash(
@@ -505,7 +554,13 @@ class FragmentClient:
             raise UnexpectedError(UnexpectedError.UNEXPECTED.format(exc=exc)) from exc
 
     async def get_ads_topup_recipient(self, username: str) -> RecipientInfo | None:
-        """Search for an Ads top-up recipient on Fragment."""
+        """Search for an Ads top-up recipient on Fragment.
+
+        In No-KYC mode, uses MarketApp API.
+        """
+        if self._nokyc_mode:
+            return await nokyc_search_recipient(self, username, "topup_gram")
+
         self._require_ton_token()
         try:
             headers = build_headers(ADS_TOPUP_PAGE)
@@ -530,7 +585,13 @@ class FragmentClient:
     async def get_giveaway_stars_recipient(
         self, channel: str, winners: int = 1, amount: int = 500,
     ) -> RecipientInfo | None:
-        """Search for a Stars giveaway channel recipient on Fragment."""
+        """Search for a Stars giveaway channel recipient on Fragment.
+
+        In No-KYC mode, uses MarketApp API.
+        """
+        if self._nokyc_mode:
+            return await nokyc_search_recipient(self, channel, "stars_giveaway")
+
         try:
             headers = build_headers(STARS_GIVEAWAY_PAGE)
             fragment_hash = await fetch_fragment_hash(
@@ -557,7 +618,13 @@ class FragmentClient:
     async def get_giveaway_premium_recipient(
         self, channel: str, winners: int = 1, months: int = 3,
     ) -> RecipientInfo | None:
-        """Search for a Premium giveaway channel recipient on Fragment."""
+        """Search for a Premium giveaway channel recipient on Fragment.
+
+        In No-KYC mode, uses MarketApp API.
+        """
+        if self._nokyc_mode:
+            return await nokyc_search_recipient(self, channel, "premium_giveaway")
+
         try:
             headers = build_headers(PREMIUM_GIVEAWAY_PAGE)
             fragment_hash = await fetch_fragment_hash(
@@ -581,6 +648,7 @@ class FragmentClient:
         except Exception as exc:
             raise UnexpectedError(UnexpectedError.UNEXPECTED.format(exc=exc)) from exc
 
+
     async def purchase(
         self,
         items_or_type: list[dict[str, Any] | PurchaseItem] | dict[str, Any] | PurchaseItem | str,
@@ -589,8 +657,51 @@ class FragmentClient:
         months: int | None = None,
         show_sender: bool = True,
         payment_method: str = "gram",
-    ) -> PurchaseResult | BatchResult | EvmPaymentResult:
-        """Execute a single purchase or batched purchases."""
+    ) -> PurchaseResult | BatchResult | EvmPaymentResult | PreparedTransaction | NoKycBatchResult:
+        """Execute a single purchase or batched purchases.
+
+        In No-KYC mode, uses MarketApp API. Only GRAM/TON payment methods supported.
+        Returns PreparedTransaction if wallet is not configured.
+        """
+        if self._nokyc_mode:
+            if payment_method not in NOKYC_PAYMENT_METHODS:
+                raise ConfigurationError(
+                    ConfigurationError.NOKYC_UNSUPPORTED_METHOD.format(method=payment_method)
+                )
+
+            if isinstance(items_or_type, list):
+                return await nokyc_batch_purchase(self, items_or_type)
+
+            if isinstance(items_or_type, PurchaseItem):
+                item_type = items_or_type.type
+                uname = items_or_type.username
+                amt = items_or_type.amount
+                mos = items_or_type.months
+                ss = items_or_type.show_sender
+            elif isinstance(items_or_type, dict):
+                item_type = items_or_type.get("type", "")
+                uname = items_or_type.get("username", "")
+                amt = items_or_type.get("amount")
+                mos = items_or_type.get("months")
+                ss = items_or_type.get("show_sender", True)
+            elif isinstance(items_or_type, str):
+                item_type = items_or_type
+                uname = username or ""
+                amt = amount
+                mos = months
+                ss = show_sender
+            else:
+                raise ConfigurationError(f"Unsupported items argument type: {type(items_or_type)}")
+
+            if item_type == "stars":
+                return await nokyc_purchase_stars(self, uname, amt, ss)
+            elif item_type == "premium":
+                return await nokyc_purchase_premium(self, uname, mos, ss)
+            elif item_type in ("gram", "ton"):
+                return await nokyc_topup_gram(self, uname, amt, ss)
+            else:
+                raise ConfigurationError(f"Unsupported purchase type for No-KYC mode: {item_type}")
+
         return await purchase(
             self,
             items_or_type=items_or_type,
@@ -605,99 +716,225 @@ class FragmentClient:
         self,
         items: list[dict[str, Any] | PurchaseItem],
         payment_method: str = "gram",
-    ) -> BatchResult:
-        """Execute multiple purchases as batched TON transactions."""
+    ) -> BatchResult | NoKycBatchResult:
+        """Execute multiple purchases as batched TON transactions.
+
+        In No-KYC mode, each item is processed individually via MarketApp API.
+        """
+        if self._nokyc_mode:
+            if payment_method not in NOKYC_PAYMENT_METHODS:
+                raise ConfigurationError(
+                    ConfigurationError.NOKYC_UNSUPPORTED_METHOD.format(method=payment_method)
+                )
+            return await nokyc_batch_purchase(self, items)
+
         return await batch_purchase(self, items, payment_method)
 
     async def purchase_stars(
         self, username: str, amount: int,
         show_sender: bool = True, payment_method: str = "gram",
-    ) -> PurchaseResult | EvmPaymentResult:
-        """Send Telegram Stars to a user."""
+    ) -> PurchaseResult | EvmPaymentResult | PreparedTransaction:
+        """Send Telegram Stars to a user.
+
+        In No-KYC mode, uses MarketApp API.
+        """
+        if self._nokyc_mode:
+            return await nokyc_purchase_stars(self, username, amount, show_sender)
         return await purchase_stars(self, username, amount, show_sender, payment_method)
 
     async def purchase_premium(
         self, username: str, months: int,
         show_sender: bool = True, payment_method: str = "gram",
-    ) -> PurchaseResult | EvmPaymentResult:
-        """Gift Telegram Premium to a user."""
+    ) -> PurchaseResult | EvmPaymentResult | PreparedTransaction:
+        """Gift Telegram Premium to a user.
+
+        In No-KYC mode, uses MarketApp API.
+        """
+        if self._nokyc_mode:
+            return await nokyc_purchase_premium(self, username, months, show_sender)
         return await purchase_premium(self, username, months, show_sender, payment_method)
 
     async def topup_gram(
         self, username: str, amount: int, show_sender: bool = True,
-    ) -> PurchaseResult:
-        """Top up GRAM to a recipient's Telegram Ads balance."""
+    ) -> PurchaseResult | PreparedTransaction:
+        """Top up GRAM to a recipient's Telegram Ads balance.
+
+        In No-KYC mode, uses MarketApp API.
+        """
+        if self._nokyc_mode:
+            return await nokyc_topup_gram(self, username, amount, show_sender)
         self._require_ton_token()
         return await topup_gram(self, username, amount, show_sender)
 
     async def topup_ton(
         self, username: str, amount: int, show_sender: bool = True,
-    ) -> PurchaseResult:
+    ) -> PurchaseResult | PreparedTransaction:
         """Top up GRAM (formerly TON) to Telegram Ads balance. Alias for topup_gram."""
         return await self.topup_gram(username, amount, show_sender)
 
     async def giveaway_stars(
         self, channel: str, winners: int, amount: int, payment_method: str = "gram",
-    ) -> GiveawayStarsResult | EvmPaymentResult:
-        """Run a Telegram Stars giveaway for a channel."""
+    ) -> GiveawayStarsResult | EvmPaymentResult | PreparedTransaction:
+        """Run a Telegram Stars giveaway for a channel.
+
+        In No-KYC mode, uses MarketApp API.
+        """
+        if self._nokyc_mode:
+            return await nokyc_giveaway_stars(self, channel, winners, amount)
         return await giveaway_stars(self, channel, winners, amount, payment_method)
 
     async def giveaway_premium(
         self, channel: str, winners: int, months: int = 3, payment_method: str = "gram",
-    ) -> GiveawayPremiumResult | EvmPaymentResult:
-        """Run a Telegram Premium giveaway for a channel."""
+    ) -> GiveawayPremiumResult | EvmPaymentResult | PreparedTransaction:
+        """Run a Telegram Premium giveaway for a channel.
+
+        In No-KYC mode, uses MarketApp API.
+        """
+        if self._nokyc_mode:
+            return await nokyc_giveaway_premium(self, channel, winners, months)
         return await giveaway_premium(self, channel, winners, months, payment_method)
+
+
+    async def get_stars_prices(self) -> StarsPrices:
+        """Get all available Telegram Stars package prices.
+
+        Requires cookies (not available in No-KYC mode).
+        """
+        self._require_not_nokyc("get_stars_prices")
+        try:
+            headers = build_headers(STARS_BUY_PAGE)
+            data = await fetch_page_ajax(self.cookies, headers, STARS_BUY_PAGE, self.timeout, proxy=self.proxy)
+            html = data.get("h", "")
+            state = data.get("s", {})
+            packages = parse_stars_packages(html)
+            return StarsPrices(packages=packages, gram_rate=state.get("tonRate", 0.0))
+        except FragmentError:
+            raise
+        except Exception as exc:
+            raise UnexpectedError(UnexpectedError.UNEXPECTED.format(exc=exc)) from exc
+
+    async def get_stars_price(self, quantity: int) -> StarsPrice:
+        """Get price for a specific quantity of Telegram Stars.
+
+        In No-KYC mode, uses MarketApp API.
+        """
+        if self._nokyc_mode:
+            return await nokyc_get_stars_price(self, quantity)
+
+        try:
+            headers = build_headers(STARS_PAGE)
+            fragment_hash = await fetch_fragment_hash(
+                self.cookies, headers, STARS_PAGE, self.timeout, proxy=self.proxy,
+            )
+            proxy_args = build_curl_proxy_args(self.proxy)
+            async with requests.AsyncSession(
+                cookies=self.cookies, timeout=self.timeout, impersonate="chrome120",
+                **proxy_args,
+            ) as session:
+                result = await post_fragment_api(
+                    session, fragment_hash, headers,
+                    {"stars": "0", "quantity": str(quantity), "method": "updateStarsPrices"},
+                )
+            cur_price_html = result.get("cur_price", "")
+            gram_price, usd_price = parse_stars_price_from_html(cur_price_html)
+            return StarsPrice(stars=quantity, gram_price=gram_price or "0", usd_price=usd_price or "0")
+        except FragmentError:
+            raise
+        except Exception as exc:
+            raise UnexpectedError(UnexpectedError.UNEXPECTED.format(exc=exc)) from exc
+
+    async def get_premium_prices(self) -> PremiumPrices:
+        """Get Telegram Premium subscription prices.
+
+        In No-KYC mode, uses MarketApp API.
+        """
+        if self._nokyc_mode:
+            return await nokyc_get_premium_prices(self)
+
+        try:
+            headers = build_headers(PREMIUM_GIFT_PAGE)
+            data = await fetch_page_ajax(self.cookies, headers, PREMIUM_GIFT_PAGE, self.timeout, proxy=self.proxy)
+            html = data.get("h", "")
+            state = data.get("s", {})
+            options = parse_premium_options(html)
+            return PremiumPrices(options=options, gram_rate=state.get("tonRate", 0.0))
+        except FragmentError:
+            raise
+        except Exception as exc:
+            raise UnexpectedError(UnexpectedError.UNEXPECTED.format(exc=exc)) from exc
+
 
     async def place_bid(self, item_type: int, slug: str, bid: int) -> BidResult:
         """Place a bid or buy-now on a Fragment marketplace item."""
+        self._require_not_nokyc("place_bid")
         self._require_ton_token()
         return await place_bid(self, item_type, slug, bid)
 
     async def make_offer(self, item_type: int, slug: str, amount: int) -> OfferResult:
         """Make an offer to buy an unlisted username, number, or gift."""
+        self._require_not_nokyc("make_offer")
         self._require_ton_token()
         return await _make_offer(self, item_type, slug, amount)
 
     async def cancel_auction(self, item_type: int, slug: str) -> TransactionResult:
         """Cancel an active auction (if no bids were placed)."""
+        self._require_not_nokyc("cancel_auction")
         self._require_ton_token()
         return await _cancel_auction(self, item_type, slug)
 
     async def subscribe_to_item(self, item_type: int, slug: str) -> SubscriptionResult:
         """Subscribe to auction update notifications for an item."""
+        self._require_not_nokyc("subscribe_to_item")
         return await _subscribe_to_item(self, item_type, slug)
 
     async def unsubscribe_from_item(self, item_type: int, slug: str) -> SubscriptionResult:
         """Unsubscribe from auction update notifications for an item."""
+        self._require_not_nokyc("unsubscribe_from_item")
         return await _unsubscribe_from_item(self, item_type, slug)
 
     async def init_ads_withdrawal(self, transaction_id: str) -> AdsWithdrawalInitResult:
         """Initialize Ads revenue withdrawal to wallet."""
+        self._require_not_nokyc("init_ads_withdrawal")
         return await _init_ads_withdrawal(self, transaction_id)
 
     async def confirm_ads_withdrawal(self, transaction_id: str, confirm_hash: str) -> AdsWithdrawalConfirmResult:
         """Confirm Ads revenue withdrawal after user approval."""
+        self._require_not_nokyc("confirm_ads_withdrawal")
         return await _confirm_ads_withdrawal(self, transaction_id, confirm_hash)
 
     async def get_gateway_price(self, account_id: str, credits: int) -> GatewayPriceInfo:
         """Get price info for Telegram Gateway credits."""
+        self._require_not_nokyc("get_gateway_price")
         return await _get_gateway_price(self, account_id, credits)
 
     async def recharge_gateway(self, account_id: str, credits: int) -> GatewayRechargeResult:
         """Recharge Telegram Gateway credits via TON payment."""
+        self._require_not_nokyc("recharge_gateway")
         return await _recharge_gateway(self, account_id, credits)
+
+    async def recharge_ads(self, account_id: str, amount: int) -> AdsRechargeResult | PreparedTransaction:
+        """Recharge Telegram Ads account via TON payment.
+
+        In No-KYC mode, uses MarketApp API.
+        """
+        if self._nokyc_mode:
+            return await nokyc_recharge_ads(self, account_id, amount)
+        return await _recharge_ads(self, account_id, amount)
 
     async def get_wallet(self) -> WalletInfo:
         """Return address, state, GRAM and USDT balance of the wallet."""
         self._require_wallet()
-        self._require_ton_token()
+        if not self._nokyc_mode:
+            self._require_ton_token()
         return await fetch_wallet_info(self)
+
 
     async def search_usernames(
         self, query: str = "", sort: str | None = None,
         filter: str | None = None, offset_id: str | None = None,
     ) -> UsernamesResult:
         """Search Fragment marketplace for Telegram usernames."""
+        self._require_not_nokyc("search_usernames")
         return await search_usernames(self, query, sort=sort, filter=filter, offset_id=offset_id)
 
     async def search_numbers(
@@ -705,6 +942,7 @@ class FragmentClient:
         filter: str | None = None, offset_id: str | None = None,
     ) -> NumbersResult:
         """Search Fragment marketplace for anonymous Telegram numbers."""
+        self._require_not_nokyc("search_numbers")
         return await search_numbers(self, query, sort=sort, filter=filter, offset_id=offset_id)
 
     async def search_gifts(
@@ -714,13 +952,16 @@ class FragmentClient:
         offset: int | None = None,
     ) -> GiftsResult:
         """Search Fragment gifts marketplace."""
+        self._require_not_nokyc("search_gifts")
         return await search_gifts(
             self, query, collection=collection, sort=sort,
             filter=filter, view=view, attr=attr, offset=offset,
         )
 
+
     async def get_username_info(self, username: str) -> UsernameInfo:
         """Get detailed information about a Fragment username."""
+        self._require_not_nokyc("get_username_info")
         try:
             url = f"{FRAGMENT_BASE_URL}/username/{username.lstrip('@')}"
             headers = build_headers(url)
@@ -759,6 +1000,7 @@ class FragmentClient:
 
     async def get_number_info(self, number: str) -> NumberInfo:
         """Get detailed information about a Fragment number."""
+        self._require_not_nokyc("get_number_info")
         try:
             clean = number.replace("+", "").replace(" ", "").replace("-", "")
             url = f"{FRAGMENT_BASE_URL}/number/{clean}"
@@ -800,6 +1042,7 @@ class FragmentClient:
 
     async def get_gift_info(self, slug: str) -> GiftInfo:
         """Get detailed information about a Fragment gift."""
+        self._require_not_nokyc("get_gift_info")
         try:
             url = f"{FRAGMENT_BASE_URL}/gift/{slug}"
             headers = build_headers(url)
@@ -845,60 +1088,10 @@ class FragmentClient:
         except Exception as exc:
             raise UnexpectedError(UnexpectedError.UNEXPECTED.format(exc=exc)) from exc
 
-    async def get_stars_prices(self) -> StarsPrices:
-        """Get all available Telegram Stars package prices."""
-        try:
-            headers = build_headers(STARS_BUY_PAGE)
-            data = await fetch_page_ajax(self.cookies, headers, STARS_BUY_PAGE, self.timeout, proxy=self.proxy)
-            html = data.get("h", "")
-            state = data.get("s", {})
-            packages = parse_stars_packages(html)
-            return StarsPrices(packages=packages, gram_rate=state.get("tonRate", 0.0))
-        except FragmentError:
-            raise
-        except Exception as exc:
-            raise UnexpectedError(UnexpectedError.UNEXPECTED.format(exc=exc)) from exc
-
-    async def get_stars_price(self, quantity: int) -> StarsPrice:
-        """Get price for a specific quantity of Telegram Stars."""
-        try:
-            headers = build_headers(STARS_PAGE)
-            fragment_hash = await fetch_fragment_hash(
-                self.cookies, headers, STARS_PAGE, self.timeout, proxy=self.proxy,
-            )
-            proxy_args = build_curl_proxy_args(self.proxy)
-            async with requests.AsyncSession(
-                cookies=self.cookies, timeout=self.timeout, impersonate="chrome120",
-                **proxy_args,
-            ) as session:
-                result = await post_fragment_api(
-                    session, fragment_hash, headers,
-                    {"stars": "0", "quantity": str(quantity), "method": "updateStarsPrices"},
-                )
-            cur_price_html = result.get("cur_price", "")
-            gram_price, usd_price = parse_stars_price_from_html(cur_price_html)
-            return StarsPrice(stars=quantity, gram_price=gram_price or "0", usd_price=usd_price or "0")
-        except FragmentError:
-            raise
-        except Exception as exc:
-            raise UnexpectedError(UnexpectedError.UNEXPECTED.format(exc=exc)) from exc
-
-    async def get_premium_prices(self) -> PremiumPrices:
-        """Get Telegram Premium subscription prices."""
-        try:
-            headers = build_headers(PREMIUM_GIFT_PAGE)
-            data = await fetch_page_ajax(self.cookies, headers, PREMIUM_GIFT_PAGE, self.timeout, proxy=self.proxy)
-            html = data.get("h", "")
-            state = data.get("s", {})
-            options = parse_premium_options(html)
-            return PremiumPrices(options=options, gram_rate=state.get("tonRate", 0.0))
-        except FragmentError:
-            raise
-        except Exception as exc:
-            raise UnexpectedError(UnexpectedError.UNEXPECTED.format(exc=exc)) from exc
 
     async def get_stars_history(self, sort: str = "desc") -> list[StarsTransaction]:
         """Get Telegram Stars transaction history."""
+        self._require_not_nokyc("get_stars_history")
         self._require_ton_token()
         try:
             url = f"{STARS_HISTORY_PAGE}?sort={sort}"
@@ -912,6 +1105,7 @@ class FragmentClient:
 
     async def get_premium_history(self, sort: str = "desc") -> list[PremiumTransaction]:
         """Get Telegram Premium transaction history."""
+        self._require_not_nokyc("get_premium_history")
         self._require_ton_token()
         try:
             url = f"{PREMIUM_HISTORY_PAGE}?sort={sort}"
@@ -925,6 +1119,7 @@ class FragmentClient:
 
     async def get_topup_history(self, sort: str = "asc") -> list[TopupTransaction]:
         """Get Telegram Ads topup transaction history."""
+        self._require_not_nokyc("get_topup_history")
         self._require_ton_token()
         try:
             url = f"{ADS_HISTORY_PAGE}?type=topup&sort={sort}"
@@ -936,8 +1131,10 @@ class FragmentClient:
         except Exception as exc:
             raise UnexpectedError(UnexpectedError.UNEXPECTED.format(exc=exc)) from exc
 
+
     async def get_profile(self) -> ProfileInfo:
         """Get Fragment account profile information."""
+        self._require_not_nokyc("get_profile")
         self._require_ton_token()
         try:
             headers = build_headers(PROFILE_PAGE)
@@ -952,6 +1149,7 @@ class FragmentClient:
 
     async def get_my_bids(self, item_type: str = "usernames", sort: str = "desc") -> MyBidsResult:
         """Get My Bid History from Fragment."""
+        self._require_not_nokyc("get_my_bids")
         self._require_ton_token()
         try:
             if item_type not in ("usernames", "numbers", "gifts"):
@@ -975,6 +1173,7 @@ class FragmentClient:
 
     async def get_my_assets(self, item_type: str = "usernames") -> MyAssetsResult:
         """Get My Assets from Fragment."""
+        self._require_not_nokyc("get_my_assets")
         self._require_ton_token()
         try:
             page_map = {"usernames": MY_USERNAMES_PAGE, "numbers": MY_NUMBERS_PAGE, "gifts": MY_GIFTS_PAGE}
@@ -994,6 +1193,7 @@ class FragmentClient:
 
     async def get_assign_accounts(self, item_type: int, slug: str) -> AssignAccountsResult:
         """Get list of Telegram accounts available for assignment."""
+        self._require_not_nokyc("get_assign_accounts")
         self._require_ton_token()
         try:
             url = MY_USERNAMES_PAGE if item_type == 1 else MY_GIFTS_PAGE
@@ -1010,12 +1210,8 @@ class FragmentClient:
         self, item_type: int, slug: str, assign_to: str | None = None,
         wait_for_bot_payment: bool = True,
     ) -> AssignResult:
-        """Assign a username or gift to a Telegram account.
-
-        If the target is a bot, Fragment requires a payment. When
-        wait_for_bot_payment is True and a wallet is configured,
-        the payment is executed automatically.
-        """
+        """Assign a username or gift to a Telegram account."""
+        self._require_not_nokyc("assign_to_telegram")
         self._require_ton_token()
         try:
             url = f"{FRAGMENT_BASE_URL}/" + (
@@ -1082,6 +1278,7 @@ class FragmentClient:
         self, item_type: int, slug: str, min_amount: int, max_amount: int = 0,
     ) -> StartAuctionResult:
         """Start an auction for a username or gift."""
+        self._require_not_nokyc("start_auction")
         self._require_ton_token()
         self._require_wallet()
         try:
@@ -1135,8 +1332,10 @@ class FragmentClient:
         """Sell a username or gift at a fixed price."""
         return await self.start_auction(item_type, slug, price, price)
 
+
     async def search_nft_transfer_recipient(self, query: str) -> NftTransferRecipient | None:
         """Search for a recipient to transfer NFT."""
+        self._require_not_nokyc("search_nft_transfer_recipient")
         self._require_ton_token()
         try:
             headers = build_headers(FRAGMENT_BASE_URL)
@@ -1169,6 +1368,7 @@ class FragmentClient:
 
     async def init_nft_transfer(self, slug: str, recipient: str) -> NftTransferRequest:
         """Initialize NFT transfer request."""
+        self._require_not_nokyc("init_nft_transfer")
         self._require_ton_token()
         try:
             url = f"{FRAGMENT_BASE_URL}/gift/{slug}/transfer"
@@ -1199,6 +1399,7 @@ class FragmentClient:
 
     async def transfer_nft(self, req_id: str, show_sender: bool = True) -> TransactionResult:
         """Execute NFT transfer."""
+        self._require_not_nokyc("transfer_nft")
         self._require_ton_token()
         self._require_wallet()
         try:
@@ -1223,8 +1424,10 @@ class FragmentClient:
         except Exception as exc:
             raise UnexpectedError(UnexpectedError.UNEXPECTED.format(exc=exc)) from exc
 
+
     async def get_sessions(self) -> list[SessionInfo]:
         """Get active Fragment sessions."""
+        self._require_not_nokyc("get_sessions")
         self._require_ton_token()
         try:
             headers = build_headers(SESSIONS_PAGE)
@@ -1237,6 +1440,7 @@ class FragmentClient:
 
     async def terminate_session(self, session_id: str) -> bool:
         """Terminate a Fragment session by ID."""
+        self._require_not_nokyc("terminate_session")
         self._require_ton_token()
         try:
             headers = build_headers(SESSIONS_PAGE)
@@ -1258,10 +1462,12 @@ class FragmentClient:
         except Exception as exc:
             raise UnexpectedError(UnexpectedError.UNEXPECTED.format(exc=exc)) from exc
 
+
     async def get_orders_history(
         self, item_type: int, username: str, offset_id: str,
     ) -> dict[str, Any]:
         """Load more bid/orders history for an item."""
+        self._require_not_nokyc("get_orders_history")
         try:
             if item_type == 1:
                 url = f"{FRAGMENT_BASE_URL}/username/{username}"
@@ -1294,6 +1500,7 @@ class FragmentClient:
         self, item_type: int, username: str, offset_id: str,
     ) -> dict[str, Any]:
         """Load more ownership history for an item."""
+        self._require_not_nokyc("get_owners_history")
         try:
             if item_type == 1:
                 url = f"{FRAGMENT_BASE_URL}/username/{username}"
@@ -1326,6 +1533,7 @@ class FragmentClient:
         self, item_type: int, username: str, offset_id: str,
     ) -> dict[str, Any]:
         """Load more offer history for an item."""
+        self._require_not_nokyc("get_offers_history")
         try:
             if item_type == 1:
                 url = f"{FRAGMENT_BASE_URL}/username/{username}"
@@ -1354,26 +1562,32 @@ class FragmentClient:
         except Exception as exc:
             raise UnexpectedError(UnexpectedError.UNEXPECTED.format(exc=exc)) from exc
 
+
     async def get_login_code(self, number: str) -> LoginCodeResult:
         """Fetch the current pending login code for an anonymous number."""
+        self._require_not_nokyc("get_login_code")
         self._require_ton_token()
         from FragmentAPI.methods.anonymous_number import get_login_code
         return await get_login_code(self, number)
 
     async def toggle_login_codes(self, number: str, can_receive: bool) -> None:
         """Enable or disable login code delivery for an anonymous number."""
+        self._require_not_nokyc("toggle_login_codes")
         self._require_ton_token()
         from FragmentAPI.methods.anonymous_number import toggle_login_codes
         return await toggle_login_codes(self, number, can_receive)
 
     async def terminate_sessions(self, number: str) -> TerminateSessionsResult:
         """Terminate all active Telegram sessions for an anonymous number."""
+        self._require_not_nokyc("terminate_sessions")
         self._require_ton_token()
         from FragmentAPI.methods.anonymous_number import terminate_sessions
         return await terminate_sessions(self, number)
 
+
     async def get_nft_withdrawal_state(self, transaction: str) -> dict[str, Any]:
         """Get NFT withdrawal state from Fragment page."""
+        self._require_not_nokyc("get_nft_withdrawal_state")
         self._require_ton_token()
         try:
             page_url = f"{NFT_WITHDRAW_PAGE}?transaction={transaction}"
@@ -1393,6 +1607,7 @@ class FragmentClient:
         self, transaction: str, keep_gift: bool = False,
     ) -> NftWithdrawalInitResult:
         """Initialize NFT withdrawal to wallet."""
+        self._require_not_nokyc("init_nft_withdrawal")
         self._require_ton_token()
         self._require_wallet()
         try:
@@ -1422,6 +1637,7 @@ class FragmentClient:
         self, transaction: str, confirm_hash: str, keep_gift: bool = False,
     ) -> NftWithdrawalConfirmResult:
         """Confirm NFT withdrawal after user approval."""
+        self._require_not_nokyc("confirm_nft_withdrawal")
         self._require_ton_token()
         self._require_wallet()
         try:
@@ -1451,6 +1667,7 @@ class FragmentClient:
 
     async def get_stars_withdrawal_state(self, transaction: str) -> StarsWithdrawalState:
         """Get Stars withdrawal state from Fragment page."""
+        self._require_not_nokyc("get_stars_withdrawal_state")
         self._require_ton_token()
         try:
             page_url = f"{STARS_WITHDRAW_PAGE}?transaction={transaction}"
@@ -1477,6 +1694,7 @@ class FragmentClient:
         self, transaction: str, withdrawal_data: str,
     ) -> StarsWithdrawalInitResult:
         """Initialize Stars withdrawal to wallet."""
+        self._require_not_nokyc("init_stars_withdrawal")
         self._require_ton_token()
         self._require_wallet()
         try:
@@ -1506,6 +1724,7 @@ class FragmentClient:
         self, transaction: str, withdrawal_data: str, confirm_hash: str,
     ) -> StarsWithdrawalConfirmResult:
         """Confirm Stars withdrawal after user approval."""
+        self._require_not_nokyc("confirm_stars_withdrawal")
         self._require_ton_token()
         self._require_wallet()
         try:
@@ -1533,10 +1752,12 @@ class FragmentClient:
         except Exception as exc:
             raise UnexpectedError(UnexpectedError.UNEXPECTED.format(exc=exc)) from exc
 
+
     async def confirm_request(
         self, req_id: str, boc: str, referer: str = "stars/buy",
     ) -> dict[str, Any]:
         """Send confirmReq to Fragment after broadcasting a TON transaction."""
+        self._require_not_nokyc("confirm_request")
         self._require_ton_token()
         try:
             page_url = f"{FRAGMENT_BASE_URL}/{referer}"
@@ -1563,6 +1784,7 @@ class FragmentClient:
         *, page_url: str = FRAGMENT_BASE_URL,
     ) -> dict[str, Any]:
         """Send a raw request to the Fragment API."""
+        self._require_not_nokyc("call")
         headers = build_headers(page_url)
         proxy_args = build_curl_proxy_args(self.proxy)
         async with requests.AsyncSession(
