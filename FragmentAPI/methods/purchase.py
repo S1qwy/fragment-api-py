@@ -110,11 +110,9 @@ _TYPE_EVM_PATH: dict[str, str] = {
 
 
 def _normalize_payment_method(method: str) -> str:
-    """Normalize payment method alias: gram <-> ton."""
+    """Normalize payment method alias: gram -> ton."""
     if method == "gram":
         return "ton"
-    if method == "usdt_gram":
-        return "usdt_ton"
     return method
 
 
