@@ -26,6 +26,7 @@ from FragmentAPI.types.models import (
     AdsWithdrawalInitResult,
     GatewayPriceInfo,
     GatewayRechargeResult,
+    AdsRechargeResult,
     OfferResult,
     SubscriptionResult,
     TransactionResult,
@@ -53,17 +54,7 @@ async def make_offer(
     slug: str,
     amount: int,
 ) -> OfferResult:
-    """Make an offer to buy an unlisted username, number, or gift.
-
-    Args:
-        client: Authenticated FragmentClient instance.
-        item_type: 1 (username), 3 (number), 5 (gift).
-        slug: Item identifier on Fragment.
-        amount: Offer amount in GRAM (integer).
-
-    Returns:
-        OfferResult with transaction details.
-    """
+    """Make an offer to buy an unlisted username, number, or gift."""
     if item_type not in VALID_ITEM_TYPES:
         raise ConfigurationError(ConfigurationError.INVALID_ITEM_TYPE.format(item_type=item_type))
     if not isinstance(amount, int) or amount < 1:
@@ -121,16 +112,7 @@ async def cancel_auction(
     item_type: int,
     slug: str,
 ) -> TransactionResult:
-    """Cancel an active auction if no bids have been placed.
-
-    Args:
-        client: Authenticated FragmentClient instance.
-        item_type: 1 (username), 3 (number), 5 (gift).
-        slug: Item identifier on Fragment.
-
-    Returns:
-        TransactionResult with transaction details.
-    """
+    """Cancel an active auction if no bids have been placed."""
     if item_type not in VALID_ITEM_TYPES:
         raise ConfigurationError(ConfigurationError.INVALID_ITEM_TYPE.format(item_type=item_type))
 
@@ -167,16 +149,7 @@ async def subscribe_to_item(
     item_type: int,
     slug: str,
 ) -> SubscriptionResult:
-    """Subscribe to auction updates for an item (Telegram notifications).
-
-    Args:
-        client: Authenticated FragmentClient instance.
-        item_type: 1 (username), 3 (number), 5 (gift).
-        slug: Item identifier on Fragment.
-
-    Returns:
-        SubscriptionResult.
-    """
+    """Subscribe to auction updates for an item (Telegram notifications)."""
     if item_type not in VALID_ITEM_TYPES:
         raise ConfigurationError(ConfigurationError.INVALID_ITEM_TYPE.format(item_type=item_type))
 
@@ -202,16 +175,7 @@ async def unsubscribe_from_item(
     item_type: int,
     slug: str,
 ) -> SubscriptionResult:
-    """Unsubscribe from auction updates for an item.
-
-    Args:
-        client: Authenticated FragmentClient instance.
-        item_type: 1 (username), 3 (number), 5 (gift).
-        slug: Item identifier on Fragment.
-
-    Returns:
-        SubscriptionResult.
-    """
+    """Unsubscribe from auction updates for an item."""
     if item_type not in VALID_ITEM_TYPES:
         raise ConfigurationError(ConfigurationError.INVALID_ITEM_TYPE.format(item_type=item_type))
 
@@ -236,15 +200,7 @@ async def init_ads_withdrawal(
     client: "FragmentClient",
     transaction_id: str,
 ) -> AdsWithdrawalInitResult:
-    """Initialize Ads revenue withdrawal to wallet.
-
-    Args:
-        client: Authenticated FragmentClient instance.
-        transaction_id: Fragment internal transaction identifier.
-
-    Returns:
-        AdsWithdrawalInitResult with confirm_hash if confirmation is needed.
-    """
+    """Initialize Ads revenue withdrawal to wallet."""
     client._require_ton_token()
     client._require_wallet()
 
@@ -278,16 +234,7 @@ async def confirm_ads_withdrawal(
     transaction_id: str,
     confirm_hash: str,
 ) -> AdsWithdrawalConfirmResult:
-    """Confirm Ads revenue withdrawal after user approval.
-
-    Args:
-        client: Authenticated FragmentClient instance.
-        transaction_id: Fragment internal transaction identifier.
-        confirm_hash: Hash from init_ads_withdrawal response.
-
-    Returns:
-        AdsWithdrawalConfirmResult with completion status.
-    """
+    """Confirm Ads revenue withdrawal after user approval."""
     client._require_ton_token()
     client._require_wallet()
 
@@ -322,16 +269,7 @@ async def get_gateway_price(
     account_id: str,
     credits: int,
 ) -> GatewayPriceInfo:
-    """Get price info for Telegram Gateway credits.
-
-    Args:
-        client: Authenticated FragmentClient instance.
-        account_id: Gateway account identifier.
-        credits: Number of credits to purchase.
-
-    Returns:
-        GatewayPriceInfo with pricing details.
-    """
+    """Get price info for Telegram Gateway credits."""
     try:
         result = await client.call(
             "updateGatewayPrices",
@@ -355,16 +293,7 @@ async def recharge_gateway(
     account_id: str,
     credits: int,
 ) -> GatewayRechargeResult:
-    """Recharge Telegram Gateway credits via TON payment.
-
-    Args:
-        client: Authenticated FragmentClient instance.
-        account_id: Gateway account identifier.
-        credits: Number of credits to purchase.
-
-    Returns:
-        GatewayRechargeResult with transaction details.
-    """
+    """Recharge Telegram Gateway credits via TON payment."""
     if not isinstance(credits, int) or credits < 1:
         raise ConfigurationError(ConfigurationError.INVALID_CREDITS_AMOUNT)
 
@@ -408,6 +337,67 @@ async def recharge_gateway(
             transaction_id=tx_result.tx_hash,
             account_id=account_id,
             credits=credits,
+            req_id=req_id,
+        )
+
+    except FragmentError:
+        raise
+    except Exception as exc:
+        raise UnexpectedError(UnexpectedError.UNEXPECTED.format(exc=exc)) from exc
+
+
+async def recharge_ads(
+    client: "FragmentClient",
+    account_id: str,
+    amount: int,
+) -> AdsRechargeResult:
+    """Recharge Telegram Ads account via TON payment."""
+    if not isinstance(amount, int) or amount < 1:
+        raise ConfigurationError(ConfigurationError.INVALID_GRAM_AMOUNT)
+
+    client._require_wallet()
+
+    try:
+        page_url = f"{FRAGMENT_BASE_URL}/ads/pay"
+
+        init_res = await client.call(
+            "initAdsRechargeRequest",
+            {"account": account_id, "amount": str(amount)},
+            page_url=page_url,
+        )
+        if init_res.get("error"):
+            raise FragmentAPIError(init_res["error"])
+
+        req_id = init_res.get("req_id")
+        if not req_id:
+            raise FragmentAPIError(FragmentAPIError.NO_REQUEST_ID.format(context="Ads recharge"))
+
+        account = await build_account_info(client)
+        transaction = await client.call(
+            "getAdsRechargeLink",
+            {
+                "account": json.dumps(account),
+                "device": DEVICE_FINGERPRINT,
+                "transaction": "1",
+                "id": req_id,
+            },
+            page_url=page_url,
+        )
+        if transaction.get("error"):
+            raise FragmentAPIError(str(transaction["error"]))
+
+        tx_result = await execute_transaction(client, transaction)
+
+        if tx_result.boc and req_id:
+            try:
+                await client.confirm_request(req_id, tx_result.boc, referer="ads")
+            except Exception:
+                pass
+
+        return AdsRechargeResult(
+            transaction_id=tx_result.tx_hash,
+            account_id=account_id,
+            amount=amount,
             req_id=req_id,
         )
 
