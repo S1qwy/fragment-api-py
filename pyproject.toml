@@ -34,5 +34,30 @@ classifiers = [
     "Framework :: AsyncIO",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "python-semantic-release>=9.0.0",
+]
+
 [tool.flit.module]
 name = "FragmentAPI"
+
+[tool.semantic_release]
+version_variable = "pyproject.toml:project.version"
+upload_to_pypi = true
+upload_to_release = true
+build_command = "python -m build"
+dist_dir = "dist/"
+commit_subject = "chore(release): bump version {version}"
+tag_format = "v{version}"
+branches = ["master", "main"]
+changelog_file = "CHANGELOG.md"
+changelog_components = [
+    {component = "feat", description = "Новые возможности", type = "feature"},
+    {component = "fix", description = "Исправления багов", type = "fix"},
+    {component = "docs", description = "Документация", type = "docs"},
+    {component = "refactor", description = "Рефакторинг", type = "refactor"},
+    {component = "perf", description = "Оптимизация производительности", type = "performance"},
+    {component = "ci", description = "CI/CD", type = "ci"},
+    {component = "test", description = "Тесты", type = "test"},
+]
