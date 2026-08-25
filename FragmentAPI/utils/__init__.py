@@ -13,6 +13,18 @@ from FragmentAPI.utils.http import (
     fetch_fragment_hash,
     post_fragment_api,
 )
+from FragmentAPI.utils.nokyc import (
+    nokyc_batch_purchase,
+    nokyc_get_premium_prices,
+    nokyc_get_stars_price,
+    nokyc_giveaway_premium,
+    nokyc_giveaway_stars,
+    nokyc_purchase_premium,
+    nokyc_purchase_stars,
+    nokyc_recharge_ads,
+    nokyc_search_recipient,
+    nokyc_topup_gram,
+)
 from FragmentAPI.utils.proxy import build_curl_proxy_args, parse_proxy
 from FragmentAPI.utils.retry import with_retry
 from FragmentAPI.utils.wallet import (
@@ -32,6 +44,16 @@ __all__ = [
     "fetch_evm_invoice",
     "fetch_fragment_hash",
     "fetch_wallet_info",
+    "nokyc_batch_purchase",
+    "nokyc_get_premium_prices",
+    "nokyc_get_stars_price",
+    "nokyc_giveaway_premium",
+    "nokyc_giveaway_stars",
+    "nokyc_purchase_premium",
+    "nokyc_purchase_stars",
+    "nokyc_recharge_ads",
+    "nokyc_search_recipient",
+    "nokyc_topup_gram",
     "parse_auction_rows",
     "parse_gift_items",
     "parse_proxy",
