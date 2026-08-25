@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Async Python library for Fragment.com automation</strong><br>
-  <strong>v11.0.0 — Pydantic V2 | Selectolax Parser | Session Storage | Full Marketplace</strong>
+  <strong>v12.0.0 — No-KYC Mode | Pydantic V2 | Selectolax Parser | Session Storage | Full Marketplace</strong>
 </p>
 
 <p align="center">
@@ -19,29 +19,28 @@
 
 ---
 
-## What's New in v11.0.0
+## What's New in v12.0.0
 
 | Feature | Description |
 |---------|-------------|
-| **Pydantic V2** | Complete migration from dataclasses to Pydantic V2 models with full type validation. |
-| **Selectolax Parser** | Replaced fragile regex parsing with fast CSS-selector based Selectolax (Lexbor backend). |
-| **Session Storage** | Built-in cookie persistence with `FileSessionStorage` and `RedisSessionStorage` backends. |
-| **Gateway API** | Full support for Telegram Gateway credit purchases and price queries. |
-| **Offers** | Make offers on unlisted usernames, numbers, and gifts. |
-| **Cancel Auction** | Cancel active auctions with no bids. |
-| **Subscribe/Unsubscribe** | Get Telegram notifications for auction updates. |
-| **Ads Withdrawal** | Withdraw Ads revenue to your wallet. |
+| **No-KYC Mode** | Full MarketApp API integration for purchases, giveaways, and price lookups without requiring KYC verification. |
+| **MarketApp API** | Buy Stars, Premium, and run giveaways through MarketApp with `marketapp_token` authentication. |
+| **Cookies Optional** | `cookies` parameter is now optional when using No-KYC mode with MarketApp API. |
+| **Unified USDT on TON** | Consolidated `usdt_gram` and `usdt_ton` into single `usdt_ton` payment method. |
+| **Batch No-KYC** | Batch purchase operations supported in No-KYC mode with `NoKycBatchResult` model. |
+| **MarketApp Defaults** | Default constants and master addresses added for MarketApp integration. |
 
 ---
 
 ## Features
 
 - **Async-first** — Full async/await support with `FragmentClient`.
+- **Two Modes** — KYC-required mode with cookies + wallet, or No-KYC mode via MarketApp API.
 - **Pydantic Models** — All API responses return strongly-typed Pydantic models.
 - **Selectolax Parsing** — Robust CSS-selector based HTML parsing.
 - **Session Storage** — Persist cookies in files or Redis.
 - **Purchases** — Stars (50–10M), Premium (3/6/12 months), GRAM Ads top-up.
-- **Batch Operations** — Multiple purchases in grouped on-chain transactions.
+- **Batch Operations** — Multiple purchases in grouped on-chain transactions or via MarketApp.
 - **EVM Payments** — USDT/USDC on Ethereum, Polygon, and BASE chains.
 - **Giveaways** — Stars and Premium giveaways for channels (up to 24K winners).
 - **Marketplace** — Search/bid on usernames, numbers, and gifts.
@@ -63,15 +62,16 @@ pip install fragment-api-py
 
 **Requirements:**
 - Python 3.10+
-- Fragment cookies (`stel_ssid`, `stel_dt`, `stel_token`; `stel_ton_token` for wallet ops)
-- TON wallet seed phrase (12/18/24 words)
-- Tonconsole or Toncenter API key
+- **For KYC mode:** Fragment cookies (`stel_ssid`, `stel_dt`, `stel_token`; `stel_ton_token` for wallet ops) + TON wallet seed phrase (12/18/24 words) + Tonconsole or Toncenter API key
+- **For No-KYC mode:** MarketApp API token + TON wallet seed phrase (12/18/24 words) + Tonconsole or Toncenter API key
 
 Get a free API key at [tonconsole.com](https://tonconsole.com/).
 
 ---
 
 ## Quick Start
+
+### KYC Mode (with Fragment.com cookies)
 
 ```python
 import asyncio
@@ -111,6 +111,40 @@ async def main():
         if isinstance(evm, EvmPaymentResult):
             inv = evm.invoice
             print(f"Send {inv.invoice_amount} {inv.token_symbol} to {inv.invoice_address}")
+
+asyncio.run(main())
+```
+
+### No-KYC Mode (via MarketApp API)
+
+```python
+import asyncio
+from FragmentAPI import FragmentClient
+
+async def main():
+    async with FragmentClient(
+        marketapp_token="your_marketapp_token",
+        seed="word1 word2 ... word24",
+        api_key="AF...",
+        wallet_version="V5R1",
+    ) as client:
+        
+        # Purchase Stars without KYC
+        result = await client.purchase_stars("durov", 100)
+        print(f"Purchase: {result}")
+        
+        # Purchase Premium without KYC
+        result = await client.purchase_premium("durov", 3)
+        print(f"Purchase: {result}")
+        
+        # Run a giveaway without KYC
+        result = await client.giveaway_stars(
+            channel="@my_channel",
+            amount=1000,
+            winners=10,
+            duration_days=7
+        )
+        print(f"Giveaway: {result}")
 
 asyncio.run(main())
 ```
@@ -177,7 +211,7 @@ asyncio.run(main())
 | Method | Chain | Token | Behavior |
 |--------|-------|-------|----------|
 | `gram` / `ton` | TON (Gram) | GRAM | Automatic on-chain TX |
-| `usdt_gram` / `usdt_ton` | TON (Gram) | USDT | Automatic on-chain TX |
+| `usdt_ton` | TON (Gram) | USDT | Automatic on-chain TX |
 | `usdt_eth` | Ethereum | USDT | Returns invoice |
 | `usdt_pol` | Polygon | USDT | Returns invoice |
 | `usdc_eth` | Ethereum | USDC | Returns invoice |
@@ -291,7 +325,27 @@ All exceptions inherit from `FragmentError`:
 | `VerificationError` | KYC verification required |
 | `ParseError` | Failed to parse API response |
 | `SessionStorageError` | Storage read/write failed |
+| `MarketAppAPIError` | MarketApp API request failed |
 | `UnexpectedError` | Unexpected internal error |
+
+---
+
+## Operating Modes
+
+### KYC Mode (Traditional)
+- Requires Fragment.com cookies
+- Requires TON wallet with sufficient balance
+- Full access to all Fragment.com features
+- KYC verification required for some operations
+
+### No-KYC Mode (New in v12.0.0)
+- Requires MarketApp API token (get at [marketapp.io](https://marketapp.io))
+- Requires TON wallet with sufficient balance
+- Supports purchases, giveaways, and price lookups
+- No KYC verification needed
+- Limited compared to full Fragment API
+
+Choose the mode by providing either `cookies` (KYC mode) or `marketapp_token` (No-KYC mode) when initializing `FragmentClient`.
 
 ---
 
