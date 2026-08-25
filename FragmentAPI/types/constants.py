@@ -2,6 +2,7 @@
 Constants and configuration for Fragment API library.
 
 Contains URLs, validation limits, wallet configurations, and HTTP headers.
+Includes MarketApp API defaults for No-KYC mode operations.
 """
 
 from __future__ import annotations
@@ -39,7 +40,7 @@ SUPPORTED_API_PROVIDERS: frozenset[str] = frozenset({"tonapi", "toncenter"})
 MIN_GRAM_BALANCE: float = 0.01
 MIN_TON_BALANCE: float = MIN_GRAM_BALANCE
 MIN_USDT_BALANCE: float = 0.01
-USDT_GRAM_MASTER_ADDRESS: str = "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs"
+USDT_TON_MASTER_ADDRESS: str = "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs"
 
 DEFAULT_TIMEOUT: float = 30.0
 CONFIRMATION_INTERVAL: float = 3.0
@@ -186,7 +187,6 @@ EVM_TOKEN_SYMBOLS: dict[str, str] = {
 VALID_PAYMENT_METHODS: frozenset[str] = frozenset({
     "gram",
     "ton",
-    "usdt_gram",
     "usdt_ton",
     "usdt_eth",
     "usdt_pol",
@@ -198,14 +198,12 @@ VALID_PAYMENT_METHODS: frozenset[str] = frozenset({
 BATCH_PAYMENT_METHODS: frozenset[str] = frozenset({
     "gram",
     "ton",
-    "usdt_gram",
     "usdt_ton",
 })
 
 GRAM_PAYMENT_METHODS: frozenset[str] = frozenset({
     "gram",
     "ton",
-    "usdt_gram",
     "usdt_ton",
 })
 
@@ -234,3 +232,11 @@ ITEM_TYPE_URL_PREFIX: dict[int, str] = {
     ITEM_TYPE_NUMBER: "number",
     ITEM_TYPE_GIFT: "gift",
 }
+
+
+DEFAULT_MARKETAPP_TOKEN: str = "285471-0edd699588be4ac48fdb9fd1bde35ddb-1787427287"
+
+NOKYC_PAYMENT_METHODS: frozenset[str] = frozenset({
+    "gram",
+    "ton",
+})
