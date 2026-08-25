@@ -50,14 +50,13 @@ build_command = "python -m build"
 dist_dir = "dist/"
 commit_subject = "chore(release): bump version {version}"
 tag_format = "v{version}"
-branches = { "master" = "main" }
 changelog_file = "CHANGELOG.md"
 changelog_components = [
-    {component = "feat", description = "Новые возможности", type = "feature"},
-    {component = "fix", description = "Исправления багов", type = "fix"},
-    {component = "docs", description = "Документация", type = "docs"},
-    {component = "refactor", description = "Рефакторинг", type = "refactor"},
-    {component = "perf", description = "Оптимизация производительности", type = "performance"},
+    {component = "feat", description = "Features", type = "feature"},
+    {component = "fix", description = "Bug Fixes", type = "fix"},
+    {component = "docs", description = "Documentation", type = "docs"},
+    {component = "refactor", description = "Refactoring", type = "refactor"},
+    {component = "perf", description = "Performance", type = "performance"},
     {component = "ci", description = "CI/CD", type = "ci"},
-    {component = "test", description = "Тесты", type = "test"},
+    {component = "test", description = "Tests", type = "test"},
 ]
