@@ -3,6 +3,7 @@ Fragment API Python Library.
 
 Async client for interacting with Fragment.com marketplace and Telegram services.
 Supports Stars, Premium, Giveaways, Usernames, Numbers, and Gifts operations.
+Now includes No-KYC mode via MarketApp API for cookieless operation.
 """
 
 from FragmentAPI.client import FragmentClient
@@ -13,6 +14,7 @@ from FragmentAPI.types.models import (
     AdsTopupResult,
     AdsWithdrawalConfirmResult,
     AdsWithdrawalInitResult,
+    AdsRechargeResult,
     AuctionInfo,
     BatchItemResult,
     BatchResult,
@@ -28,6 +30,7 @@ from FragmentAPI.types.models import (
     GiveawayPremiumResult,
     GiveawayStarsResult,
     LoginCodeResult,
+    NoKycBatchResult,
     NumberInfo,
     NumbersResult,
     OfferResult,
@@ -63,6 +66,7 @@ from FragmentAPI.exceptions import (
     FragmentAPIError,
     FragmentError,
     FragmentPageError,
+    MarketAppAPIError,
     OperationError,
     ParseError,
     RetryExhaustedError,
@@ -74,7 +78,7 @@ from FragmentAPI.exceptions import (
     WalletError,
 )
 
-__version__ = "11.0.0"
+__version__ = "12.0.0"
 __author__ = "S1qwy"
 __email__ = "S1qwy@internet.ru"
 
@@ -87,6 +91,7 @@ __all__ = [
     "AdsTopupResult",
     "AdsWithdrawalConfirmResult",
     "AdsWithdrawalInitResult",
+    "AdsRechargeResult",
     "AlreadySubscribedError",
     "AnonymousNumberError",
     "AuctionInfo",
@@ -109,6 +114,8 @@ __all__ = [
     "GiveawayPremiumResult",
     "GiveawayStarsResult",
     "LoginCodeResult",
+    "MarketAppAPIError",
+    "NoKycBatchResult",
     "NumberInfo",
     "NumbersResult",
     "OfferResult",
