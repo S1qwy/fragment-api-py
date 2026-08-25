@@ -50,7 +50,7 @@ build_command = "python -m build"
 dist_dir = "dist/"
 commit_subject = "chore(release): bump version {version}"
 tag_format = "v{version}"
-branches = ["master", "main"]
+branches = { "master" = "main" }
 changelog_file = "CHANGELOG.md"
 changelog_components = [
     {component = "feat", description = "Новые возможности", type = "feature"},
