@@ -36,7 +36,7 @@ from FragmentAPI.types.constants import (
     MIN_USDT_BALANCE,
     SUPPORTED_API_PROVIDERS,
     TONAPI_BASE_URL,
-    USDT_GRAM_MASTER_ADDRESS,
+    USDT_TON_MASTER_ADDRESS,
     WALLET_CLASSES,
 )
 from FragmentAPI.types.results import (
@@ -80,7 +80,7 @@ async def _get_usdt_balance(ton: Any, wallet_address: str) -> float:
     try:
         jetton_wallet_address = await get_wallet_address_get_method(
             client=ton,
-            address=USDT_GRAM_MASTER_ADDRESS,
+            address=USDT_TON_MASTER_ADDRESS,
             owner_address=wallet_address,
         )
         wallet_data = await get_wallet_data_get_method(client=ton, address=jetton_wallet_address)
