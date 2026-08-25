@@ -2,6 +2,89 @@
 
 <!-- version list -->
 
+## v12.0.0 (2026-08-25)
+
+### Bug Fixes
+
+- **ci**: Fix branches config for semantic-release
+  ([`8598988`](https://github.com/S1qwy/fragment-api-py/commit/8598988a0a5590804e5251b89e24f82bfa4d1a0d))
+
+- **ci**: Remove branches config, use default
+  ([`6221b34`](https://github.com/S1qwy/fragment-api-py/commit/6221b34e3b7617431d3fc0660b2071af6db1ae56))
+
+- **marketplace**: Fix missing comma in imports causing syntax error, remove usdt_gram references
+  ([`8493775`](https://github.com/S1qwy/fragment-api-py/commit/8493775f34432aaec9fd139f1b6a2d88b2c8017f))
+
+- **results**: Fix missing comma in imports, add NoKycBatchResult export
+  ([`69599c2`](https://github.com/S1qwy/fragment-api-py/commit/69599c2899629fa14b994cbac5145c456f961a77))
+
+### Chores
+
+- **pyproject**: Drop Python 3.9 support, require Python 3.10+
+  ([`b167598`](https://github.com/S1qwy/fragment-api-py/commit/b167598ad0168fef1f2f311df37d1110dc571953))
+
+### Continuous Integration
+
+- **release**: Add semantic-release workflow with PyPI token publishing
+  ([`c0637ec`](https://github.com/S1qwy/fragment-api-py/commit/c0637ec95e309ebcd1c7ed70726a747a0d924d49))
+
+### Documentation
+
+- **doc**: Update documentation to v12.0.0 with No-KYC mode
+  ([`240eda9`](https://github.com/S1qwy/fragment-api-py/commit/240eda93a77fa26c40ceb9406bf435624d6e1a98))
+
+- **readme**: Update to v12.0.0 with No-KYC mode and unified usdt_ton payment method
+  ([`432b109`](https://github.com/S1qwy/fragment-api-py/commit/432b109afaf1d6842adf4e991672f4c96b9106ae))
+
+### Features
+
+- **api**: Major version 12.0.0 with No-KYC mode
+  ([`1c4112c`](https://github.com/S1qwy/fragment-api-py/commit/1c4112c2b14071f9ffe43ed910ea90cd23f79cec))
+
+- **client**: Make cookies optional, add No-KYC mode via MarketApp API, add marketapp_token param,
+  remove usdt_gram support, update operating modes
+  ([`619281b`](https://github.com/S1qwy/fragment-api-py/commit/619281b3ada0731b74dc924f9f18a2573c0f1767))
+
+- **constants**: Add No-KYC mode constants, remove usdt_gram, rename USDT master address, add
+  MarketApp defaults
+  ([`1ff672a`](https://github.com/S1qwy/fragment-api-py/commit/1ff672ac65179c1a912ddee250a7cb13cac4e9c6))
+
+- **deps**: Add marketapp-api dependency and bump version to 12.0.0
+  ([`2c3cf7c`](https://github.com/S1qwy/fragment-api-py/commit/2c3cf7ccc104ec5f5911ef8c348a3bc88dbea477))
+
+- **init**: Export NoKycBatchResult and MarketAppAPIError, update version to 12.0.0
+  ([`4b8035c`](https://github.com/S1qwy/fragment-api-py/commit/4b8035cf7bf6f0e22cff10214ecd8db44d191c5a))
+
+- **models**: Add NoKycBatchResult for No-KYC batch operations, remove usdt_gram references
+  ([`ab395e9`](https://github.com/S1qwy/fragment-api-py/commit/ab395e9aca348752cf5d5b7d594729b36d3626ff))
+
+- **nokyc**: Add MarketApp API integration for No-KYC mode purchases, giveaways, price lookups and
+  recipient search
+  ([`ee224c3`](https://github.com/S1qwy/fragment-api-py/commit/ee224c3c0b1a2fb3335c94d3632c0ad3ded62004))
+
+- **types**: Export NoKycBatchResult and MarketAppAPIError
+  ([`4fec4a3`](https://github.com/S1qwy/fragment-api-py/commit/4fec4a3f23b9df063f2938a0a9e489471f80e5c8))
+
+- **utils**: Export nokyc module utilities
+  ([`e4d8b6b`](https://github.com/S1qwy/fragment-api-py/commit/e4d8b6bf7ca1b002b25cea19720c341c46608d4a))
+
+### Refactoring
+
+- **exceptions**: Remove usdt_gram references, add No-KYC mode error messages and MarketAppAPIError
+  ([`5cf34fe`](https://github.com/S1qwy/fragment-api-py/commit/5cf34feec677ee8f445cc3d5fcc3f4acbfb20a6a))
+
+- **purchase**: Remove usdt_gram payment method from normalize function
+  ([`427c541`](https://github.com/S1qwy/fragment-api-py/commit/427c541cbce5192182fa46e869d3eaacf37e4acd))
+
+- **wallet**: Renamed the variable USDT_GRAM_MASTER_ADDRESS to USDT_TON_MASTER_ADDRESS
+  ([`301ac54`](https://github.com/S1qwy/fragment-api-py/commit/301ac547657a4910aa06398d628942a5b7d5c8d4))
+
+### Breaking Changes
+
+- **api**: Usdt_gram payment method removed, use usdt_ton BREAKING CHANGE: Python 3.9 no longer
+  supported, requires 3.10+ BREAKING CHANGE: FragmentClient cookies parameter is now optional
+
+
 ## v11.1.0 (2026-08-25)
 
 ### Bug Fixes
