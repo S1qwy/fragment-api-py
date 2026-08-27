@@ -226,6 +226,12 @@ class TransactionError(FragmentAPIError):
     )
 
 
+class PurchaseLimitError(FragmentAPIError):
+    """Raised when Fragment imposes a dynamic minimum/maximum purchase limit."""
+
+    LIMIT_EXCEEDED = "Fragment purchase limit applied: {error}"
+
+
 class ConfirmationTimeout(TransactionError):
     """Raised when seqno/balance confirmation times out."""
 
@@ -319,6 +325,7 @@ __all__ = [
     "AlreadySubscribedError",
     "AnonymousNumberError",
     "TransactionError",
+    "PurchaseLimitError",
     "ConfirmationTimeout",
     "SeqnoError",
     "ParseError",

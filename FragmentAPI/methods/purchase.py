@@ -20,6 +20,7 @@ from FragmentAPI.exceptions import (
     ConfigurationError,
     FragmentAPIError,
     FragmentError,
+    PurchaseLimitError,
     UnexpectedError,
     UserNotFoundError,
     VerificationError,
@@ -203,7 +204,12 @@ async def _init_request(
 
     result = await post_fragment_api(session, fragment_hash, headers, payload)
     if result.get("error"):
-        raise FragmentAPIError(result["error"])
+        error_msg = result["error"]
+        if "minimum" in error_msg.lower() or "maximum" in error_msg.lower():
+            raise PurchaseLimitError(
+                PurchaseLimitError.LIMIT_EXCEEDED.format(error=error_msg)
+            )
+        raise FragmentAPIError(error_msg)
 
     req_id = result.get("req_id")
     if not req_id:
