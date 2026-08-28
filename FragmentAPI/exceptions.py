@@ -226,10 +226,10 @@ class TransactionError(FragmentAPIError):
     )
 
 
-class PurchaseLimitError(FragmentAPIError):
-    """Raised when Fragment imposes a dynamic minimum/maximum purchase limit."""
+class PaidMessageLimitError(FragmentAPIError):
+    """Raised when target user has Telegram Paid Messages enabled, requiring a minimum amount of stars."""
 
-    LIMIT_EXCEEDED = "Fragment purchase limit applied: {error}"
+    MINIMUM_REQUIRED = "Minimum purchase limit applied (likely due to user's Paid Messages settings): {error}"
 
 
 class ConfirmationTimeout(TransactionError):
@@ -325,7 +325,7 @@ __all__ = [
     "AlreadySubscribedError",
     "AnonymousNumberError",
     "TransactionError",
-    "PurchaseLimitError",
+    "PaidMessageLimitError",
     "ConfirmationTimeout",
     "SeqnoError",
     "ParseError",
