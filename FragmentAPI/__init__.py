@@ -25,6 +25,10 @@ from FragmentAPI.types.models import (
     GatewayPriceInfo,
     GatewayRechargeResult,
     GiftAttribute,
+    GiftAttributeCategory,
+    GiftAttributeValue,
+    GiftCollection,
+    GiftFiltersInfo,
     GiftInfo,
     GiftsResult,
     GiveawayPremiumResult,
@@ -79,7 +83,7 @@ from FragmentAPI.exceptions import (
     WalletError,
 )
 
-__version__ = "12.0.0"
+__version__ = "12.1.0"
 __author__ = "S1qwy"
 __email__ = "S1qwy@internet.ru"
 
@@ -110,6 +114,10 @@ __all__ = [
     "GatewayPriceInfo",
     "GatewayRechargeResult",
     "GiftAttribute",
+    "GiftAttributeCategory",
+    "GiftAttributeValue",
+    "GiftCollection",
+    "GiftFiltersInfo",
     "GiftInfo",
     "GiftsResult",
     "GiveawayPremiumResult",
