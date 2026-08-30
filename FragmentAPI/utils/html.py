@@ -768,8 +768,9 @@ def parse_gift_filters(html: str) -> tuple[list[GiftCollection], list[GiftAttrib
         Tuple of (collections list, attribute categories list).
     """
     tree = LexborHTMLParser(html)
-    collections: list[GiftCollection] = []
-    attributes: list[GiftAttributeCategory] = []
+    
+    collections_map: dict[str, GiftCollection] = {}
+    attributes_map: dict[str, GiftAttributeCategory] = {}
 
     for item in tree.css("a.js-choose-collection-item[data-value]"):
         slug = _attr(item, "data-value").strip()
@@ -778,36 +779,38 @@ def parse_gift_filters(html: str) -> tuple[list[GiftCollection], list[GiftAttrib
 
         name = _attr(item, "data-keywords").strip()
         if not name:
-            name_node = item.css_first(".tm-main-filters-name")
+            name_node = item.css_first(".tm-main-filters-name, .tm-popup-filters-name")
             name = _text(name_node)
 
-        count_node = item.css_first(".tm-main-filters-count")
-        count = _parse_count(_text(count_node))
+        count_node = item.css_first(".tm-main-filters-count, .tm-popup-filters-desc")
+        count_text = _text(count_node).replace("items", "").strip()
+        count = _parse_count(count_text)
 
-        img_node = item.css_first(".tm-main-filters-photo img")
+        img_node = item.css_first(".tm-main-filters-photo img, img[src]")
         image_url = _attr(img_node, "src") if img_node else None
-        if not image_url:
-            img_node = item.css_first("img[src]")
-            image_url = _attr(img_node, "src") if img_node else None
 
-        collections.append(GiftCollection(
-            slug=slug,
-            name=name,
-            count=count,
-            image_url=image_url or None,
-        ))
+        if slug not in collections_map:
+            collections_map[slug] = GiftCollection(
+                slug=slug, name=name, count=count, image_url=image_url or None,
+            )
+        else:
+            existing = collections_map[slug]
+            if not existing.name and name:
+                existing.name = name
+            if existing.count == 0 and count > 0:
+                existing.count = count
+            if not existing.image_url and image_url:
+                existing.image_url = image_url
 
     for box in tree.css("div.js-attribute[data-field]"):
         field = _attr(box, "data-field").strip()
-        if not field:
+        if not field or field in attributes_map:
             continue
 
         name_node = box.css_first(".tm-main-filters-name")
         category_name = _text(name_node)
 
-        count_node = box.css_first(".tm-main-filters-count.js-filter-cnt")
-        if not count_node:
-            count_node = box.css_first(".tm-main-filters-count")
+        count_node = box.css_first(".tm-main-filters-count.js-filter-cnt, .tm-main-filters-count")
         total_count = _parse_count(_text(count_node))
 
         display_name = category_name
@@ -815,7 +818,7 @@ def parse_gift_filters(html: str) -> tuple[list[GiftCollection], list[GiftAttrib
             field_match = re.search(r"attr\[(.+?)\]", field)
             display_name = field_match.group(1) if field_match else field
 
-        attr_items: list[GiftAttributeValue] = []
+        attr_items_map: dict[str, GiftAttributeValue] = {}
 
         for attr_item in box.css(".js-attribute-item[data-value]"):
             value = _attr(attr_item, "data-value").strip()
@@ -830,27 +833,26 @@ def parse_gift_filters(html: str) -> tuple[list[GiftCollection], list[GiftAttrib
             attr_count_node = attr_item.css_first(".tm-main-filters-count")
             attr_count = _parse_count(_text(attr_count_node))
 
-            attr_img_node = attr_item.css_first(".tm-main-filters-photo img")
+            attr_img_node = attr_item.css_first(".tm-main-filters-photo img, img[src]")
             attr_image_url = _attr(attr_img_node, "src") if attr_img_node else None
-            if not attr_image_url:
-                attr_img_node = attr_item.css_first("img[src]")
-                attr_image_url = _attr(attr_img_node, "src") if attr_img_node else None
+            
             if not attr_image_url:
                 source_node = attr_item.css_first("source[srcset]")
                 attr_image_url = _attr(source_node, "srcset") if source_node else None
 
-            attr_items.append(GiftAttributeValue(
-                name=attr_name or value,
-                value=value,
-                count=attr_count,
-                image_url=attr_image_url or None,
-            ))
+            if value not in attr_items_map:
+                attr_items_map[value] = GiftAttributeValue(
+                    name=attr_name or value,
+                    value=value,
+                    count=attr_count,
+                    image_url=attr_image_url or None,
+                )
 
-        attributes.append(GiftAttributeCategory(
+        attributes_map[field] = GiftAttributeCategory(
             field=field,
             name=display_name,
             total_count=total_count,
-            items=attr_items,
-        ))
+            items=list(attr_items_map.values()),
+        )
 
-    return collections, attributes
+    return list(collections_map.values()), list(attributes_map.values())
