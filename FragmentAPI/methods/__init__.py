@@ -14,7 +14,12 @@ from FragmentAPI.methods.purchase import (
 )
 from FragmentAPI.methods.giveaway import giveaway_premium, giveaway_stars
 from FragmentAPI.methods.place_bid import place_bid
-from FragmentAPI.methods.search import search_gifts, search_numbers, search_usernames
+from FragmentAPI.methods.search import (
+    get_gift_filters,
+    search_gifts,
+    search_numbers,
+    search_usernames,
+)
 from FragmentAPI.methods.marketplace import (
     cancel_auction,
     confirm_ads_withdrawal,
@@ -32,6 +37,7 @@ __all__ = [
     "cancel_auction",
     "confirm_ads_withdrawal",
     "get_gateway_price",
+    "get_gift_filters",
     "giveaway_premium",
     "giveaway_stars",
     "init_ads_withdrawal",
