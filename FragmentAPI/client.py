@@ -97,6 +97,7 @@ from FragmentAPI.types.models import (
     EvmPaymentResult,
     GatewayPriceInfo,
     GatewayRechargeResult,
+    GiftFiltersInfo,
     GiftInfo,
     GiftsResult,
     GiveawayPremiumResult,
@@ -143,6 +144,7 @@ from FragmentAPI.utils.html import (
     parse_auction_info,
     parse_bid_history,
     parse_gift_attributes,
+    parse_gift_filters,
     parse_gift_issued,
     parse_item_status,
     parse_my_assets,
@@ -957,6 +959,25 @@ class FragmentClient:
             self, query, collection=collection, sort=sort,
             filter=filter, view=view, attr=attr, offset=offset,
         )
+        
+    async def get_gift_filters(
+        self,
+        collection: str | None = None,
+    ) -> GiftFiltersInfo:
+        """Get available Gift Collections and their attributes (Models, Backdrops, Symbols).
+
+        Fetches the /gifts page (or /gifts/{collection} for a specific collection)
+        and parses embedded filter data from the HTML.
+
+        Args:
+            collection: Optional slug of the collection (e.g., 'artisanbrick').
+                        If provided, returns attributes specific to this collection.
+
+        Returns:
+            GiftFiltersInfo with collections and attributes lists.
+        """
+        self._require_not_nokyc("get_gift_filters")
+        return await get_gift_filters(self, collection=collection)
 
 
     async def get_username_info(self, username: str) -> UsernameInfo:
