@@ -3,3 +3,4 @@ __pycache__/
 *.pyo
 setup.py
 test.py
+venv/
