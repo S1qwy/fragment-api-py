@@ -17,6 +17,9 @@ from FragmentAPI.types.models import (
     AuctionInfo,
     BidHistoryEntry,
     GiftAttribute,
+    GiftAttributeCategory,
+    GiftAttributeValue,
+    GiftCollection,
     MyAsset,
     MyBid,
     OfferHistoryEntry,
@@ -740,3 +743,114 @@ def parse_login_code(html: str) -> tuple[str | None, int]:
 
     active_sessions = len(tree.css("tr"))
     return code, active_sessions
+    
+    
+def _parse_count(raw: str) -> int:
+    """Parse a count string like '2,879' into an integer."""
+    cleaned = raw.replace(",", "").replace("\xa0", "").strip()
+    try:
+        return int(cleaned)
+    except ValueError:
+        return 0
+
+
+def parse_gift_filters(html: str) -> tuple[list[GiftCollection], list[GiftAttributeCategory]]:
+    """Parse gift collections and attribute filters from /gifts page HTML.
+
+    Extracts:
+    - Collections from anchor elements with class js-choose-collection-item
+    - Attribute categories (Model, Backdrop, Symbol, etc.) from div.js-attribute
+
+    Args:
+        html: Raw HTML string from the /gifts or /gifts/{collection} page.
+
+    Returns:
+        Tuple of (collections list, attribute categories list).
+    """
+    tree = LexborHTMLParser(html)
+    collections: list[GiftCollection] = []
+    attributes: list[GiftAttributeCategory] = []
+
+    for item in tree.css("a.js-choose-collection-item[data-value]"):
+        slug = _attr(item, "data-value").strip()
+        if not slug:
+            continue
+
+        name = _attr(item, "data-keywords").strip()
+        if not name:
+            name_node = item.css_first(".tm-main-filters-name")
+            name = _text(name_node)
+
+        count_node = item.css_first(".tm-main-filters-count")
+        count = _parse_count(_text(count_node))
+
+        img_node = item.css_first(".tm-main-filters-photo img")
+        image_url = _attr(img_node, "src") if img_node else None
+        if not image_url:
+            img_node = item.css_first("img[src]")
+            image_url = _attr(img_node, "src") if img_node else None
+
+        collections.append(GiftCollection(
+            slug=slug,
+            name=name,
+            count=count,
+            image_url=image_url or None,
+        ))
+
+    for box in tree.css("div.js-attribute[data-field]"):
+        field = _attr(box, "data-field").strip()
+        if not field:
+            continue
+
+        name_node = box.css_first(".tm-main-filters-name")
+        category_name = _text(name_node)
+
+        count_node = box.css_first(".tm-main-filters-count.js-filter-cnt")
+        if not count_node:
+            count_node = box.css_first(".tm-main-filters-count")
+        total_count = _parse_count(_text(count_node))
+
+        display_name = category_name
+        if not display_name:
+            field_match = re.search(r"attr\[(.+?)\]", field)
+            display_name = field_match.group(1) if field_match else field
+
+        attr_items: list[GiftAttributeValue] = []
+
+        for attr_item in box.css(".js-attribute-item[data-value]"):
+            value = _attr(attr_item, "data-value").strip()
+            if not value:
+                continue
+
+            attr_name = _attr(attr_item, "data-keywords").strip()
+            if not attr_name:
+                attr_name_node = attr_item.css_first(".tm-main-filters-name")
+                attr_name = _text(attr_name_node)
+
+            attr_count_node = attr_item.css_first(".tm-main-filters-count")
+            attr_count = _parse_count(_text(attr_count_node))
+
+            attr_img_node = attr_item.css_first(".tm-main-filters-photo img")
+            attr_image_url = _attr(attr_img_node, "src") if attr_img_node else None
+            if not attr_image_url:
+                attr_img_node = attr_item.css_first("img[src]")
+                attr_image_url = _attr(attr_img_node, "src") if attr_img_node else None
+            if not attr_image_url:
+                source_node = attr_item.css_first("source[srcset]")
+                attr_image_url = _attr(source_node, "srcset") if source_node else None
+
+            attr_items.append(GiftAttributeValue(
+                name=attr_name or value,
+                value=value,
+                count=attr_count,
+                image_url=attr_image_url or None,
+            ))
+
+        attributes.append(GiftAttributeCategory(
+            field=field,
+            name=display_name,
+            total_count=total_count,
+            items=attr_items,
+        ))
+
+    return collections, attributes
