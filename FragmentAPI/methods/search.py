@@ -24,15 +24,19 @@ from FragmentAPI.types.results import (
     NumbersResult,
     UsernamesResult,
 )
+from FragmentAPI.types.models import GiftFiltersInfo
 from FragmentAPI.utils.html import (
     parse_auction_rows,
+    parse_gift_filters,
     parse_gift_items,
 )
 from FragmentAPI.utils.http import (
     build_headers,
     fetch_fragment_hash,
+    fetch_page_ajax,
     post_fragment_api,
 )
+from FragmentAPI.utils.proxy import build_curl_proxy_args
 
 if TYPE_CHECKING:
     from FragmentAPI.client import FragmentClient
@@ -85,11 +89,14 @@ async def search_usernames(
         headers = build_headers(FRAGMENT_BASE_URL)
         data = _build_search_data(query, "usernames", sort, filter, offset_id)
 
+        proxy_args = build_curl_proxy_args(client.proxy)
         async with requests.AsyncSession(
             cookies=client.cookies, timeout=client.timeout, impersonate="chrome120",
+            **proxy_args,
         ) as session:
             fragment_hash = await fetch_fragment_hash(
                 client.cookies, headers, FRAGMENT_BASE_URL, client.timeout,
+                proxy=client.proxy,
             )
             result = await post_fragment_api(session, fragment_hash, headers, data)
 
@@ -132,11 +139,14 @@ async def search_numbers(
         headers = build_headers(NUMBERS_PAGE)
         data = _build_search_data(query, "numbers", sort, filter, offset_id)
 
+        proxy_args = build_curl_proxy_args(client.proxy)
         async with requests.AsyncSession(
             cookies=client.cookies, timeout=client.timeout, impersonate="chrome120",
+            **proxy_args,
         ) as session:
             fragment_hash = await fetch_fragment_hash(
                 client.cookies, headers, NUMBERS_PAGE, client.timeout,
+                proxy=client.proxy,
             )
             result = await post_fragment_api(session, fragment_hash, headers, data)
 
@@ -203,11 +213,14 @@ async def search_gifts(
     try:
         headers = build_headers(GIFTS_PAGE)
 
+        proxy_args = build_curl_proxy_args(client.proxy)
         async with requests.AsyncSession(
             cookies=client.cookies, timeout=client.timeout, impersonate="chrome120",
+            **proxy_args,
         ) as session:
             fragment_hash = await fetch_fragment_hash(
                 client.cookies, headers, GIFTS_PAGE, client.timeout,
+                proxy=client.proxy,
             )
             result = await post_fragment_api(session, fragment_hash, headers, data)
 
@@ -218,6 +231,50 @@ async def search_gifts(
 
         logger.debug("Gift search returned %d items", len(items))
         return GiftsResult(items=items, next_offset=next_offset)
+
+    except FragmentError:
+        raise
+    except Exception as exc:
+        raise UnexpectedError(UnexpectedError.UNEXPECTED.format(exc=exc)) from exc
+
+
+async def get_gift_filters(
+    client: "FragmentClient",
+    collection: str | None = None,
+) -> GiftFiltersInfo:
+    """Fetch available gift collections and attribute filters.
+
+    Loads the /gifts page (or /gifts/{collection} if specified) via AJAX
+    and parses collections and attribute categories (Model, Backdrop, Symbol)
+    from the embedded HTML filter elements.
+
+    Args:
+        client: FragmentClient instance (cookies required).
+        collection: Optional collection slug (e.g., 'artisanbrick').
+                    If provided, returns attributes specific to this collection.
+
+    Returns:
+        GiftFiltersInfo with collections and attributes lists.
+    """
+    try:
+        if collection:
+            url = f"{GIFTS_PAGE}/{collection}"
+        else:
+            url = GIFTS_PAGE
+
+        headers = build_headers(url)
+        data = await fetch_page_ajax(
+            client.cookies, headers, url, client.timeout, proxy=client.proxy,
+        )
+        html = data.get("h", "")
+
+        collections, attributes = parse_gift_filters(html)
+
+        logger.debug(
+            "Gift filters parsed: %d collections, %d attribute categories",
+            len(collections), len(attributes),
+        )
+        return GiftFiltersInfo(collections=collections, attributes=attributes)
 
     except FragmentError:
         raise
