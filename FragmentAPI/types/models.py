@@ -488,6 +488,36 @@ class GiftInfo(FragmentBaseModel):
         return self.gram_rate
 
 
+class GiftCollection(FragmentBaseModel):
+    """Information about a Gift Collection from the filters menu."""
+    slug: str
+    name: str
+    count: int
+    image_url: str | None = None
+
+
+class GiftAttributeValue(FragmentBaseModel):
+    """A specific value for a gift attribute (e.g., specific Model, Backdrop, or Symbol)."""
+    name: str
+    value: str
+    count: int
+    image_url: str | None = None
+
+
+class GiftAttributeCategory(FragmentBaseModel):
+    """A category of attributes (e.g., Model, Backdrop, Symbol)."""
+    field: str
+    name: str
+    total_count: int
+    items: list[GiftAttributeValue] = Field(default_factory=list)
+
+
+class GiftFiltersInfo(FragmentBaseModel):
+    """Complete filters data including collections and available attributes."""
+    collections: list[GiftCollection] = Field(default_factory=list)
+    attributes: list[GiftAttributeCategory] = Field(default_factory=list)
+
+
 class StarsPrice(FragmentBaseModel):
     """Price for a specific stars amount."""
 
