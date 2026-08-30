@@ -6,6 +6,7 @@ from FragmentAPI.utils.decoder import decode_boc_comment
 from FragmentAPI.utils.evm import fetch_evm_invoice
 from FragmentAPI.utils.html import (
     parse_auction_rows,
+    parse_gift_filters,
     parse_gift_items,
 )
 from FragmentAPI.utils.http import (
@@ -55,6 +56,7 @@ __all__ = [
     "nokyc_search_recipient",
     "nokyc_topup_gram",
     "parse_auction_rows",
+    "parse_gift_filters",
     "parse_gift_items",
     "parse_proxy",
     "post_fragment_api",
