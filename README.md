@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Async Python library for Fragment.com automation</strong><br>
-  <strong>v12.0.0 — No-KYC Mode | Pydantic V2 | Selectolax Parser | Session Storage | Full Marketplace</strong>
+  <strong>v12.1.0 — Gift Filters & Attributes | No-KYC Mode | Pydantic V2 | Selectolax Parser | Session Storage | Full Marketplace</strong>
 </p>
 
 <p align="center">
@@ -16,19 +16,6 @@
   <a href="https://t.me/fragment_api_lib"><img src="https://img.shields.io/badge/Telegram-Channel-2CA5E0?style=flat-square&logo=telegram" alt="Telegram"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-green.svg?style=flat-square" alt="License"></a>
 </p>
-
----
-
-## What's New in v12.0.0
-
-| Feature | Description |
-|---------|-------------|
-| **No-KYC Mode** | Full MarketApp API integration for purchases, giveaways, and price lookups without requiring KYC verification. |
-| **MarketApp API** | Buy Stars, Premium, and run giveaways through MarketApp with `marketapp_token` authentication. |
-| **Cookies Optional** | `cookies` parameter is now optional when using No-KYC mode with MarketApp API. |
-| **Unified USDT on TON** | Consolidated `usdt_gram` and `usdt_ton` into single `usdt_ton` payment method. |
-| **Batch No-KYC** | Batch purchase operations supported in No-KYC mode with `NoKycBatchResult` model. |
-| **MarketApp Defaults** | Default constants and master addresses added for MarketApp integration. |
 
 ---
 
@@ -240,6 +227,7 @@ asyncio.run(main())
 | `search_usernames()` | Search username listings |
 | `search_numbers()` | Search anonymous numbers |
 | `search_gifts()` | Search gift marketplace |
+| `get_gift_filters()` | Get collections and their attributes (Model, Backdrop, etc.) |
 | `place_bid()` | Bid or buy-now on an item |
 | `start_auction()` | Start an auction |
 | `sell_asset()` | Sell at a fixed price |
