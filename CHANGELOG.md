@@ -2,6 +2,68 @@
 
 <!-- version list -->
 
+## v12.1.0 (2026-08-31)
+
+### Bug Fixes
+
+- **client**: Add missing get_gift_filters import
+  ([`e12f3e6`](https://github.com/S1qwy/fragment-api-py/commit/e12f3e621695684ade6d7817fdccef0918647955))
+
+- **html**: Deduplicate parsed gift collections and attributes
+  ([`811636c`](https://github.com/S1qwy/fragment-api-py/commit/811636c107ee6a55212470995fe419b2b75b6a03))
+
+### Chores
+
+- Set version to 12.0.0
+  ([`22c3606`](https://github.com/S1qwy/fragment-api-py/commit/22c3606081e1722fe61dc58d1bd9fb69fdb82624))
+
+- **release**: Bump version to 12.1.0
+  ([`4c67ea0`](https://github.com/S1qwy/fragment-api-py/commit/4c67ea034e532c43ca4ab9e458a62e6d831672d3))
+
+### Documentation
+
+- **doc**: Add get_gift_filters method and clarify search_gifts usage
+  ([`ad0062d`](https://github.com/S1qwy/fragment-api-py/commit/ad0062dc0701c7e94f05dddaa0530dddba379e66))
+
+- **doc**: Bump version
+  ([`dc624f8`](https://github.com/S1qwy/fragment-api-py/commit/dc624f805794128e59fb599fcb4031f53cc91678))
+
+- **readme**: Update marketplace examples with gift filters and bump
+  ([`d3b9aa6`](https://github.com/S1qwy/fragment-api-py/commit/d3b9aa64d27342d5670b679a24d11fe7ce892bf2))
+
+### Features
+
+- **client**: Expose get_gift_filters on FragmentClient
+  ([`18e3b89`](https://github.com/S1qwy/fragment-api-py/commit/18e3b8902c790274564e3288edad5b6d06c05956))
+
+- **gitignore**: Add venv/ dir
+  ([`059fc14`](https://github.com/S1qwy/fragment-api-py/commit/059fc1414db4e70add48b9151ecb2c0b80d0a76d))
+
+- **html**: Add parse_gift_filters for collections and attributes parsing
+  ([`c89c0ae`](https://github.com/S1qwy/fragment-api-py/commit/c89c0ae4bc230f5fefa95662d894b54059cad954))
+
+- **methods**: Export get_gift_filters from methods package
+  ([`596ee7e`](https://github.com/S1qwy/fragment-api-py/commit/596ee7efe02eccd50ccda73b2d46a1be3b13045a))
+
+- **purchase**: Add PaidMessageLimitError for minimum stars requirement
+  ([`2a2b3ee`](https://github.com/S1qwy/fragment-api-py/commit/2a2b3ee8043c120d58760d9259906b55b98f17ec))
+
+- **purchase**: Add PurchaseLimitError with LIMIT_EXCEEDED
+  ([`f1027f4`](https://github.com/S1qwy/fragment-api-py/commit/f1027f43a20dc37cb658609c1aed70b5312eadfb))
+
+- **search**: Add get_gift_filters method
+  ([`a27510e`](https://github.com/S1qwy/fragment-api-py/commit/a27510e606fb67962432fcffda40489031160f0f))
+
+- **types**: Add Gift Collection and Attribute filter models
+  ([`85b1742`](https://github.com/S1qwy/fragment-api-py/commit/85b17421c7c48c36c953eaca1ff1a572adc816f5))
+
+- **types**: Export new Gift filter models from results and __init__
+  ([`9ca26a8`](https://github.com/S1qwy/fragment-api-py/commit/9ca26a8c4279ea65d5e75c0ad62a6712dbb95a40))
+
+- **utils**: Export parse_gift_filters from utils package
+  ([`e4e7fcc`](https://github.com/S1qwy/fragment-api-py/commit/e4e7fcc5adf3ba42ca7545580550a5d2fd72b15b))
+
+
 ## v12.0.0 (2026-08-25)
 
 ### Bug Fixes
