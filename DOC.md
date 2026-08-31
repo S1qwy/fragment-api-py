@@ -1,6 +1,6 @@
 # Fragment API Python SDK — Full Documentation
 
-Complete reference for **fragment-api-py v12.0.0**.
+Complete reference for **fragment-api-py v12.1.0**.
 
 ---
 
