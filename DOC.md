@@ -582,6 +582,16 @@ Search Fragment gifts marketplace.
 
 ---
 
+#### `get_gift_filters(collection=None) -> GiftFiltersInfo`
+
+Get available Gift Collections and their attributes (Models, Backdrops, Symbols).
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `collection` | `str \| None` | `None` | Optional collection slug (e.g., `"artisanbrick"`). If provided, returns specific attributes for this collection alongside the collections list. |
+
+---
+
 ### Asset Information
 
 #### `get_username_info(username) -> UsernameInfo`
@@ -1326,6 +1336,37 @@ Same structure as `UsernamesResult`.
 |---|---|---|
 | `items` | `list[dict]` | List of gift item dicts with keys: `slug`, `name`, `status`, `price`, `date`. |
 | `next_offset` | `int \| None` | Numeric offset for next page. `None` if no more results. |
+
+#### `GiftFiltersInfo`
+
+| Field | Type | Description |
+|---|---|---|
+| `collections` | `list[GiftCollection]` | List of all available gift collections. |
+| `attributes` | `list[GiftAttributeCategory]` | List of available filters (e.g., Model, Backdrop) if a specific collection was queried. |
+
+#### `GiftCollection`
+| Field | Type | Description |
+|---|---|---|
+| `slug` | `str` | Collection identifier (e.g., `"artisanbrick"`). |
+| `name` | `str` | Display name (e.g., `"Artisan Bricks"`). |
+| `count` | `int` | Total number of items. |
+| `image_url` | `str \| None` | Collection preview image. |
+
+#### `GiftAttributeCategory`
+| Field | Type | Description |
+|---|---|---|
+| `field` | `str` | The exact key to use in `search_gifts` (e.g., `"attr[Model]"`). |
+| `name` | `str` | Display name of the category (e.g., `"Model"`). |
+| `total_count` | `int` | Number of distinct attribute values. |
+| `items` | `list[GiftAttributeValue]` | List of available values in this category. |
+
+#### `GiftAttributeValue`
+| Field | Type | Description |
+|---|---|---|
+| `name` | `str` | Display name (e.g., `"Jewelry Box"`). |
+| `value` | `str` | The exact value to use in `search_gifts`. |
+| `count` | `int` | Number of items with this attribute. |
+| `image_url` | `str \| None` | Preview image/animation for this attribute. |
 
 ---
 
@@ -2199,7 +2240,7 @@ async def main():
 asyncio.run(main())
 ```
 
-### Search Marketplace
+### Search Marketplace & Gift Filters
 
 ```python
 import asyncio
@@ -2209,25 +2250,25 @@ async def main():
     async with FragmentClient(
         cookies={"stel_ssid": "...", "stel_dt": "-180", "stel_token": "..."},
     ) as client:
-        # Search usernames
-        usernames = await client.search_usernames("crypto", sort="price_asc")
-        for item in usernames.items:
-            print(f"@{item['name']} — {item['price']} GRAM — {item['status']}")
+        # 1. Fetch available gift collections and attributes for 'artisanbrick'
+        filters = await client.get_gift_filters(collection="artisanbrick")
+        print(f"Total collections: {len(filters.collections)}")
         
-        # Search gifts with attributes
+        # 2. Use the exact fields from filters in our search
+        # E.g., we want to find "Artisan Bricks" where Model is "Jewelry Box"
         gifts = await client.search_gifts(
-            collection="plush-octopus",
-            attr={"Background": ["Red", "Blue"]},
+            collection="artisanbrick",
             sort="price_asc",
+            filter="sale",
+            attr={
+                "attr[Model]": ["Jewelry Box"],
+                "attr[Backdrop]": ["Celtic Blue"]
+            }
         )
+        
+        print(f"Found {len(gifts.items)} items:")
         for gift in gifts.items:
             print(f"{gift['name']} — {gift['price']} GRAM")
-        
-        # Get detailed info
-        info = await client.get_username_info("durov")
-        print(f"Status: {info.status}")
-        if info.auction:
-            print(f"Highest bid: {info.auction.highest_bid} GRAM")
 
 asyncio.run(main())
 ```
