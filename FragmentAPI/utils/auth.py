@@ -1,91 +1,98 @@
-"""
-Fragment authentication utilities — TON proof and Telegram OAuth (QR/phone).
-
-Generates TON wallet proof for Fragment login, supports seed-only session refresh,
-and handles Telegram OAuth via QR code scanning or phone confirmation to obtain
-full session cookies including stel_token.
-"""
+"""TON proof authentication and bounded interactive Telegram OAuth."""
 
 from __future__ import annotations
 
 import asyncio
 import base64
 import hashlib
+import inspect
 import json
-import logging
 import re
 import struct
 import time
 from typing import Any
+from urllib.parse import urlencode
 
 from curl_cffi import requests
 from nacl.signing import SigningKey
 from ton_core import NetworkGlobalID
 
-from FragmentAPI.exceptions import (
-    CookieError,
-    FragmentPageError,
-    UnexpectedError,
-)
+from FragmentAPI.exceptions import CookieError, FragmentAPIError, ParseError
 from FragmentAPI.types.constants import (
-    BASE_HEADERS,
+    AUTH_REQUIRED_COOKIE_KEYS,
+    AUTH_TIMEOUT,
     DEFAULT_TIMEOUT,
+    DEVICE_INFO,
     FRAGMENT_BASE_URL,
     REQUIRED_COOKIE_KEYS_WALLET,
     WALLET_CLASSES,
 )
-
-logger = logging.getLogger("FragmentAPI")
-
-TELEGRAM_CLIENT_ID = "5444323279"
-TELEGRAM_OAUTH_BASE = "https://oauth.telegram.org"
-
-TELEGRAM_BASE_PARAMS = (
-    f"client_id={TELEGRAM_CLIENT_ID}"
-    f"&origin=https%3A%2F%2Ffragment.com"
-    f"&return_to=https%3A%2F%2Ffragment.com%2F"
-    f"&scope=openid%20profile%20telegram%3Abot_access"
-    f"&redirect_uri=https%3A%2F%2Ffragment.com%2F"
-    f"&response_type=post_message"
+from FragmentAPI.utils.http import FragmentTransport, raise_api_error
+from FragmentAPI.utils.proxy import build_curl_proxy_args
+from FragmentAPI.utils.validation import (
+    normalize_seed,
+    normalize_wallet_version,
+    validate_cookie_keys,
 )
 
-BROWSER_HEADERS: dict[str, str] = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    ),
-    "Accept-Language": "en-US,en;q=0.9,ru;q=0.8",
-    "Accept": "application/json, text/javascript, */*; q=0.01",
-    "X-Requested-With": "XMLHttpRequest",
+TELEGRAM_OAUTH_BASE = "https://oauth.telegram.org"
+TELEGRAM_PARAMS = {
+    "client_id": "5444323279",
+    "origin": FRAGMENT_BASE_URL,
+    "return_to": f"{FRAGMENT_BASE_URL}/",
+    "scope": "openid profile telegram:bot_access",
+    "redirect_uri": f"{FRAGMENT_BASE_URL}/",
+    "response_type": "post_message",
 }
 
 
 class OfflineClient:
-    """Minimal offline client interface for tonutils wallet construction."""
+    """Network identity sufficient for offline wallet derivation."""
 
-    def __init__(self):
-        self.network = NetworkGlobalID.MAINNET
+    network = NetworkGlobalID.MAINNET
 
 
-def _parse_init_page(html: str) -> tuple[str, str]:
-    """Parse ajInit hash and ton_proof payload from Fragment homepage HTML."""
-    match_aj = re.search(r"ajInit\((.*?)\);", html)
-    if not match_aj:
-        raise FragmentPageError(
-            FragmentPageError.HASH_NOT_FOUND.format(url=FRAGMENT_BASE_URL)
-        )
-    aj_data = json.loads(match_aj.group(1))
-    api_hash = aj_data.get("apiUrl", "").split("hash=")[-1]
+def embedded_object(text: str, marker: str) -> dict[str, Any]:
+    """Decode a JavaScript call's first JSON object without regex nesting assumptions."""
+    index = text.find(marker)
+    if index < 0:
+        raise ParseError(f"Missing embedded object: {marker}")
+    try:
+        result, _ = json.JSONDecoder().raw_decode(text[index + len(marker):].lstrip())
+    except ValueError as exc:
+        raise ParseError(f"Invalid embedded object: {marker}") from exc
+    if not isinstance(result, dict):
+        raise ParseError(f"Expected an object in {marker}")
+    return result
 
-    match_wallet = re.search(r"Wallet\.init\((.*?)\);", html)
-    if not match_wallet:
-        raise FragmentPageError(
-            FragmentPageError.HASH_NOT_FOUND.format(url=FRAGMENT_BASE_URL)
-        )
-    ton_proof_payload = json.loads(match_wallet.group(1)).get("ton_proof", "")
 
-    return api_hash, ton_proof_payload
+def _key_bytes(value: Any) -> bytes:
+    """Read tonutils key wrappers without transforming their contents."""
+    if isinstance(value, bytes):
+        return value
+    hexadecimal = getattr(value, "as_hex", None)
+    if isinstance(hexadecimal, str):
+        return bytes.fromhex(hexadecimal)
+    for attribute in ("data", "key", "private_key", "public_key"):
+        raw = getattr(value, attribute, None)
+        if isinstance(raw, bytes):
+            return raw
+    raise ParseError("Unsupported tonutils key representation.")
+
+
+def derive_account(seed: str, wallet_version: str) -> dict[str, Any]:
+    """Build TON Connect account information offline."""
+    wallet, public_key, _, _ = WALLET_CLASSES[
+        normalize_wallet_version(wallet_version)
+    ].from_mnemonic(client=OfflineClient(), mnemonic=normalize_seed(seed))
+    return {
+        "address": wallet.address.to_str(is_user_friendly=False),
+        "chain": "-239",
+        "walletStateInit": base64.b64encode(
+            wallet.state_init.serialize().to_boc()
+        ).decode(),
+        "publicKey": _key_bytes(public_key).hex(),
+    }
 
 
 def _generate_proof(
@@ -93,324 +100,190 @@ def _generate_proof(
     wallet_version: str,
     ton_proof_payload: str,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-    """Generate TON proof data for Fragment authentication.
-
-    Creates a cryptographic proof that the caller owns the wallet,
-    signed with the wallet's private key.
-
-    Args:
-        mnemonic: Wallet seed phrase as word list.
-        wallet_version: Wallet contract version string.
-        ton_proof_payload: Challenge string from Fragment.
-
-    Returns:
-        Tuple of (account_data, device_data, proof_data) dicts.
-    """
-    wallet_cls = WALLET_CLASSES.get(wallet_version.upper(), WALLET_CLASSES["V5R1"])
-
-    wallet, pub_key, priv_key, _ = wallet_cls.from_mnemonic(
-        client=OfflineClient(),
-        mnemonic=" ".join(mnemonic),
+    """Sign the domain-bound TON Connect proof challenge."""
+    seed = normalize_seed(" ".join(mnemonic))
+    version = normalize_wallet_version(wallet_version)
+    wallet, public_key, private_key, _ = WALLET_CLASSES[version].from_mnemonic(
+        client=OfflineClient(), mnemonic=seed
     )
-
-    def _extract_key_bytes(obj: Any) -> bytes:
-        """Extract raw bytes from various tonutils key representations."""
-        if isinstance(obj, bytes):
-            return obj
-        for attr in ("data", "key", "private_key", "public_key"):
-            val = getattr(obj, attr, None)
-            if isinstance(val, bytes):
-                return val
-        if hasattr(obj, "hex") and callable(obj.hex):
-            return bytes.fromhex(obj.hex())
-        if hasattr(obj, "as_hex") and isinstance(obj.as_hex, str):
-            return bytes.fromhex(obj.as_hex)
-        try:
-            return bytes(obj)
-        except TypeError:
-            raise UnexpectedError(
-                f"Could not extract bytes from key object of type {type(obj)}"
-            )
-
-    priv_bytes = _extract_key_bytes(priv_key)
-    pub_bytes = _extract_key_bytes(pub_key)
-
-    raw_address = wallet.address.to_str(is_user_friendly=False)
-    workchain, addr_hash_hex = raw_address.split(":")
-
-    state_init_boc = wallet.state_init.serialize().to_boc()
-    state_init_b64 = base64.b64encode(state_init_boc).decode("utf-8")
-
-    domain = "fragment.com"
+    address = wallet.address.to_str(is_user_friendly=False)
+    workchain, address_hash = address.split(":")
+    domain = b"fragment.com"
     timestamp = int(time.time())
-
-    domain_bytes = domain.encode("utf-8")
-    payload_bytes = ton_proof_payload.encode("utf-8")
-
-    msg = b"ton-proof-item-v2/"
-    msg += struct.pack(">i", int(workchain))
-    msg += bytes.fromhex(addr_hash_hex)
-    msg += struct.pack("<I", len(domain_bytes))
-    msg += domain_bytes
-    msg += struct.pack("<Q", timestamp)
-    msg += payload_bytes
-
-    msg_hash = hashlib.sha256(msg).digest()
-    sign_payload = b"\xff\xff" + b"ton-connect" + msg_hash
-    final_hash = hashlib.sha256(sign_payload).digest()
-
-    signing_key = SigningKey(priv_bytes[:32])
-    signature = signing_key.sign(final_hash).signature
-    signature_b64 = base64.b64encode(signature).decode("utf-8")
-
-    account_data = {
-        "address": raw_address,
+    message = (
+        b"ton-proof-item-v2/"
+        + struct.pack(">i", int(workchain))
+        + bytes.fromhex(address_hash)
+        + struct.pack("<I", len(domain))
+        + domain
+        + struct.pack("<Q", timestamp)
+        + ton_proof_payload.encode()
+    )
+    digest = hashlib.sha256(
+        b"\xff\xffton-connect" + hashlib.sha256(message).digest()
+    ).digest()
+    signature = SigningKey(_key_bytes(private_key)[:32]).sign(digest).signature
+    account = {
+        "address": address,
         "chain": "-239",
-        "walletStateInit": state_init_b64,
-        "publicKey": pub_bytes.hex(),
+        "publicKey": _key_bytes(public_key).hex(),
+        "walletStateInit": base64.b64encode(
+            wallet.state_init.serialize().to_boc()
+        ).decode(),
     }
-
-    device_data = {
-        "platform": "android",
-        "appName": "Tonkeeper",
-        "appVersion": "26.04.3",
-        "maxProtocolVersion": 2,
-        "features": [
-            "SendTransaction",
-            {"name": "SignData", "types": ["text", "binary", "cell"]},
-            {"name": "SendTransaction", "maxMessages": 255},
-        ],
-    }
-
-    proof_data = {
+    proof = {
         "timestamp": timestamp,
-        "domain": {"lengthBytes": len(domain_bytes), "value": domain},
+        "domain": {"lengthBytes": len(domain), "value": domain.decode()},
         "payload": ton_proof_payload,
-        "signature": signature_b64,
+        "signature": base64.b64encode(signature).decode(),
+    }
+    return account, dict(DEVICE_INFO), proof
+
+
+def fragment_cookies(session: requests.AsyncSession) -> dict[str, str]:
+    """Export only Fragment-domain cookies from a session jar."""
+    return {
+        cookie.name: cookie.value
+        for cookie in session.cookies.jar
+        if cookie.domain.lstrip(".") == "fragment.com"
     }
 
-    return account_data, device_data, proof_data
 
-
-def _print_qr_ascii(data: str) -> None:
-    """Render QR code as ASCII art in terminal."""
-    try:
-        import qrcode
-    except ImportError:
-        print(f"[!] qrcode lib not installed. Open URL manually: {data}")
-        return
-    qr = qrcode.QRCode()
-    qr.add_data(data)
-    qr.make(fit=True)
-    qr.print_ascii(invert=True)
-
-
-async def _poll_telegram_auth(
+async def _proof_on_session(
     session: requests.AsyncSession,
-    qtoken: str,
-    on_status: Any = None,
-) -> str:
-    """Poll Telegram OAuth until the auth flow is confirmed.
-
-    Returns the final tgAuthResult string extracted from /auth/push.
-    """
-    headers = {**BROWSER_HEADERS, "Content-type": "application/x-www-form-urlencoded"}
-
-    consumed = False
-    current_qtoken = qtoken
-
-    while True:
-        poll_url = (
-            f"{TELEGRAM_OAUTH_BASE}/auth/login"
-            f"?{TELEGRAM_BASE_PARAMS}&qtoken={current_qtoken}"
-        )
-
-        try:
-            res = await session.post(poll_url, content=b"", headers=headers)
-            data = res.json()
-            status = data.get("status") if isinstance(data, dict) else None
-
-            if status == "refresh":
-                current_qtoken = data.get("qtoken", current_qtoken)
-                logger.debug("Telegram OAuth: QR token refreshed")
-                if on_status:
-                    on_status("refresh", current_qtoken)
-            elif status == "consumed":
-                if not consumed:
-                    consumed = True
-                    logger.info("Telegram OAuth: QR code scanned, awaiting confirmation")
-                    if on_status:
-                        on_status("consumed", None)
-            elif status == "confirmed":
-                logger.info("Telegram OAuth: authentication confirmed")
-                if on_status:
-                    on_status("confirmed", None)
-                push_url = f"{TELEGRAM_OAUTH_BASE}/auth/push?{TELEGRAM_BASE_PARAMS}"
-                res_push = await session.get(push_url, headers=BROWSER_HEADERS)
-                m = re.search(r"#tgAuthResult=([A-Za-z0-9_\-]+)", res_push.text)
-                if not m:
-                    raise UnexpectedError("Failed to extract tgAuthResult from push response.")
-                return m.group(1)
-        except Exception:
-            pass
-
-        await asyncio.sleep(1)
-
-
-async def _telegram_auth_qr(
-    session: requests.AsyncSession,
-    print_qr: bool = True,
-    on_status: Any = None,
-) -> str:
-    """Run Telegram OAuth via QR-code flow."""
-    url = f"{TELEGRAM_OAUTH_BASE}/auth/auth?{TELEGRAM_BASE_PARAMS}&quick_auth=new"
-    res = await session.get(url, headers=BROWSER_HEADERS)
-
-    m = re.search(r"setToken\('([^']+)'\)", res.text)
-    if not m:
-        raise UnexpectedError("Failed to fetch QR qtoken from Telegram OAuth.")
-
-    qtoken = m.group(1)
-    tg_link = f"https://t.me/oauth?startapp={qtoken}"
-
-    if on_status:
-        on_status("qr_link", tg_link)
-
-    if print_qr:
-        print(f"\n[*] Scan this QR (or open the link):\n    {tg_link}\n")
-        _print_qr_ascii(tg_link)
-
-    return await _poll_telegram_auth(session, qtoken, on_status=on_status)
-
-
-async def _telegram_auth_phone(
-    session: requests.AsyncSession,
-    phone: str,
-    on_status: Any = None,
-) -> str:
-    """Run Telegram OAuth via phone-confirmation flow."""
-    auth_page_url = f"{TELEGRAM_OAUTH_BASE}/auth/auth?{TELEGRAM_BASE_PARAMS}&phone_login=1"
-    await session.get(auth_page_url, headers=BROWSER_HEADERS)
-
-    digits = "".join(ch for ch in phone if ch.isdigit())
-
-    post_url = f"{TELEGRAM_OAUTH_BASE}/auth/request?{TELEGRAM_BASE_PARAMS}"
-    post_headers = {
-        **BROWSER_HEADERS,
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Origin": TELEGRAM_OAUTH_BASE,
-        "Referer": auth_page_url,
-    }
-    res = await session.post(post_url, data={"phone": digits}, headers=post_headers)
-
-    qtoken = res.text.strip().strip('"').strip("'")
-    if not qtoken or qtoken.lower() == "session expired" or len(qtoken) > 100:
-        raise UnexpectedError(f"Telegram OAuth phone request failed: {qtoken!r}")
-
-    logger.info("Telegram OAuth: confirmation code sent to phone")
-    if on_status:
-        on_status("phone_sent", qtoken)
-
-    return await _poll_telegram_auth(session, qtoken, on_status=on_status)
+    seed: str,
+    wallet_version: str,
+) -> dict[str, str]:
+    """Authenticate a wallet using the supplied session."""
+    session.cookies.set("stel_dt", "-180", domain="fragment.com")
+    transport = FragmentTransport(session)
+    text = await transport.get_text(f"{FRAGMENT_BASE_URL}/")
+    wallet_data = embedded_object(text, "Wallet.init(")
+    challenge = wallet_data.get("ton_proof")
+    if not isinstance(challenge, str) or not challenge:
+        raise FragmentAPIError("Fragment did not provide a TON proof challenge.")
+    account, device, proof = _generate_proof(
+        normalize_seed(seed).split(), wallet_version, challenge
+    )
+    result = await transport.call(
+        "checkTonProofAuth",
+        {
+            "account": json.dumps(account),
+            "device": json.dumps(device),
+            "proof": json.dumps(proof),
+        },
+        f"{FRAGMENT_BASE_URL}/",
+    )
+    raise_api_error(result)
+    cookies = fragment_cookies(session)
+    validate_cookie_keys(cookies, AUTH_REQUIRED_COOKIE_KEYS)
+    return cookies
 
 
 async def auth_ton_proof(
     seed: str,
     wallet_version: str = "V5R1",
     timeout: float = DEFAULT_TIMEOUT,
+    *,
+    proxy: str | None = None,
+    session: requests.AsyncSession | None = None,
 ) -> dict[str, str]:
-    """Authenticate with Fragment exclusively via TON Proof using the seed phrase.
-
-    Performs checkTonProofAuth against Fragment and returns the resulting cookies.
-
-    Args:
-        seed: TON wallet mnemonic phrase.
-        wallet_version: "V4R2", "V5R1".
-        timeout: HTTP timeout in seconds.
-
-    Returns:
-        Dict of session cookies obtained from the TON Proof flow.
-    """
+    """Authenticate only wallet ownership; Telegram authentication is not implied."""
+    seed = normalize_seed(seed)
+    version = normalize_wallet_version(wallet_version)
+    if session is not None:
+        return await _proof_on_session(session, seed, version)
     async with requests.AsyncSession(
-        timeout=timeout,
-        impersonate="chrome120",
-        allow_redirects=True,
-    ) as session:
-        session.headers.update({
-            "User-Agent": BASE_HEADERS["user-agent"],
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-        })
-        session.cookies.set("stel_dt", "-180", domain="fragment.com")
+        timeout=timeout, impersonate="chrome", **build_curl_proxy_args(proxy)
+    ) as owned:
+        return await _proof_on_session(owned, seed, version)
 
-        resp = await session.get(f"{FRAGMENT_BASE_URL}/")
-        resp.raise_for_status()
 
-        api_hash, ton_proof_payload = _parse_init_page(resp.text)
-        mnemonic = seed.strip().split()
-        account_data, device_data, proof_data = _generate_proof(
-            mnemonic, wallet_version, ton_proof_payload,
+async def _notify(callback: Any, status: str, payload: Any) -> None:
+    """Support synchronous and asynchronous progress callbacks."""
+    if callback is not None:
+        result = callback(status, payload)
+        if inspect.isawaitable(result):
+            await result
+
+
+def _print_qr(link: str) -> None:
+    """Print an OAuth link and an optional terminal QR code."""
+    print(link)
+    try:
+        import qrcode
+    except ImportError:
+        return
+    qr = qrcode.QRCode()
+    qr.add_data(link)
+    qr.make(fit=True)
+    qr.print_ascii(invert=True)
+
+
+async def _telegram_login(
+    session: requests.AsyncSession,
+    phone: str | None,
+    print_qr: bool,
+    on_status: Any,
+) -> str:
+    """Complete Telegram OAuth inside a caller-enforced total deadline."""
+    query = urlencode(TELEGRAM_PARAMS)
+    page = f"{TELEGRAM_OAUTH_BASE}/auth/auth?{query}"
+    if phone:
+        await session.get(f"{page}&phone_login=1")
+        response = await session.post(
+            f"{TELEGRAM_OAUTH_BASE}/auth/request?{query}",
+            data={"phone": "".join(character for character in phone if character.isdigit())},
+            headers={"origin": TELEGRAM_OAUTH_BASE, "referer": page},
         )
+        response.raise_for_status()
+        token = response.text.strip().strip("\"'")
+        if not token or len(token) > 100 or "expired" in token.casefold():
+            raise FragmentAPIError("Telegram rejected the phone login request.")
+        await _notify(on_status, "phone_sent", None)
+    else:
+        response = await session.get(f"{page}&quick_auth=new")
+        response.raise_for_status()
+        match = re.search(r"setToken\(['\"]([^'\"]+)['\"]\)", response.text)
+        if not match:
+            raise ParseError("Telegram OAuth QR token was not found.")
+        token = match.group(1)
+        link = f"https://t.me/oauth?startapp={token}"
+        await _notify(on_status, "qr_link", link)
+        if print_qr:
+            _print_qr(link)
 
-        form_data = {
-            "account": json.dumps(account_data, separators=(",", ":")),
-            "device": json.dumps(device_data, separators=(",", ":")),
-            "proof": json.dumps(proof_data, separators=(",", ":")),
-            "method": "checkTonProofAuth",
-        }
-
-        session.headers.update({
-            "Accept": "application/json, text/javascript, */*; q=0.01",
-            "Origin": FRAGMENT_BASE_URL,
-            "Referer": f"{FRAGMENT_BASE_URL}/",
-            "X-Requested-With": "XMLHttpRequest",
-            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-        })
-
-        api_url = f"{FRAGMENT_BASE_URL}/api?hash={api_hash}"
-        auth_resp = await session.post(api_url, data=form_data)
-        auth_resp.raise_for_status()
-
-        cookies = {c.name: c.value for c in session.cookies.jar}
-        if "stel_dt" not in cookies:
-            cookies["stel_dt"] = "-180"
-        return cookies
-
-
-async def refresh_wallet_session(
-    seed: str,
-    wallet_version: str = "V5R1",
-    timeout: float = DEFAULT_TIMEOUT,
-) -> dict[str, str]:
-    """Refresh session cookies using seed phrase only.
-
-    Args:
-        seed: TON wallet mnemonic phrase.
-        wallet_version: "V4R2", "V5R1".
-        timeout: HTTP timeout in seconds.
-
-    Returns:
-        Dict of fresh session cookies.
-
-    Raises:
-        CookieError: If full cookies (including stel_token and stel_ton_token)
-            could not be obtained automatically.
-    """
-    cookies = await auth_ton_proof(
-        seed=seed,
-        wallet_version=wallet_version,
-        timeout=timeout,
-    )
-
-    missing = [
-        k for k in REQUIRED_COOKIE_KEYS_WALLET
-        if not str(cookies.get(k, "")).strip()
-    ]
-    if missing:
-        raise CookieError(
-            CookieError.AUTO_REFRESH_FAILED.format(missing=", ".join(missing))
+    while True:
+        response = await session.post(
+            f"{TELEGRAM_OAUTH_BASE}/auth/login?{query}&{urlencode({'qtoken': token})}",
+            data="",
         )
-    return cookies
+        response.raise_for_status()
+        result = response.json()
+        if not isinstance(result, dict):
+            raise ParseError("Telegram OAuth returned a non-object response.")
+        status = result.get("status")
+        if status == "refresh":
+            token = str(result.get("qtoken") or token)
+            link = f"https://t.me/oauth?startapp={token}"
+            await _notify(on_status, "qr_link", link)
+            if print_qr and not phone:
+                _print_qr(link)
+        elif status == "confirmed":
+            await _notify(on_status, "confirmed", None)
+            pushed = await session.get(
+                f"{TELEGRAM_OAUTH_BASE}/auth/push?{query}"
+            )
+            pushed.raise_for_status()
+            match = re.search(r"tgAuthResult=([A-Za-z0-9_-]+)", pushed.text)
+            if not match:
+                raise ParseError("Telegram OAuth result was not found.")
+            return match.group(1)
+        elif status in {"expired", "declined", "cancelled"}:
+            raise FragmentAPIError(f"Telegram OAuth ended with status {status}.")
+        elif status == "consumed":
+            await _notify(on_status, "consumed", None)
+        await asyncio.sleep(1)
 
 
 async def authenticate(
@@ -420,107 +293,43 @@ async def authenticate(
     print_qr: bool = True,
     on_status: Any = None,
     timeout: float = DEFAULT_TIMEOUT,
+    *,
+    proxy: str | None = None,
+    auth_timeout: float = AUTH_TIMEOUT,
 ) -> dict[str, str]:
-    """Perform full Fragment authentication and return session cookies.
-
-    First obtains stel_ssid / stel_dt / stel_ton_token via TON wallet proof.
-    If stel_token is missing, runs Telegram OAuth (QR by default, or phone
-    confirmation if `phone` is provided) and finalizes the login via the
-    tgAuthResult redirect.
-
-    Args:
-        seed: TON wallet mnemonic phrase.
-        wallet_version: "V4R2", "V5R1".
-        phone: If provided, uses phone-confirmation flow instead of QR.
-        print_qr: Print the QR code to terminal (QR flow only).
-        on_status: Optional callback(status_name, payload) for progress.
-        timeout: HTTP timeout in seconds.
-
-    Returns:
-        Dict of session cookies with all required keys.
-
-    Raises:
-        FragmentPageError: If Fragment homepage cannot be loaded.
-        UnexpectedError: If authentication flow fails.
-    """
-    logger.info("Starting Fragment authentication with wallet version %s", wallet_version)
-
-    try:
-        async with requests.AsyncSession(
-            timeout=timeout,
-            impersonate="chrome120",
-            allow_redirects=True,
-        ) as session:
-            session.headers.update({
-                "User-Agent": BASE_HEADERS["user-agent"],
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.9",
-            })
-            session.cookies.set("stel_dt", "-180", domain="fragment.com")
-
-            resp = await session.get(f"{FRAGMENT_BASE_URL}/")
-            resp.raise_for_status()
-
-            api_hash, ton_proof_payload = _parse_init_page(resp.text)
-            logger.debug("Fragment API hash obtained, generating wallet proof")
-
-            mnemonic = seed.strip().split()
-            account_data, device_data, proof_data = _generate_proof(
-                mnemonic, wallet_version, ton_proof_payload,
-            )
-
-            form_data = {
-                "account": json.dumps(account_data, separators=(",", ":")),
-                "device": json.dumps(device_data, separators=(",", ":")),
-                "proof": json.dumps(proof_data, separators=(",", ":")),
-                "method": "checkTonProofAuth",
-            }
-
-            session.headers.update({
-                "Accept": "application/json, text/javascript, */*; q=0.01",
-                "Origin": FRAGMENT_BASE_URL,
-                "Referer": f"{FRAGMENT_BASE_URL}/",
-                "X-Requested-With": "XMLHttpRequest",
-                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-            })
-
-            api_url = f"{FRAGMENT_BASE_URL}/api?hash={api_hash}"
-            auth_resp = await session.post(api_url, data=form_data)
-            auth_resp.raise_for_status()
-
-            cookies = {c.name: c.value for c in session.cookies.jar}
-
-            if "stel_token" in cookies and cookies["stel_token"]:
-                logger.info("Authentication complete with wallet proof (stel_token obtained)")
-                return cookies
-
-            logger.info("stel_token not yet set, proceeding with Telegram OAuth")
-
-            async with requests.AsyncSession(
-                timeout=timeout,
-                impersonate="chrome120",
-                allow_redirects=True,
-            ) as tg_session:
-                if phone:
-                    tg_auth_result = await _telegram_auth_phone(
-                        tg_session, phone, on_status=on_status,
-                    )
-                else:
-                    tg_auth_result = await _telegram_auth_qr(
-                        tg_session, print_qr=print_qr, on_status=on_status,
-                    )
-
-            tg_form_data = {"auth": tg_auth_result, "method": "logIn"}
-            tg_resp = await session.post(api_url, data=tg_form_data)
-            tg_resp.raise_for_status()
-
-            cookies = {c.name: c.value for c in session.cookies.jar}
-            logger.info("Authentication complete with Telegram OAuth")
+    """Obtain full wallet and Telegram cookies through explicit interactive login."""
+    async with requests.AsyncSession(
+        timeout=timeout, impersonate="chrome", **build_curl_proxy_args(proxy)
+    ) as session:
+        cookies = await auth_ton_proof(
+            seed, wallet_version, timeout, session=session
+        )
+        if cookies.get("stel_token"):
+            validate_cookie_keys(cookies, REQUIRED_COOKIE_KEYS_WALLET)
             return cookies
+        async with requests.AsyncSession(
+            timeout=timeout, impersonate="chrome", **build_curl_proxy_args(proxy)
+        ) as telegram:
+            try:
+                token = await asyncio.wait_for(
+                    _telegram_login(telegram, phone, print_qr, on_status),
+                    timeout=auth_timeout,
+                )
+            except asyncio.TimeoutError as exc:
+                raise CookieError("Telegram authentication timed out.") from exc
+        result = await FragmentTransport(session).call("logIn", {"auth": token})
+        raise_api_error(result)
+        cookies = fragment_cookies(session)
+        validate_cookie_keys(cookies, REQUIRED_COOKIE_KEYS_WALLET)
+        return cookies
 
-    except (FragmentPageError, UnexpectedError, CookieError):
-        raise
-    except Exception as exc:
-        raise UnexpectedError(
-            UnexpectedError.UNEXPECTED.format(exc=exc)
-        ) from exc
+
+async def refresh_wallet_session(
+    seed: str,
+    wallet_version: str = "V5R1",
+    timeout: float = DEFAULT_TIMEOUT,
+    *,
+    proxy: str | None = None,
+) -> dict[str, str]:
+    """Refresh wallet-only cookies without requesting Telegram OAuth."""
+    return await auth_ton_proof(seed, wallet_version, timeout, proxy=proxy)
