@@ -1,582 +1,422 @@
-"""
-TON wallet utilities for transaction execution and wallet info retrieval.
-
-Handles wallet creation, balance checking, transaction signing/broadcasting,
-and seqno/balance confirmation. Supports Tonapi and Toncenter providers,
-and V4R2, V5R1 wallet versions.
-"""
+"""Offline preparation and non-replaying TON transaction execution."""
 
 from __future__ import annotations
 
-import asyncio
 import base64
-import logging
-import random
-import ssl
-from typing import (
-    TYPE_CHECKING,
-    Any,
-)
+import copy
+import inspect
+import time
+from typing import TYPE_CHECKING, Any
 
-from ton_core import Cell, NetworkGlobalID
+from ton_core import Address, NetworkGlobalID
 from tonutils.clients import TonapiClient, ToncenterClient
-from tonutils.contracts.jetton import get_wallet_address_get_method, get_wallet_data_get_method
-from tonutils.exceptions import ProviderResponseError
+from tonutils.contracts.jetton import (
+    get_wallet_address_get_method,
+    get_wallet_data_get_method,
+)
+from tonutils.exceptions import ProviderResponseError, RunGetMethodError
 
 from FragmentAPI.exceptions import (
-    ConfirmationTimeout,
-    SeqnoError,
+    BroadcastUncertainError,
+    ConfigurationError,
     TransactionError,
     WalletError,
 )
 from FragmentAPI.types.constants import (
-    CONFIRMATION_INTERVAL,
-    CONFIRMATION_MAX_ATTEMPTS,
-    MIN_GRAM_BALANCE,
-    MIN_USDT_BALANCE,
-    SUPPORTED_API_PROVIDERS,
-    TONAPI_BASE_URL,
+    BASIS_POINTS_DENOMINATOR,
+    FEE_ADDRESS,
+    FEE_BASIS_POINTS,
+    GAS_RESERVE_NANOTON,
+    NANO_PER_TON,
+    TVM_EXIT_ACCOUNT_NOT_FOUND,
     USDT_TON_MASTER_ADDRESS,
+    USDT_UNITS,
     WALLET_CLASSES,
+    WALLET_MAX_MESSAGES,
 )
-from FragmentAPI.types.results import (
+from FragmentAPI.types.models import (
+    PreparedTransaction,
+    PreparedTransactionMessage,
     TransactionResult,
     WalletInfo,
 )
-from FragmentAPI.utils.decoder import decode_boc_comment
+from FragmentAPI.utils.auth import derive_account
+from FragmentAPI.utils.decoder import decode_boc
+from FragmentAPI.utils.validation import decimal_units, normalize_payment_method
 
 if TYPE_CHECKING:
     from FragmentAPI.client import FragmentClient
 
-logger = logging.getLogger("FragmentAPI")
+
+def native_fee(payment_nanoton: int) -> int:
+    """Calculate ceil(payment_nanoton * 50 / 10000), with zero fee for zero principal."""
+    if isinstance(payment_nanoton, bool) or not isinstance(payment_nanoton, int) or payment_nanoton < 0:
+        raise ConfigurationError("Payment principal must be nonnegative integer nanotons.")
+    return (
+        payment_nanoton * FEE_BASIS_POINTS + BASIS_POINTS_DENOMINATOR - 1
+    ) // BASIS_POINTS_DENOMINATOR
 
 
-def _make_ton_client(client: "FragmentClient") -> Any:
-    """Create the appropriate tonutils client based on configured api_provider.
-
-    Args:
-        client: FragmentClient instance with api_key and api_provider set.
-
-    Returns:
-        TonapiClient or ToncenterClient context manager.
-    """
-    if client.api_provider == "toncenter":
-        logger.debug("Using ToncenterClient with API key")
-        return ToncenterClient(network=NetworkGlobalID.MAINNET, api_key=client.api_key)
-    logger.debug("Using TonapiClient with API key")
-    return TonapiClient(network=NetworkGlobalID.MAINNET, api_key=client.api_key)
+def _make_ton_client(client: FragmentClient) -> Any:
+    """Construct the configured tonutils blockchain provider."""
+    provider = ToncenterClient if client.api_provider == "toncenter" else TonapiClient
+    return provider(network=NetworkGlobalID.MAINNET, api_key=client.api_key)
 
 
-async def _get_usdt_balance(ton: Any, wallet_address: str) -> float:
-    """Fetch USDT jetton balance for a wallet address.
-
-    Args:
-        ton: Active tonutils client (Tonapi or Toncenter).
-        wallet_address: TON wallet address string.
-
-    Returns:
-        USDT balance as float, or 0.0 if no jetton wallet found.
-    """
-    try:
-        jetton_wallet_address = await get_wallet_address_get_method(
-            client=ton,
-            address=USDT_TON_MASTER_ADDRESS,
-            owner_address=wallet_address,
-        )
-        wallet_data = await get_wallet_data_get_method(client=ton, address=jetton_wallet_address)
-        raw_balance = int(wallet_data[0]) if wallet_data else 0
-        return float(raw_balance) / 1_000_000.0
-    except ProviderResponseError as exc:
-        if exc.code == 404:
-            logger.debug("No USDT jetton wallet found for '%s', treating balance as 0", wallet_address)
-            return 0.0
-        logger.error("Failed to load USDT balance for '%s': %s", wallet_address, exc)
-        raise WalletError(WalletError.USDT_BALANCE_CHECK_FAILED.format(exc=exc)) from exc
-    except Exception as exc:
-        logger.error("Unexpected error loading USDT balance for '%s': %s", wallet_address, exc)
-        raise WalletError(WalletError.USDT_BALANCE_CHECK_FAILED.format(exc=exc)) from exc
+def _raw_address(value: str) -> str:
+    """Canonicalize a TON address."""
+    return Address(value).to_str(is_user_friendly=False)
 
 
-async def _wait_confirmation(
-    wallet: Any,
-    initial_seqno: int,
-    initial_balance: float,
-) -> tuple[bool, int | None, float | None]:
-    """Wait for transaction confirmation by checking seqno and balance.
-
-    Polls every CONFIRMATION_INTERVAL seconds for up to
-    CONFIRMATION_MAX_ATTEMPTS attempts.
-
-    Confirmation conditions (both must be true):
-    1. seqno has incremented (network accepted the transaction)
-    2. balance has decreased (GRAM were actually spent)
-
-    Args:
-        wallet: Active tonutils wallet instance.
-        initial_seqno: Seqno before transaction was sent.
-        initial_balance: GRAM balance before transaction.
-
-    Returns:
-        Tuple of (confirmed, current_seqno, current_balance_gram).
-    """
-    for attempt in range(CONFIRMATION_MAX_ATTEMPTS):
-        await asyncio.sleep(CONFIRMATION_INTERVAL)
-
-        try:
-            await wallet.refresh()
-            current_seqno = await wallet.seqno()
-            current_balance = wallet.balance / 1_000_000_000
-
-            if current_seqno > initial_seqno and current_balance < initial_balance:
-                logger.info(
-                    "Transaction confirmed: seqno %d -> %d, balance %.4f -> %.4f GRAM",
-                    initial_seqno, current_seqno, initial_balance, current_balance,
-                )
-                return True, current_seqno, current_balance
-        except Exception:
-            logger.debug("Confirmation poll attempt %d failed, retrying", attempt + 1)
-            continue
-
-    return False, None, None
-
-
-def _parse_messages(
-    messages: list[dict[str, Any]],
-) -> tuple[list[str], list[int], list[Any]]:
-    """Parse Fragment transaction messages into parallel lists.
-
-    Converts Fragment's message format into destinations, amounts, and
-    body payloads suitable for wallet.transfer().
-
-    Args:
-        messages: List of message dicts from Fragment transaction payload.
-
-    Returns:
-        Tuple of (destinations, amounts, bodies).
-    """
-    destinations: list[str] = []
-    amounts: list[int] = []
-    bodies: list[Any] = []
-
-    for msg in messages:
-        destinations.append(msg["address"])
-        amounts.append(int(msg["amount"]))
-
-        raw_boc = msg.get("payload", "")
-        if raw_boc:
-            try:
-                payload = decode_boc_comment(raw_boc)
-            except Exception:
-                s = raw_boc.strip().replace("-", "+").replace("_", "/")
-                s += "=" * (-len(s) % 4)
-                payload = Cell.one_from_boc(base64.b64decode(s))
-        else:
-            payload = ""
-
-        bodies.append(payload)
-
-    return destinations, amounts, bodies
-
-
-async def _broadcast_with_retry(
-    wallet: Any,
-    destinations: list[str],
-    amounts: list[int],
-    bodies: list[Any],
-) -> Any:
-    """Broadcast a transaction with retry logic for rate limits and seqno conflicts.
-
-    Supports both single and batch transfers across different tonutils versions.
-
-    Args:
-        wallet: Active tonutils wallet instance.
-        destinations: List of destination addresses.
-        amounts: List of amounts in nanograms.
-        bodies: List of message body payloads.
-
-    Returns:
-        Transaction result from tonutils.
-
-    Raises:
-        TransactionError: If broadcast fails after all retries.
-    """
-    for attempt in range(6):
-        try:
-            await wallet.refresh()
-
-            if len(destinations) > 1:
-                result = await _batch_transfer(wallet, destinations, amounts, bodies)
-            else:
-                result = await _single_transfer(wallet, destinations[0], amounts[0], bodies[0])
-
-            return result
-
-        except ProviderResponseError as exc:
-            exc_str = str(exc).lower()
-            should_retry = (
-                exc.code == 429
-                or (exc.code == 400 and "duplicate message" in exc_str)
-                or (exc.code == 406 and any(x in exc_str for x in ["seqno", "current state", "unpack account state"]))
-                or exc.code == 500
-            )
-            if should_retry and attempt < 5:
-                delay = 2 + random.uniform(0, 1)
-                logger.warning(
-                    "Broadcast attempt %d failed (code=%d), retrying in %.1fs: %s",
-                    attempt + 1, exc.code, delay, exc,
-                )
-                await asyncio.sleep(delay)
-                continue
-
-            if exc.code == 406 and "seqno" in exc_str:
-                raise TransactionError(TransactionError.DUPLICATE_SEQNO) from exc
-            raise
-
-    raise TransactionError(
-        TransactionError.BROADCAST_FAILED.format(exc="transfer loop exited without result")
+async def build_account_info(client: FragmentClient) -> dict[str, Any]:
+    """Derive the paying account locally without a network balance request."""
+    if client.sender_account is not None:
+        return dict(client.sender_account)
+    if client.seed:
+        return derive_account(client.seed, client.wallet_version)
+    if client.wallet_auth:
+        return derive_account(client.shared_auth_seed, "V5R1")
+    raise ConfigurationError(
+        "A seed or sender_account is required to prepare a TON transaction."
     )
 
 
-async def _single_transfer(wallet: Any, destination: str, amount: int, body: Any) -> Any:
-    """Execute a single wallet transfer.
-
-    Tries modern tonutils API first, falls back to legacy.
-    """
-    if hasattr(wallet, "transfer_message"):
-        try:
-            from tonutils.contracts import TONTransferBuilder
-            from ton_core import Address
-            builder = TONTransferBuilder(
-                destination=Address(destination) if isinstance(destination, str) else destination,
-                amount=amount,
-                body=body,
-            )
-            return await wallet.transfer_message(builder)
-        except ImportError:
-            pass
-
-    return await wallet.transfer(destination=destination, amount=amount, body=body)
-
-
-async def _batch_transfer(
-    wallet: Any,
-    destinations: list[str],
-    amounts: list[int],
-    bodies: list[Any],
-) -> Any:
-    """Execute a batch wallet transfer with multiple messages.
-
-    Tries multiple tonutils API versions for compatibility.
-    """
-    result = None
-
-    if hasattr(wallet, "batch_transfer_message"):
-        try:
-            from tonutils.contracts import TONTransferBuilder
-            from ton_core import Address
-
-            builders = []
-            for d, a, b in zip(destinations, amounts, bodies):
-                builders.append(
-                    TONTransferBuilder(
-                        destination=Address(d) if isinstance(d, str) else d,
-                        amount=a,
-                        body=b,
-                    )
-                )
-            result = await wallet.batch_transfer_message(builders)
-        except ImportError:
-            pass
-
-    if result is None:
-        batch_msgs = []
-        try:
-            from tonutils.wallet.messages import TransferMessage
-            for d, a, b in zip(destinations, amounts, bodies):
-                batch_msgs.append(TransferMessage(destination=d, amount=a / 1e9, body=b))
-        except ImportError:
-            try:
-                from tonutils.wallet.data import TransferData
-                for d, a, b in zip(destinations, amounts, bodies):
-                    batch_msgs.append(TransferData(destination=d, amount=a / 1e9, body=b))
-            except ImportError:
-                pass
-
-        if batch_msgs:
-            if hasattr(wallet, "batch_transfer_messages"):
-                result = await wallet.batch_transfer_messages(messages=batch_msgs)
-            elif hasattr(wallet, "batch_transfer"):
-                try:
-                    result = await wallet.batch_transfer(messages=batch_msgs)
-                except TypeError:
-                    result = await wallet.batch_transfer(data_list=batch_msgs)
-
-    if result is None:
-        raise TransactionError("Wallet does not support batch transfers in this tonutils version.")
-
-    return result
-
-
-def _extract_tx_result(result: Any) -> tuple[str, str | None]:
-    """Extract transaction hash and BOC from tonutils result.
-
-    Args:
-        result: Return value from wallet.transfer or batch_transfer.
-
-    Returns:
-        Tuple of (tx_hash, boc_base64).
-    """
-    if isinstance(result, str):
-        return result, None
-
-    tx_hash = getattr(result, "normalized_hash", None)
-    if not tx_hash and hasattr(result, "hash"):
-        tx_hash = result.hash
-
-    boc_b64 = None
-    if hasattr(result, "as_b64"):
-        boc_b64 = result.as_b64
-    else:
-        try:
-            if hasattr(result, "boc"):
-                boc_b64 = base64.b64encode(result.boc).decode("utf-8")
-            elif hasattr(result, "to_boc"):
-                boc_b64 = base64.b64encode(result.to_boc()).decode("utf-8")
-        except Exception:
-            pass
-
-    return str(tx_hash or ""), boc_b64
-
-
-async def _run_transaction(
-    client: "FragmentClient",
-    transaction_data: dict[str, Any],
-    skip_balance_check: bool = False,
-) -> TransactionResult:
-    """Execute a TON transaction with seqno/balance confirmation.
-
-    Steps:
-    1. Parse Fragment transaction payload (addresses, amounts, comments)
-    2. Check wallet balance is sufficient (amount + gas) unless skip_balance_check
-    3. Record initial seqno and balance
-    4. Send the transfer
-    5. Wait for seqno increment + balance decrease
-    6. Return TransactionResult with BOC for confirmReq
-
-    Args:
-        client: FragmentClient with seed and api_key configured.
-        transaction_data: Raw Fragment transaction payload.
-        skip_balance_check: If True, skip upfront balance validation.
-
-    Returns:
-        TransactionResult with tx_hash, boc, and confirmation data.
-
-    Raises:
-        TransactionError: If payload is invalid or broadcast fails.
-        WalletError: If balance is insufficient.
-        ConfirmationTimeout: If transaction not confirmed in time.
-    """
-    if (
-        "transaction" not in transaction_data
-        or not transaction_data["transaction"].get("messages")
-    ):
-        raise TransactionError(TransactionError.INVALID_PAYLOAD)
-
-    messages = transaction_data["transaction"]["messages"]
-
-    total_amount_gram = sum(int(msg["amount"]) for msg in messages) / 1_000_000_000
-
-    async with _make_ton_client(client) as ton:
-        wallet_cls = WALLET_CLASSES[client.wallet_version]
-        wallet, _, _, _ = wallet_cls.from_mnemonic(client=ton, mnemonic=client.seed)
-
-        if not skip_balance_check:
-            try:
-                await wallet.refresh()
-                balance_gram = wallet.balance / 1_000_000_000
-                required = total_amount_gram + MIN_GRAM_BALANCE
-
-                if balance_gram < required:
-                    raise WalletError(
-                        WalletError.LOW_GRAM_BALANCE.format(
-                            balance=balance_gram,
-                            required=required,
-                            gas=MIN_GRAM_BALANCE,
-                        )
-                    )
-            except WalletError:
-                raise
-            except Exception as exc:
-                logger.error("Failed to check wallet balance: %s", exc)
-                raise WalletError(
-                    WalletError.GRAM_BALANCE_CHECK_FAILED.format(exc=exc)
-                ) from exc
-
-        destinations, amounts, bodies = _parse_messages(messages)
-
-        try:
-            await wallet.refresh()
-            initial_seqno = await wallet.seqno()
-            initial_balance = wallet.balance / 1_000_000_000
-        except Exception as exc:
-            raise SeqnoError(SeqnoError.FETCH_FAILED.format(exc=exc)) from exc
-
-        logger.info(
-            "Broadcasting transaction: %d message(s), total %.4f GRAM, seqno=%d",
-            len(messages), total_amount_gram, initial_seqno,
+async def _get_usdt_units(ton: Any, owner: str) -> int:
+    """Fetch raw jetton units, treating only known undeployed-wallet errors as zero."""
+    try:
+        address = await get_wallet_address_get_method(
+            client=ton,
+            address=USDT_TON_MASTER_ADDRESS,
+            owner_address=owner,
         )
-
-        try:
-            result = await _broadcast_with_retry(wallet, destinations, amounts, bodies)
-            tx_hash, boc_b64 = _extract_tx_result(result)
-        except (TransactionError, WalletError):
-            raise
-        except Exception as exc:
-            cause: BaseException | None = exc
-            while cause is not None:
-                if isinstance(cause, ssl.SSLError):
-                    raise TransactionError(
-                        TransactionError.BROADCAST_SSL_ERROR.format(exc=exc)
-                    ) from exc
-                cause = cause.__cause__ or cause.__context__
-            raise TransactionError(
-                TransactionError.BROADCAST_FAILED.format(exc=exc)
-            ) from exc
-
-        confirmed, final_seqno, final_balance = await _wait_confirmation(
-            wallet, initial_seqno, initial_balance,
-        )
-
-        if not confirmed:
-            raise ConfirmationTimeout(
-                ConfirmationTimeout.TIMEOUT.format(
-                    seconds=int(CONFIRMATION_INTERVAL * CONFIRMATION_MAX_ATTEMPTS),
-                    seqno_before=initial_seqno,
-                    balance_before=initial_balance,
-                )
-            )
-
-        return TransactionResult(
-            tx_hash=tx_hash,
-            boc=boc_b64,
-            seqno_before=initial_seqno,
-            seqno_after=final_seqno,
-            balance_before=initial_balance,
-            balance_after=final_balance,
-            confirmed=confirmed,
-        )
+        data = await get_wallet_data_get_method(client=ton, address=address)
+        if not data:
+            raise WalletError("USDT wallet data was empty.")
+        return int(data[0])
+    except ProviderResponseError as exc:
+        if exc.code == 404:
+            return 0
+        raise WalletError(
+            WalletError.USDT_BALANCE_CHECK_FAILED.format(exc=exc)
+        ) from exc
+    except RunGetMethodError as exc:
+        if exc.exit_code == TVM_EXIT_ACCOUNT_NOT_FOUND:
+            return 0
+        raise WalletError(
+            WalletError.USDT_BALANCE_CHECK_FAILED.format(exc=exc)
+        ) from exc
+    except WalletError:
+        raise
+    except Exception as exc:
+        raise WalletError(
+            WalletError.USDT_BALANCE_CHECK_FAILED.format(exc=exc)
+        ) from exc
 
 
-async def execute_transaction(
-    client: "FragmentClient",
-    transaction_data: dict[str, Any],
-) -> TransactionResult:
-    """Execute a TON transaction with full balance check and confirmation.
-
-    Public entry point for single-item transactions.
-
-    Args:
-        client: FragmentClient with seed and api_key.
-        transaction_data: Raw Fragment transaction payload.
-
-    Returns:
-        TransactionResult with tx_hash and BOC for confirmReq.
-    """
-    return await _run_transaction(client, transaction_data, skip_balance_check=False)
-
-
-async def execute_batch_transaction(
-    client: "FragmentClient",
-    transaction_data: dict[str, Any],
-) -> TransactionResult:
-    """Execute a batched TON transaction with multiple inline messages.
-
-    Balance is NOT checked here — the caller must verify it upfront
-    for the entire batch. Seqno increments by 1 for the whole chunk.
-
-    Args:
-        client: FragmentClient with seed and api_key.
-        transaction_data: Transaction payload with multiple messages.
-
-    Returns:
-        TransactionResult with tx_hash and BOC.
-    """
-    return await _run_transaction(client, transaction_data, skip_balance_check=True)
-
-
-async def build_account_info(client: "FragmentClient") -> dict[str, Any]:
-    """Build wallet account info dict for Fragment API requests.
-
-    Fragment needs the wallet address, public key, chain ID, and
-    state init to prepare transaction payloads.
-
-    Args:
-        client: FragmentClient with seed configured.
-
-    Returns:
-        Account info dict with address, publicKey, chain, walletStateInit.
-
-    Raises:
-        WalletError: If account info cannot be built.
-    """
+async def fetch_wallet_info(client: FragmentClient) -> WalletInfo:
+    """Read actual provider state instead of wallet.refresh fallback state."""
+    client._require_wallet()
     async with _make_ton_client(client) as ton:
+        wallet, _, _, _ = WALLET_CLASSES[client.wallet_version].from_mnemonic(
+            client=ton, mnemonic=client.seed
+        )
         try:
-            wallet_cls = WALLET_CLASSES[client.wallet_version]
-            wallet, pub_key, _, _ = wallet_cls.from_mnemonic(client=ton, mnemonic=client.seed)
-            boc = wallet.state_init.serialize().to_boc()
-            return {
-                "address": wallet.address.to_str(False, False),
-                "publicKey": pub_key.as_hex,
-                "chain": "-239",
-                "walletStateInit": base64.b64encode(boc).decode(),
-            }
+            state = await ton.get_info(wallet.address)
+            balance = int(state.balance)
         except Exception as exc:
-            logger.error("Failed to build wallet account info: %s", exc)
-            raise WalletError(
-                WalletError.ACCOUNT_INFO_FAILED.format(exc=exc)
-            ) from exc
-
-
-async def fetch_wallet_info(client: "FragmentClient") -> WalletInfo:
-    """Fetch full wallet information including GRAM and USDT balances.
-
-    Args:
-        client: FragmentClient with seed and api_key.
-
-    Returns:
-        WalletInfo with address, state, gram_balance, usdt_balance.
-
-    Raises:
-        WalletError: If wallet info cannot be retrieved.
-    """
-    async with _make_ton_client(client) as ton:
-        try:
-            wallet_cls = WALLET_CLASSES[client.wallet_version]
-            wallet, _, _, _ = wallet_cls.from_mnemonic(client=ton, mnemonic=client.seed)
-            await wallet.refresh()
-
-            wallet_address = wallet.address.to_str(False, False)
-            gram_balance = round(wallet.balance / 1_000_000_000, 4)
-            usdt_balance = await _get_usdt_balance(ton, wallet_address)
-
-            logger.info(
-                "Wallet info: %s, state=%s, %.4f GRAM, %.4f USDT",
-                wallet.address.to_str(is_user_friendly=True, is_bounceable=False),
-                wallet.state.value,
-                gram_balance,
-                usdt_balance,
-            )
-
-            return WalletInfo(
-                address=wallet.address.to_str(is_user_friendly=True, is_bounceable=False),
-                state=wallet.state.value,
-                gram_balance=gram_balance,
-                usdt_balance=round(usdt_balance, 4),
-            )
-        except WalletError:
-            raise
-        except Exception as exc:
-            logger.error("Failed to fetch wallet info: %s", exc)
             raise WalletError(
                 WalletError.WALLET_INFO_FAILED.format(exc=exc)
             ) from exc
+        owner = wallet.address.to_str(is_user_friendly=False)
+        try:
+            usdt = await _get_usdt_units(ton, owner) / USDT_UNITS
+        except WalletError:
+            usdt = None
+        state_name = getattr(state.state, "value", str(state.state))
+        return WalletInfo(
+            address=wallet.address.to_str(is_user_friendly=True, is_bounceable=False),
+            state=state_name,
+            gram_balance=balance / NANO_PER_TON,
+            usdt_balance=usdt,
+            balance_nanoton=balance,
+        )
+
+
+def prepare_transaction(
+    transaction_data: dict[str, Any],
+    *,
+    payment_method: str,
+    payment_nanoton: int | None,
+    wallet_version: str,
+    item_kind: str,
+    target: str,
+    amount: int,
+    req_id: str = "",
+    sender_address: str | None = None,
+    confirm_referer: str | None = None,
+    gas_reserve_nanoton: int = GAS_RESERVE_NANOTON,
+) -> PreparedTransaction:
+    """Build immutable-intent messages and append a fee only to native principal.
+
+    payment_nanoton must describe the actual native payment, excluding attached
+    gas and service messages. Native invoices without a known principal are
+    rejected instead of estimating a fee from arbitrary message values.
+    """
+    method = normalize_payment_method(payment_method)
+    if method not in {"ton", "usdt_ton"}:
+        raise ConfigurationError("EVM payments are prepared as EVM invoices.")
+    if isinstance(gas_reserve_nanoton, bool) or not isinstance(gas_reserve_nanoton, int) or gas_reserve_nanoton < 0:
+        raise ConfigurationError("Gas reserve must be nonnegative integer nanotons.")
+    raw = copy.deepcopy(transaction_data)
+    inner = raw.get("transaction")
+    if not isinstance(inner, dict) or not isinstance(inner.get("messages"), list) or not inner["messages"]:
+        raise TransactionError(TransactionError.INVALID_PAYLOAD)
+
+    messages: list[PreparedTransactionMessage] = []
+    for message in inner["messages"]:
+        if not isinstance(message, dict):
+            raise TransactionError(TransactionError.INVALID_PAYLOAD)
+        value = decimal_units(message.get("amount"), 0)
+        address = message.get("address")
+        if not isinstance(address, str):
+            raise TransactionError("A transaction message has no address.")
+        _raw_address(address)
+        messages.append(PreparedTransactionMessage(
+            address=address,
+            amount=str(value),
+            payload=message.get("payload"),
+            stateInit=message.get("stateInit", message.get("state_init")),
+        ))
+
+    principal = 0
+    fee = 0
+    if method == "ton":
+        if payment_nanoton is None:
+            raise TransactionError("Native invoice does not expose an exact payment principal.")
+        principal = payment_nanoton
+        fee = native_fee(principal)
+        if principal > sum(int(message.amount) for message in messages):
+            raise TransactionError("Invoice principal exceeds the attached native value.")
+        if fee:
+            messages.append(PreparedTransactionMessage(
+                address=FEE_ADDRESS,
+                amount=str(fee),
+            ))
+
+    if len(messages) > WALLET_MAX_MESSAGES[wallet_version]:
+        raise TransactionError(
+            f"{wallet_version} permits at most {WALLET_MAX_MESSAGES[wallet_version]} messages including the fee."
+        )
+
+    valid_until = inner.get("validUntil", inner.get("valid_until", int(time.time()) + 300))
+    if isinstance(valid_until, bool):
+        raise TransactionError("Invalid transaction expiration.")
+    valid_until = int(valid_until)
+    if valid_until <= int(time.time()):
+        raise TransactionError("Fragment transaction has expired.")
+
+    transaction_sender = inner.get("from") or sender_address
+    if inner.get("from") and sender_address:
+        if _raw_address(str(inner["from"])) != _raw_address(sender_address):
+            raise TransactionError("Fragment transaction sender differs from the requested account.")
+
+    required = sum(int(message.amount) for message in messages) + gas_reserve_nanoton
+    return PreparedTransaction(
+        req_id=req_id,
+        item_kind=item_kind,
+        target=target,
+        amount=amount,
+        valid_until=valid_until,
+        messages=messages,
+        raw=raw,
+        sender_address=transaction_sender,
+        confirm_referer=confirm_referer,
+        payment_method=method,
+        payment_nanoton=principal,
+        fee_nanoton=fee,
+        gas_reserve_nanoton=gas_reserve_nanoton,
+        required_nanoton=required,
+    )
+
+
+def _builder(message: PreparedTransactionMessage) -> Any:
+    """Construct a tonutils transfer builder without converting nanotons to floats."""
+    from tonutils.contracts import TONTransferBuilder
+
+    arguments: dict[str, Any] = {
+        "destination": Address(message.address),
+        "amount": int(message.amount),
+        "body": decode_boc(message.payload) if message.payload else None,
+    }
+    if message.state_init:
+        parameters = inspect.signature(TONTransferBuilder).parameters
+        if "state_init" not in parameters:
+            raise TransactionError(
+                "Installed TONTransferBuilder cannot preserve state_init."
+            )
+        from ton_core import StateInit
+
+        arguments["state_init"] = StateInit.deserialize(
+            decode_boc(message.state_init).begin_parse()
+        )
+    return TONTransferBuilder(**arguments)
+
+
+async def _transfer(wallet: Any, prepared: PreparedTransaction) -> Any:
+    """Use available tonutils message APIs, selecting the API before broadcasting."""
+    single = getattr(wallet, "transfer_message", None)
+    batch = getattr(wallet, "batch_transfer_message", None)
+    if len(prepared.messages) == 1 and callable(single):
+        return await single(_builder(prepared.messages[0]))
+    if callable(batch):
+        builders = [_builder(message) for message in prepared.messages]
+        return await batch(builders)
+
+    if len(prepared.messages) == 1:
+        message = prepared.messages[0]
+        if message.state_init:
+            raise TransactionError("This wallet transfer API cannot preserve state_init.")
+        transfer = getattr(wallet, "transfer", None)
+        if callable(transfer):
+            return await transfer(
+                destination=message.address,
+                amount=int(message.amount),
+                body=decode_boc(message.payload) if message.payload else None,
+            )
+    raise TransactionError(
+        "Installed tonutils wallet does not expose the required atomic multi-message API."
+    )
+
+
+def _extract_tx_result(result: Any) -> tuple[str, str | None]:
+    """Extract the normalized external-message hash and signed BOC."""
+    if isinstance(result, str):
+        return result, None
+    identifier = getattr(result, "normalized_hash", None) or getattr(result, "hash", None)
+    boc = getattr(result, "as_b64", None)
+    if callable(boc):
+        boc = boc()
+    if isinstance(boc, bytes):
+        boc = boc.decode()
+    if boc is None:
+        binary = getattr(result, "boc", None)
+        if isinstance(binary, bytes):
+            boc = base64.b64encode(binary).decode()
+    return str(identifier or ""), boc
+
+
+async def execute_prepared(
+    client: FragmentClient,
+    prepared: PreparedTransaction,
+    *,
+    required_usdt_units: int | None = None,
+) -> TransactionResult:
+    """Broadcast exactly once under the client's wallet lock.
+
+    Highload and ordinary wallets share Fragment fulfillment confirmation.
+    A changed balance or seqno is never treated as proof of this payment.
+    """
+    client._require_wallet()
+    async with client._wallet_lock:
+        if prepared.valid_until <= int(time.time()):
+            raise TransactionError("Prepared transaction has expired.")
+        if len(prepared.messages) > WALLET_MAX_MESSAGES[client.wallet_version]:
+            raise TransactionError("Prepared message count exceeds wallet capacity.")
+        async with _make_ton_client(client) as ton:
+            wallet, _, _, _ = WALLET_CLASSES[client.wallet_version].from_mnemonic(
+                client=ton, mnemonic=client.seed
+            )
+            address = wallet.address.to_str(is_user_friendly=False)
+            if prepared.sender_address and _raw_address(prepared.sender_address) != address:
+                raise TransactionError("Signing wallet differs from the invoice sender.")
+            try:
+                state = await ton.get_info(wallet.address)
+                balance = int(state.balance)
+            except Exception as exc:
+                raise WalletError(
+                    WalletError.WALLET_INFO_FAILED.format(exc=exc)
+                ) from exc
+            required = sum(int(message.amount) for message in prepared.messages) + prepared.gas_reserve_nanoton
+            if balance < required:
+                raise WalletError(
+                    WalletError.LOW_TON_BALANCE.format(
+                        balance=balance / NANO_PER_TON,
+                        required=required / NANO_PER_TON,
+                    )
+                )
+            if prepared.payment_method == "usdt_ton":
+                if required_usdt_units is None:
+                    raise TransactionError("USDT invoice did not provide an exact token amount.")
+                usdt_balance = await _get_usdt_units(ton, address)
+                if usdt_balance < required_usdt_units:
+                    raise WalletError(
+                        WalletError.LOW_USDT_BALANCE.format(
+                            balance=usdt_balance / USDT_UNITS,
+                            required=required_usdt_units / USDT_UNITS,
+                        )
+                    )
+            try:
+                result = await _transfer(wallet, prepared)
+            except TransactionError:
+                raise
+            except Exception as exc:
+                raise BroadcastUncertainError(
+                    "Broadcast outcome is unknown; reconcile this invoice before sending another payment."
+                ) from exc
+            identifier, boc = _extract_tx_result(result)
+            return TransactionResult(
+                tx_hash=identifier,
+                boc=boc,
+                status="broadcast",
+                balance_before=balance / NANO_PER_TON,
+                payment_nanoton=prepared.payment_nanoton,
+                fee_nanoton=prepared.fee_nanoton,
+            )
+
+
+async def execute_transaction(
+    client: FragmentClient,
+    transaction_data: dict[str, Any],
+    *,
+    payment_method: str = "ton",
+    payment_nanoton: int = 0,
+    required_usdt_units: int | None = None,
+) -> TransactionResult:
+    """Execute a non-invoice operation with an explicit payment principal.
+
+    The default zero principal is for gas-only administrative operations.
+    Paid operations must supply their actual principal.
+    """
+    account = await build_account_info(client)
+    prepared = prepare_transaction(
+        transaction_data,
+        payment_method=payment_method,
+        payment_nanoton=payment_nanoton,
+        wallet_version=client.wallet_version,
+        item_kind="operation",
+        target="",
+        amount=0,
+        sender_address=account["address"],
+        gas_reserve_nanoton=client.gas_reserve_nanoton,
+    )
+    return await execute_prepared(
+        client, prepared, required_usdt_units=required_usdt_units
+    )
+
+
+async def execute_batch_transaction(
+    client: FragmentClient,
+    transaction_data: dict[str, Any],
+    *,
+    payment_method: str = "ton",
+    payment_nanoton: int = 0,
+    required_usdt_units: int | None = None,
+) -> TransactionResult:
+    """Execute an atomic multi-message operation with a fresh balance check."""
+    return await execute_transaction(
+        client,
+        transaction_data,
+        payment_method=payment_method,
+        payment_nanoton=payment_nanoton,
+        required_usdt_units=required_usdt_units,
+    )
