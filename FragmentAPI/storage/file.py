@@ -1,82 +1,113 @@
-"""
-File-based session cookie storage using JSON files.
-
-Each session is stored as a separate JSON file in a configurable directory.
-"""
+"""Atomic JSON session persistence using collision-resistant filenames."""
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import json
-import logging
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
-import aiofiles
-
 from FragmentAPI.exceptions import SessionStorageError
 from FragmentAPI.storage.base import SessionStorage
-
-logger = logging.getLogger("FragmentAPI")
+from FragmentAPI.utils.validation import parse_cookies
 
 
 class FileSessionStorage(SessionStorage):
-    """Store session cookies as JSON files on the local filesystem.
+    """Persist JSON sessions through atomic replacement."""
 
-    Args:
-        directory: Path to directory for session files. Created if missing.
-        file_extension: Extension for session files.
-    """
-
-    def __init__(self, directory: str | Path = ".fragment_sessions", file_extension: str = ".json") -> None:
+    def __init__(
+        self,
+        directory: str | Path = ".fragment_sessions",
+        file_extension: str = ".json",
+    ) -> None:
         self._directory = Path(directory)
+        if not file_extension.startswith(".") or any(character in file_extension for character in "/\\"):
+            raise ValueError("Invalid session file extension.")
         self._extension = file_extension
-        self._directory.mkdir(parents=True, exist_ok=True)
+        self._lock = asyncio.Lock()
 
     def _session_path(self, session_id: str) -> Path:
-        """Build the file path for a session."""
-        safe_id = "".join(c if c.isalnum() or c in "-_" else "_" for c in session_id)
-        return self._directory / f"{safe_id}{self._extension}"
+        """Map the complete identifier to a collision-resistant filename."""
+        digest = hashlib.sha256(session_id.encode()).hexdigest()
+        return self._directory / f"{digest}{self._extension}"
 
-    async def save(self, session_id: str, cookies: dict[str, str], metadata: dict[str, Any] | None = None) -> None:
-        """Save cookies and optional metadata to a JSON file."""
+    def _read(self, session_id: str) -> dict[str, Any] | None:
+        """Read and validate one JSON document."""
         try:
-            data = {"cookies": cookies, "metadata": metadata or {}}
-            path = self._session_path(session_id)
-            async with aiofiles.open(path, "w", encoding="utf-8") as f:
-                await f.write(json.dumps(data, indent=2, ensure_ascii=False))
-            logger.debug("Session '%s' saved to %s", session_id, path)
+            text = self._session_path(session_id).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return None
+        data = json.loads(text)
+        if not isinstance(data, dict):
+            raise ValueError("Session document must be an object.")
+        return data
+
+    def _write(self, session_id: str, data: dict[str, Any]) -> None:
+        """Write and replace one session file atomically."""
+        self._directory.mkdir(parents=True, exist_ok=True)
+        descriptor, temporary = tempfile.mkstemp(
+            prefix=".session-", dir=self._directory
+        )
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                json.dump(data, handle, ensure_ascii=False, indent=2)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, self._session_path(session_id))
+        finally:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+
+    async def save(
+        self, session_id: str, cookies: dict[str, str],
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Persist cookies without discarding existing metadata when omitted."""
+        try:
+            validated = parse_cookies(cookies)
+            async with self._lock:
+                previous = await asyncio.to_thread(self._read, session_id)
+                retained = (previous or {}).get("metadata", {})
+                await asyncio.to_thread(
+                    self._write, session_id,
+                    {
+                        "cookies": validated,
+                        "metadata": metadata if metadata is not None else retained,
+                    },
+                )
         except Exception as exc:
-            raise SessionStorageError(SessionStorageError.SAVE_FAILED.format(exc=exc)) from exc
+            raise SessionStorageError(
+                SessionStorageError.SAVE_FAILED.format(exc=exc)
+            ) from exc
 
     async def load(self, session_id: str) -> dict[str, str] | None:
-        """Load cookies from a JSON file. Returns None if file does not exist."""
-        path = self._session_path(session_id)
-        if not path.exists():
-            return None
+        """Read cookies."""
         try:
-            async with aiofiles.open(path, "r", encoding="utf-8") as f:
-                content = await f.read()
-            data = json.loads(content)
-            return data.get("cookies")
+            data = await asyncio.to_thread(self._read, session_id)
+            return parse_cookies(data["cookies"]) if data is not None else None
         except Exception as exc:
-            raise SessionStorageError(SessionStorageError.LOAD_FAILED.format(exc=exc)) from exc
+            raise SessionStorageError(
+                SessionStorageError.LOAD_FAILED.format(exc=exc)
+            ) from exc
 
     async def delete(self, session_id: str) -> None:
-        """Delete a session file if it exists."""
-        path = self._session_path(session_id)
-        if path.exists():
-            path.unlink()
-            logger.debug("Session '%s' deleted from %s", session_id, path)
+        """Delete a session if present."""
+        try:
+            await asyncio.to_thread(self._session_path(session_id).unlink, missing_ok=True)
+        except Exception as exc:
+            raise SessionStorageError(f"Session delete failed: {exc}") from exc
 
     async def load_metadata(self, session_id: str) -> dict[str, Any] | None:
-        """Load metadata from the session JSON file."""
-        path = self._session_path(session_id)
-        if not path.exists():
-            return None
+        """Read metadata while preserving backend errors."""
         try:
-            async with aiofiles.open(path, "r", encoding="utf-8") as f:
-                content = await f.read()
-            data = json.loads(content)
-            return data.get("metadata")
-        except Exception:
-            return None
+            data = await asyncio.to_thread(self._read, session_id)
+            return data.get("metadata") if data is not None else None
+        except Exception as exc:
+            raise SessionStorageError(
+                SessionStorageError.LOAD_FAILED.format(exc=exc)
+            ) from exc
