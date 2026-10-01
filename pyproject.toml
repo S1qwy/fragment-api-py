@@ -4,8 +4,8 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "fragment-api-py"
-version = "12.1.0"
-description = "Async Python library for Fragment.com API with seqno/balance confirmation and confirmReq"
+version = "13.0.0"
+description = "Async Fragment client with reusable transport, wallet authentication, external signing, and explicit payment receipts"
 readme = "README.md"
 authors = [{name = "S1qwy", email = "S1qwy@internet.ru"}]
 license = {text = "MIT"}
@@ -17,11 +17,10 @@ dependencies = [
     "ton-core>=0.1.0",
     "pydantic>=2.0",
     "selectolax>=0.3.0",
-    "aiofiles>=23.0",
-    "marketapp-api>=1.0.1"
+    "aiofiles>=23.0"
 ]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
@@ -31,32 +30,31 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
-    "Framework :: AsyncIO",
+    "Framework :: AsyncIO"
 ]
 
 [project.optional-dependencies]
+redis = ["redis>=5.0"]
+qr = ["qrcode>=7.4"]
 dev = [
     "python-semantic-release>=9.0.0",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "build>=1.0"
 ]
 
 [tool.flit.module]
 name = "FragmentAPI"
 
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
 [tool.semantic_release]
-version_variable = "pyproject.toml:project.version"
-upload_to_pypi = true
-upload_to_release = true
+version_toml = ["pyproject.toml:project.version"]
+version_variables = ["FragmentAPI/__init__.py:__version__"]
 build_command = "python -m build"
-dist_dir = "dist/"
-commit_subject = "chore(release): bump version {version}"
 tag_format = "v{version}"
+
+[tool.semantic_release.changelog]
 changelog_file = "CHANGELOG.md"
-changelog_components = [
-    {component = "feat", description = "Features", type = "feature"},
-    {component = "fix", description = "Bug Fixes", type = "fix"},
-    {component = "docs", description = "Documentation", type = "docs"},
-    {component = "refactor", description = "Refactoring", type = "refactor"},
-    {component = "perf", description = "Performance", type = "performance"},
-    {component = "ci", description = "CI/CD", type = "ci"},
-    {component = "test", description = "Tests", type = "test"},
-]

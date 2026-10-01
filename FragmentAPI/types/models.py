@@ -1,43 +1,36 @@
-"""
-Pydantic v2 models for Fragment API responses.
-
-All API methods return strongly-typed Pydantic model instances.
-Backward-compatible with previous dataclass-based results via re-exports.
-"""
+"""Typed public results and explicit transaction lifecycle information."""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
 
 class FragmentBaseModel(BaseModel):
-    """Base model with shared config for all Fragment API models."""
+    """Common model configuration."""
 
-    model_config = ConfigDict(
-        populate_by_name=True,
-        arbitrary_types_allowed=True,
-    )
+    model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 
 
 class PreparedTransactionMessage(FragmentBaseModel):
-    """Single message of a prepared TON transaction."""
+    """A TON internal message expressed in integer nanotons."""
 
     address: str
     amount: str
     payload: str | None = None
-    state_init: str | None = None
+    state_init: str | None = Field(default=None, alias="stateInit")
 
 
 class PreparedTransaction(FragmentBaseModel):
-    """Unsigned Fragment transaction payload for external signing.
+    """A complete unsigned payment including its separate native-TON fee.
 
-    Used both in EVM-only mode and No-KYC mode to return transaction
-    details that the caller can sign and broadcast externally.
+    sender_address identifies the account used to request the invoice.
+    An external signer must use that account unless Fragment explicitly permits
+    another sender. Preparing a transaction does not imply payment or fulfillment.
     """
 
-    req_id: str
+    req_id: str = ""
     item_kind: str
     target: str
     amount: int
@@ -46,20 +39,35 @@ class PreparedTransaction(FragmentBaseModel):
     raw: dict[str, Any] = Field(default_factory=dict)
     sender_address: str | None = None
     confirm_referer: str | None = None
+    payment_method: str = "ton"
+    payment_nanoton: int = 0
+    fee_nanoton: int = 0
+    gas_reserve_nanoton: int = 0
+    required_nanoton: int = 0
 
-    def __repr__(self) -> str:
-        return (
-            f"PreparedTransaction("
-            f"kind='{self.item_kind}', "
-            f"target='{self.target}', "
-            f"amount={self.amount}, "
-            f"messages={len(self.messages)}"
-            f")"
-        )
+
+class TransactionResult(FragmentBaseModel):
+    """Broadcast receipt distinct from Fragment fulfillment confirmation.
+
+    tx_hash is the normalized external-message identifier returned by tonutils,
+    not necessarily the eventual on-chain transaction hash.
+    """
+
+    tx_hash: str
+    boc: str | None = None
+    status: Literal["broadcast", "confirmed", "unknown"] = "broadcast"
+    confirmed: bool = False
+    seqno_before: int | None = None
+    seqno_after: int | None = None
+    balance_before: float | None = None
+    balance_after: float | None = None
+    payment_nanoton: int = 0
+    fee_nanoton: int = 0
+    confirmation_error: str | None = None
 
 
 class EvmInvoice(FragmentBaseModel):
-    """EVM payment invoice details from Fragment."""
+    """An external EVM invoice without a library TON fee."""
 
     req_id: str
     invoice_address: str
@@ -73,22 +81,12 @@ class EvmInvoice(FragmentBaseModel):
     token_decimals: int
     expires_at: int
     payment_method: str
-    api_hash: str
+    api_hash: str = ""
     page_url: str
-
-    def __repr__(self) -> str:
-        return (
-            f"EvmInvoice("
-            f"amount={self.invoice_amount} {self.token_symbol}, "
-            f"chain='{self.invoice_chain_name}', "
-            f"address='{self.invoice_address[:10]}...', "
-            f"expires_at={self.expires_at}"
-            f")"
-        )
 
 
 class EvmPaymentResult(FragmentBaseModel):
-    """Result of initiating an EVM payment."""
+    """An EVM invoice awaiting external payment."""
 
     item_kind: str
     target: str
@@ -96,170 +94,98 @@ class EvmPaymentResult(FragmentBaseModel):
     payment_method: str
     invoice: EvmInvoice
 
-    def __repr__(self) -> str:
-        return (
-            f"EvmPaymentResult("
-            f"kind='{self.item_kind}', "
-            f"target='{self.target}', "
-            f"amount={self.amount}, "
-            f"payment='{self.payment_method}'"
-            f")"
-        )
-
-
-class TransactionResult(FragmentBaseModel):
-    """Result of a TON transaction with confirmation details."""
-
-    tx_hash: str
-    boc: str | None = None
-    seqno_before: int | None = None
-    seqno_after: int | None = None
-    balance_before: float | None = None
-    balance_after: float | None = None
-    confirmed: bool = False
-
-    def __repr__(self) -> str:
-        return (
-            f"TransactionResult("
-            f"tx='{self.tx_hash[:16]}...', "
-            f"confirmed={self.confirmed}, "
-            f"seqno={self.seqno_before}->{self.seqno_after}"
-            f")"
-        )
-
 
 class WalletInfo(FragmentBaseModel):
-    """Wallet state information with GRAM and USDT balances."""
+    """Wallet balances; an unavailable USDT balance is represented by None."""
 
     address: str
     state: str
     gram_balance: float
-    usdt_balance: float
+    usdt_balance: float | None
+    balance_nanoton: int = 0
 
     @property
     def balance_ton(self) -> float:
-        """Alias for gram_balance for backward compatibility."""
+        """Return the native TON balance."""
         return self.gram_balance
 
     @property
-    def balance_usdt(self) -> float:
-        """Alias for usdt_balance for consistency."""
+    def balance_usdt(self) -> float | None:
+        """Return the USDT balance."""
         return self.usdt_balance
-
-    def __repr__(self) -> str:
-        return (
-            f"WalletInfo("
-            f"address='{self.address}', "
-            f"state='{self.state}', "
-            f"gram_balance={self.gram_balance}, "
-            f"usdt_balance={self.usdt_balance}"
-            f")"
-        )
 
 
 class RecipientInfo(FragmentBaseModel):
-    """Resolved recipient from Fragment search."""
+    """A resolved Fragment recipient token."""
 
     recipient: str
     name: str
     photo_url: str | None = None
     myself: bool = False
 
-    def __repr__(self) -> str:
-        return (
-            f"RecipientInfo("
-            f"name='{self.name}', "
-            f"recipient='{self.recipient[:24]}...', "
-            f"myself={self.myself}"
-            f")"
-        )
-
 
 class PurchaseItem(FragmentBaseModel):
-    """Single item for batch purchase operation."""
+    """One purchase with strictly typed integer quantities."""
 
     type: str
     username: str
-    amount: int | None = None
-    months: int | None = None
+    amount: StrictInt | None = None
+    months: StrictInt | None = None
     show_sender: bool = True
-
-    def __repr__(self) -> str:
-        if self.type == "premium":
-            return f"PurchaseItem(type='premium', username='{self.username}', months={self.months})"
-        return f"PurchaseItem(type='{self.type}', username='{self.username}', amount={self.amount})"
 
 
 class PurchaseResult(FragmentBaseModel):
-    """Result of a successful purchase operation."""
+    """Purchase broadcast and fulfillment result."""
 
     transaction_id: str
     type: str
     username: str
     amount: int
-    payment_method: str = "gram"
-
-    def __repr__(self) -> str:
-        unit = "months" if self.type == "premium" else ("GRAM" if self.type in ("gram", "ton") else "stars")
-        return (
-            f"PurchaseResult("
-            f"type='{self.type}', "
-            f"username='{self.username}', "
-            f"amount={self.amount} {unit}, "
-            f"payment='{self.payment_method}', "
-            f"tx='{self.transaction_id}'"
-            f")"
-        )
+    payment_method: str = "ton"
+    confirmed: bool = False
+    fee_nanoton: int = 0
+    req_id: str | None = None
+    confirmation_error: str | None = None
 
 
-class PremiumResult(FragmentBaseModel):
-    """Result of a successful Telegram Premium gift."""
+class PremiumResult(PurchaseResult):
+    """Premium purchase compatibility result."""
 
-    transaction_id: str
-    username: str
-    amount: int
-    payment_method: str = "gram"
+    type: str = "premium"
 
 
-class StarsResult(FragmentBaseModel):
-    """Result of a successful Telegram Stars purchase."""
+class StarsResult(PurchaseResult):
+    """Stars purchase compatibility result."""
 
-    transaction_id: str
-    username: str
-    amount: int
-    payment_method: str = "gram"
+    type: str = "stars"
 
 
-class AdsTopupResult(FragmentBaseModel):
-    """Result of a successful Telegram Ads GRAM top-up."""
+class AdsTopupResult(PurchaseResult):
+    """Ads top-up compatibility result."""
 
-    transaction_id: str
-    username: str
-    amount: int
+    type: str = "ton"
 
 
 class GiveawayStarsResult(FragmentBaseModel):
-    """Result of a successful Stars giveaway."""
+    """Stars giveaway receipt using the total package amount."""
 
     transaction_id: str
     channel: str
     winners: int
     amount: int
-    payment_method: str = "gram"
+    payment_method: str = "ton"
+    confirmed: bool = False
+    fee_nanoton: int = 0
+    req_id: str | None = None
+    confirmation_error: str | None = None
 
 
-class GiveawayPremiumResult(FragmentBaseModel):
-    """Result of a successful Premium giveaway."""
-
-    transaction_id: str
-    channel: str
-    winners: int
-    amount: int
-    payment_method: str = "gram"
+class GiveawayPremiumResult(GiveawayStarsResult):
+    """Premium giveaway receipt; amount is the duration in months."""
 
 
-class NftWithdrawalInitResult(FragmentBaseModel):
-    """Result of NFT withdrawal initialization."""
+class WithdrawalInitResult(FragmentBaseModel):
+    """Withdrawal initialization and approval challenge."""
 
     ok: bool
     confirm_message: str | None = None
@@ -268,55 +194,8 @@ class NftWithdrawalInitResult(FragmentBaseModel):
     error: str | None = None
 
 
-class NftWithdrawalConfirmResult(FragmentBaseModel):
-    """Result of NFT withdrawal confirmation."""
-
-    ok: bool
-    need_update: bool
-    mode: str
-    html: str | None = None
-    error: str | None = None
-
-
-class StarsWithdrawalState(FragmentBaseModel):
-    """Stars withdrawal state from Fragment page."""
-
-    transaction: str
-    withdrawal_data: str
-
-
-class StarsWithdrawalInitResult(FragmentBaseModel):
-    """Result of Stars withdrawal initialization."""
-
-    ok: bool
-    confirm_message: str | None = None
-    confirm_button: str | None = None
-    confirm_hash: str | None = None
-    error: str | None = None
-
-
-class StarsWithdrawalConfirmResult(FragmentBaseModel):
-    """Result of Stars withdrawal confirmation."""
-
-    ok: bool
-    need_update: bool
-    mode: str
-    html: str | None = None
-    error: str | None = None
-
-
-class AdsWithdrawalInitResult(FragmentBaseModel):
-    """Result of Ads revenue withdrawal initialization."""
-
-    ok: bool
-    confirm_message: str | None = None
-    confirm_button: str | None = None
-    confirm_hash: str | None = None
-    error: str | None = None
-
-
-class AdsWithdrawalConfirmResult(FragmentBaseModel):
-    """Result of Ads revenue withdrawal confirmation."""
+class WithdrawalConfirmResult(FragmentBaseModel):
+    """Withdrawal confirmation response."""
 
     ok: bool
     need_update: bool = False
@@ -325,8 +204,39 @@ class AdsWithdrawalConfirmResult(FragmentBaseModel):
     error: str | None = None
 
 
+class NftWithdrawalInitResult(WithdrawalInitResult):
+    """NFT withdrawal initialization."""
+
+
+class NftWithdrawalConfirmResult(WithdrawalConfirmResult):
+    """NFT withdrawal confirmation."""
+
+
+class StarsWithdrawalInitResult(WithdrawalInitResult):
+    """Stars withdrawal initialization."""
+
+
+class StarsWithdrawalConfirmResult(WithdrawalConfirmResult):
+    """Stars withdrawal confirmation."""
+
+
+class AdsWithdrawalInitResult(WithdrawalInitResult):
+    """Ads withdrawal initialization."""
+
+
+class AdsWithdrawalConfirmResult(WithdrawalConfirmResult):
+    """Ads withdrawal confirmation."""
+
+
+class StarsWithdrawalState(FragmentBaseModel):
+    """Opaque Stars withdrawal state."""
+
+    transaction: str
+    withdrawal_data: str
+
+
 class BidResult(FragmentBaseModel):
-    """Result of a successful bid or buy-now transaction."""
+    """Bid broadcast receipt."""
 
     transaction_id: str
     item_type: int
@@ -334,65 +244,58 @@ class BidResult(FragmentBaseModel):
     bid: int
     confirm_method: str | None = None
     confirm_id: str | None = None
+    confirmed: bool = False
+    fee_nanoton: int = 0
 
 
 class OfferResult(FragmentBaseModel):
-    """Result of a make-offer transaction."""
+    """Offer broadcast receipt."""
 
     transaction_id: str
     item_type: int
     slug: str
     amount: int
     req_id: str | None = None
+    confirmed: bool = False
+    fee_nanoton: int = 0
 
 
 class UsernamesResult(FragmentBaseModel):
-    """Result of username marketplace search."""
+    """Username listings and cursor."""
 
-    items: list[dict[str, Any]]
-    next_offset_id: str | None
+    items: list[dict[str, Any]] = Field(default_factory=list)
+    next_offset_id: str | None = None
 
 
-class NumbersResult(FragmentBaseModel):
-    """Result of anonymous numbers marketplace search."""
-
-    items: list[dict[str, Any]]
-    next_offset_id: str | None
+class NumbersResult(UsernamesResult):
+    """Number listings and cursor."""
 
 
 class GiftsResult(FragmentBaseModel):
-    """Result of gifts marketplace search."""
+    """Gift listings and cursor."""
 
-    items: list[dict[str, Any]]
-    next_offset: int | None
+    items: list[dict[str, Any]] = Field(default_factory=list)
+    next_offset: int | None = None
 
 
 class BidHistoryEntry(FragmentBaseModel):
-    """Single bid history entry."""
+    """One item history entry."""
 
     price: str | None = None
     date: str | None = None
     wallet: str | None = None
 
 
-class OwnerHistoryEntry(FragmentBaseModel):
-    """Single ownership history entry."""
-
-    price: str | None = None
-    date: str | None = None
-    wallet: str | None = None
+class OwnerHistoryEntry(BidHistoryEntry):
+    """Ownership history entry."""
 
 
-class OfferHistoryEntry(FragmentBaseModel):
-    """Single offer history entry."""
-
-    price: str | None = None
-    date: str | None = None
-    wallet: str | None = None
+class OfferHistoryEntry(BidHistoryEntry):
+    """Offer history entry."""
 
 
 class AuctionInfo(FragmentBaseModel):
-    """Auction pricing information."""
+    """Auction price fields."""
 
     highest_bid: str | None = None
     bid_step: str | None = None
@@ -401,13 +304,22 @@ class AuctionInfo(FragmentBaseModel):
     buy_now_price: str | None = None
 
 
-class UsernameInfo(FragmentBaseModel):
-    """Detailed information about a Fragment username."""
+class RateModel(FragmentBaseModel):
+    """Compatibility model exposing TON and historical GRAM naming."""
 
-    username: str
-    status: str
+    gram_rate: float = 0.0
+
+    @property
+    def ton_rate(self) -> float:
+        """Return the TON exchange rate."""
+        return self.gram_rate
+
+
+class ItemInfo(RateModel):
+    """Common item detail fields."""
+
+    status: str = "Unknown"
     item_type: int
-    gram_rate: float
     auction: AuctionInfo | None = None
     auction_end: str | None = None
     owner_wallet: str | None = None
@@ -419,77 +331,43 @@ class UsernameInfo(FragmentBaseModel):
     owner_history_next_offset: str | None = None
     offer_history_next_offset: str | None = None
 
-    @property
-    def ton_rate(self) -> float:
-        """Alias for gram_rate for backward compatibility."""
-        return self.gram_rate
+
+class UsernameInfo(ItemInfo):
+    """Username details."""
+
+    username: str
 
 
-class NumberInfo(FragmentBaseModel):
-    """Detailed information about a Fragment number."""
+class NumberInfo(ItemInfo):
+    """Anonymous-number details."""
 
     number: str
     display_number: str
-    status: str
-    item_type: int
-    gram_rate: float
     restricted: bool = False
-    auction: AuctionInfo | None = None
-    auction_end: str | None = None
-    owner_wallet: str | None = None
-    purchased_date: str | None = None
-    bid_history: list[BidHistoryEntry] = Field(default_factory=list)
-    owner_history: list[OwnerHistoryEntry] = Field(default_factory=list)
-    offer_history: list[OfferHistoryEntry] = Field(default_factory=list)
-    bid_history_next_offset: str | None = None
-    owner_history_next_offset: str | None = None
-    offer_history_next_offset: str | None = None
-
-    @property
-    def ton_rate(self) -> float:
-        """Alias for gram_rate for backward compatibility."""
-        return self.gram_rate
 
 
 class GiftAttribute(FragmentBaseModel):
-    """Gift attribute with rarity."""
+    """Gift attribute and rarity."""
 
     name: str
     value: str
     rarity: str | None = None
 
 
-class GiftInfo(FragmentBaseModel):
-    """Detailed information about a Fragment gift."""
+class GiftInfo(ItemInfo):
+    """Collectible gift details."""
 
     slug: str
     name: str
-    status: str
-    item_type: int
-    gram_rate: float
     image_url: str | None = None
     sticker_url: str | None = None
-    owner_wallet: str | None = None
-    purchased_date: str | None = None
-    auction: AuctionInfo | None = None
-    auction_end: str | None = None
     attributes: list[GiftAttribute] = Field(default_factory=list)
     issued: str | None = None
-    bid_history: list[BidHistoryEntry] = Field(default_factory=list)
-    owner_history: list[OwnerHistoryEntry] = Field(default_factory=list)
-    offer_history: list[OfferHistoryEntry] = Field(default_factory=list)
-    bid_history_next_offset: str | None = None
-    owner_history_next_offset: str | None = None
-    offer_history_next_offset: str | None = None
-
-    @property
-    def ton_rate(self) -> float:
-        """Alias for gram_rate for backward compatibility."""
-        return self.gram_rate
 
 
 class GiftCollection(FragmentBaseModel):
-    """Information about a Gift Collection from the filters menu."""
+    """Gift collection filter."""
+
     slug: str
     name: str
     count: int
@@ -497,7 +375,8 @@ class GiftCollection(FragmentBaseModel):
 
 
 class GiftAttributeValue(FragmentBaseModel):
-    """A specific value for a gift attribute (e.g., specific Model, Backdrop, or Symbol)."""
+    """Gift trait filter value."""
+
     name: str
     value: str
     count: int
@@ -505,7 +384,8 @@ class GiftAttributeValue(FragmentBaseModel):
 
 
 class GiftAttributeCategory(FragmentBaseModel):
-    """A category of attributes (e.g., Model, Backdrop, Symbol)."""
+    """Gift trait category."""
+
     field: str
     name: str
     total_count: int
@@ -513,13 +393,14 @@ class GiftAttributeCategory(FragmentBaseModel):
 
 
 class GiftFiltersInfo(FragmentBaseModel):
-    """Complete filters data including collections and available attributes."""
+    """Available collections and trait categories."""
+
     collections: list[GiftCollection] = Field(default_factory=list)
     attributes: list[GiftAttributeCategory] = Field(default_factory=list)
 
 
 class StarsPrice(FragmentBaseModel):
-    """Price for a specific stars amount."""
+    """Stars price in decimal currency strings."""
 
     stars: int
     gram_price: str
@@ -527,24 +408,18 @@ class StarsPrice(FragmentBaseModel):
 
     @property
     def ton_price(self) -> str:
-        """Alias for gram_price for backward compatibility."""
+        """Return the native TON price."""
         return self.gram_price
 
 
-class StarsPrices(FragmentBaseModel):
-    """All available stars package prices."""
+class StarsPrices(RateModel):
+    """Stars package prices."""
 
-    packages: list[StarsPrice]
-    gram_rate: float
-
-    @property
-    def ton_rate(self) -> float:
-        """Alias for gram_rate for backward compatibility."""
-        return self.gram_rate
+    packages: list[StarsPrice] = Field(default_factory=list)
 
 
 class PremiumPriceOption(FragmentBaseModel):
-    """Single premium duration price."""
+    """Premium price option."""
 
     months: int
     label: str
@@ -554,24 +429,18 @@ class PremiumPriceOption(FragmentBaseModel):
 
     @property
     def ton_price(self) -> str:
-        """Alias for gram_price for backward compatibility."""
+        """Return the native TON price."""
         return self.gram_price
 
 
-class PremiumPrices(FragmentBaseModel):
-    """Premium subscription prices."""
+class PremiumPrices(RateModel):
+    """Premium duration prices."""
 
-    options: list[PremiumPriceOption]
-    gram_rate: float
-
-    @property
-    def ton_rate(self) -> float:
-        """Alias for gram_rate for backward compatibility."""
-        return self.gram_rate
+    options: list[PremiumPriceOption] = Field(default_factory=list)
 
 
 class StarsTransaction(FragmentBaseModel):
-    """Single stars transaction from history."""
+    """Stars account history entry."""
 
     recipient: str
     stars: int
@@ -580,12 +449,12 @@ class StarsTransaction(FragmentBaseModel):
 
     @property
     def price_ton(self) -> str:
-        """Alias for price_gram for backward compatibility."""
+        """Return the native price."""
         return self.price_gram
 
 
 class PremiumTransaction(FragmentBaseModel):
-    """Single premium transaction from history."""
+    """Premium account history entry."""
 
     recipient: str
     duration: str
@@ -594,12 +463,12 @@ class PremiumTransaction(FragmentBaseModel):
 
     @property
     def price_ton(self) -> str:
-        """Alias for price_gram for backward compatibility."""
+        """Return the native price."""
         return self.price_gram
 
 
 class TopupTransaction(FragmentBaseModel):
-    """Single topup transaction from Ads history."""
+    """Ads top-up history entry."""
 
     recipient: str
     amount: int
@@ -607,7 +476,7 @@ class TopupTransaction(FragmentBaseModel):
 
 
 class ProfileInfo(FragmentBaseModel):
-    """Fragment account profile information."""
+    """Authenticated account profile."""
 
     name: str
     username: str
@@ -619,7 +488,7 @@ class ProfileInfo(FragmentBaseModel):
 
 
 class SessionInfo(FragmentBaseModel):
-    """Active session information."""
+    """Authenticated Fragment session."""
 
     session_id: str
     device: str
@@ -629,7 +498,7 @@ class SessionInfo(FragmentBaseModel):
 
 
 class MyBid(FragmentBaseModel):
-    """Single bid entry from My Bid History."""
+    """Authenticated bid history entry."""
 
     item_type: str
     slug: str
@@ -641,21 +510,15 @@ class MyBid(FragmentBaseModel):
     description: str | None = None
 
 
-class MyBidsResult(FragmentBaseModel):
-    """Result of My Bid History query."""
+class MyBidsResult(RateModel):
+    """Authenticated bids."""
 
-    items: list[MyBid]
-    gram_rate: float
-    total_count: int
-
-    @property
-    def ton_rate(self) -> float:
-        """Alias for gram_rate for backward compatibility."""
-        return self.gram_rate
+    items: list[MyBid] = Field(default_factory=list)
+    total_count: int = 0
 
 
 class MyAsset(FragmentBaseModel):
-    """Single asset from My Assets page."""
+    """Authenticated owned asset."""
 
     item_type: str
     slug: str
@@ -666,21 +529,15 @@ class MyAsset(FragmentBaseModel):
     assigned_name: str | None = None
 
 
-class MyAssetsResult(FragmentBaseModel):
-    """Result of My Assets query."""
+class MyAssetsResult(RateModel):
+    """Authenticated owned assets."""
 
-    items: list[MyAsset]
-    gram_rate: float
-    total_count: int
-
-    @property
-    def ton_rate(self) -> float:
-        """Alias for gram_rate for backward compatibility."""
-        return self.gram_rate
+    items: list[MyAsset] = Field(default_factory=list)
+    total_count: int = 0
 
 
 class TelegramAccount(FragmentBaseModel):
-    """Telegram account available for assignment."""
+    """An assignment destination."""
 
     id: str
     name: str
@@ -689,14 +546,14 @@ class TelegramAccount(FragmentBaseModel):
 
 
 class AssignAccountsResult(FragmentBaseModel):
-    """Result of getting available Telegram accounts for assignment."""
+    """Available assignment destinations."""
 
-    accounts: list[TelegramAccount]
-    can_disable: bool
+    accounts: list[TelegramAccount] = Field(default_factory=list)
+    can_disable: bool = False
 
 
 class AssignResult(FragmentBaseModel):
-    """Result of assigning asset to Telegram account."""
+    """Assignment operation result."""
 
     ok: bool
     message: str | None = None
@@ -707,48 +564,49 @@ class AssignResult(FragmentBaseModel):
 
 
 class StartAuctionResult(FragmentBaseModel):
-    """Result of starting auction or selling asset."""
+    """Auction broadcast receipt."""
 
     ok: bool
     req_id: str | None = None
+    transaction_id: str | None = None
+    confirmed: bool = False
 
 
-class NftTransferRecipient(FragmentBaseModel):
-    """Recipient info for NFT transfer."""
-
-    myself: bool
-    recipient: str
-    name: str
-    photo_url: str | None = None
+class NftTransferRecipient(RecipientInfo):
+    """NFT transfer destination."""
 
 
 class NftTransferRequest(FragmentBaseModel):
-    """Result of initNftTransferRequest."""
+    """NFT transfer initialization."""
 
     req_id: str
-    myself: bool
-    item_title: str
-    content: str
-    button: str
+    myself: bool = False
+    item_title: str = ""
+    content: str = ""
+    button: str = ""
 
 
 class LoginCodeResult(FragmentBaseModel):
-    """Result of a pending login code request."""
+    """Pending anonymous-number login code."""
 
     number: str
     code: str | None = None
     active_sessions: int = 0
 
+    def __repr__(self) -> str:
+        """Omit the login code from diagnostic representations."""
+        return f"LoginCodeResult(number={self.number!r}, active_sessions={self.active_sessions})"
+
 
 class TerminateSessionsResult(FragmentBaseModel):
-    """Result of terminating anonymous number sessions."""
+    """Anonymous-number session termination result."""
 
     number: str
     message: str | None = None
 
 
 class BatchItemResult(FragmentBaseModel):
-    """Result of a single item within a batch operation."""
+    """One batch outcome, including unresolved broadcast outcomes."""
 
     type: str
     username: str
@@ -757,45 +615,38 @@ class BatchItemResult(FragmentBaseModel):
     result: Any = None
     error: str | None = None
     chunk_index: int = 0
+    status: Literal["prepared", "broadcast", "confirmed", "failed", "unknown"] = "failed"
 
 
 class BatchResult(FragmentBaseModel):
-    """Result of a batch purchase operation."""
+    """Batch results; succeeded means broadcast, not necessarily fulfillment."""
 
     total: int
     succeeded: int
     failed: int
     chunks_sent: int
     items: list[BatchItemResult] = Field(default_factory=list)
-
-
-class NoKycBatchResult(FragmentBaseModel):
-    """Result of a No-KYC batch purchase operation.
-
-    In No-KYC mode each item is processed individually via MarketApp API.
-    If auto_pay is enabled (wallet configured), items contains PurchaseResult-like results.
-    If auto_pay is disabled, prepared_transactions contains PreparedTransaction objects
-    for external signing.
-    """
-
-    total: int
-    succeeded: int
-    failed: int
-    items: list[BatchItemResult] = Field(default_factory=list)
     prepared_transactions: list[PreparedTransaction] = Field(default_factory=list)
 
 
+class NoKycBatchResult(BatchResult):
+    """Compatibility result name for wallet-auth batch operations."""
+
+
 class GatewayRechargeResult(FragmentBaseModel):
-    """Result of a Telegram Gateway credits recharge."""
+    """Gateway recharge receipt."""
 
     transaction_id: str
     account_id: str
     credits: int
     req_id: str | None = None
+    confirmed: bool = False
+    fee_nanoton: int = 0
+    confirmation_error: str | None = None
 
 
 class GatewayPriceInfo(FragmentBaseModel):
-    """Price info for Gateway credits purchase."""
+    """Gateway credit quote."""
 
     credits: int
     gram_price: str
@@ -803,18 +654,29 @@ class GatewayPriceInfo(FragmentBaseModel):
 
 
 class AdsRechargeResult(FragmentBaseModel):
-    """Result of a Telegram Ads account recharge."""
+    """Ads recharge receipt."""
 
     transaction_id: str
     account_id: str
     amount: int
     req_id: str | None = None
+    confirmed: bool = False
+    fee_nanoton: int = 0
+    confirmation_error: str | None = None
 
 
 class SubscriptionResult(FragmentBaseModel):
-    """Result of subscribe/unsubscribe to item updates."""
+    """Auction subscription state."""
 
     ok: bool
     subscribed: bool
     item_type: int
     slug: str
+
+
+__all__ = [
+    name for name, value in globals().items()
+    if isinstance(value, type)
+    and issubclass(value, FragmentBaseModel)
+    and value.__module__ == __name__
+]
