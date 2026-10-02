@@ -2,6 +2,59 @@
 
 <!-- version list -->
 
+## v13.0.0 (2026-10-02)
+
+### Bug Fixes
+
+- **parsers**: Preserve gift attribute arrays and desktop statuses; support partial pagination
+  responses; consolidate account, pricing, history, and marketplace HTML parsing
+  ([`c88ffab`](https://github.com/S1qwy/fragment-api-py/commit/c88ffab58270a7a85e8b00451124b4e7d2a69b5c))
+
+- **storage**: Atomically persist user sessions; avoid filename collisions; preserve metadata;
+  propagate backend failures and close Redis resources explicitly
+  ([`5df57ad`](https://github.com/S1qwy/fragment-api-py/commit/5df57ad2f0f69d627b8d9ba3555853a0f28dc654))
+
+### Documentation
+
+- Migrate documentation to wiki and update README
+  ([`0a21d95`](https://github.com/S1qwy/fragment-api-py/commit/0a21d95ad0ae59e5f69fddd6ced92b6762797c90))
+
+- **examples**: Provide comprehensive v13 usage examples and environment-driven execution runner
+  ([`3607782`](https://github.com/S1qwy/fragment-api-py/commit/36077829c5c97df8c74c02a66a37aaf9575c133e))
+
+### Features
+
+- **auth**: Replace MarketApp fallback with restricted shared-wallet proof authentication; retain
+  interactive Telegram authentication; reuse client-owned sessions and refresh rejected API hashes
+  ([`747e3f2`](https://github.com/S1qwy/fragment-api-py/commit/747e3f21050d9c641d30d6db04ea4b6744aea381))
+
+- **client**: Route all operations through reusable transport; restrict shared-wallet account
+  access; unify purchases, giveaways, EVM invoices, exact fees, preparation, and fulfillment
+  confirmation
+  ([`96784e1`](https://github.com/S1qwy/fragment-api-py/commit/96784e108c2cc1d55c9e1c03fb8b20938dbc07df))
+
+- **core**: Remove MarketApp dependency; define wallet-auth capabilities, strict validation,
+  explicit native-TON fees, transaction lifecycle models, and supported wallet contracts
+  ([`f9f2413`](https://github.com/S1qwy/fragment-api-py/commit/f9f2413cde3f2e4a707efcdaf1179fa9b9e28c1e))
+
+- **wallet**: Prepare exact fee-bearing native payments; preserve binary messages; validate TON and
+  USDT balances through provider state; support highload broadcasts without seqno confirmation or
+  unsafe payment replay
+  ([`b983c25`](https://github.com/S1qwy/fragment-api-py/commit/b983c25a0d8852ec7c19c7b93ed90565c2d8385a))
+
+### Refactoring
+
+- **api**: Retain public import paths and method entry points while removing duplicate transports
+  and MarketApp exports
+  ([`0784d5a`](https://github.com/S1qwy/fragment-api-py/commit/0784d5a1ebf52550148b386eacc0006c78b6e7bd))
+
+### Testing
+
+- **core**: Cover fee rounding, native-only charging, boolean rejection, original giveaway limits,
+  shared-wallet access restrictions, hash refresh, session reuse, and partial gift parsing
+  ([`f96370b`](https://github.com/S1qwy/fragment-api-py/commit/f96370b2a3c59812632532ea951a72ad8489354b))
+
+
 ## v12.1.0 (2026-08-31)
 
 ### Bug Fixes
