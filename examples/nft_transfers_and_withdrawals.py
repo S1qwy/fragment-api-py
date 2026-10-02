@@ -1,110 +1,107 @@
-"""
-NFT transfer and withdrawal examples.
+"""Explicit NFT transfer and separate withdrawal approval steps."""
 
-Demonstrates transferring gifts to other users and
-withdrawing NFTs/Stars to external wallets.
-"""
-
-import asyncio
-from FragmentAPI import FragmentClient
-
-
-COOKIES = {
-    "stel_ssid": "your_ssid",
-    "stel_dt": "-180",
-    "stel_token": "your_token",
-    "stel_ton_token": "your_ton_token",
-}
-SEED = "word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24"
-API_KEY = "your_api_key_here_at_least_48_chars_long_xxxxxxxxxxxxxxxxx"
+from _common import (
+    make_client,
+    require_execution,
+    required,
+    run,
+    show_result,
+)
 
 
-async def transfer_nft_to_user():
-    """Transfer an NFT gift to another Telegram user."""
-    client = FragmentClient(cookies=COOKIES, seed=SEED, api_key=API_KEY)
-
-    recipient = await client.search_nft_transfer_recipient("target_user")
-    if not recipient:
-        print("Transfer recipient not found")
-        return
-
-    print(f"Recipient: {recipient.name} (myself={recipient.myself})")
-
-    transfer_req = await client.init_nft_transfer(
-        slug="my-gift-42",
-        recipient=recipient.recipient,
-    )
-    print(f"Transfer request created:")
-    print(f"  Req ID:  {transfer_req.req_id}")
-    print(f"  Title:   {transfer_req.item_title}")
-    print(f"  Content: {transfer_req.content}")
-    print(f"  Button:  {transfer_req.button}")
-
-    tx_result = await client.transfer_nft(
-        req_id=transfer_req.req_id,
-        show_sender=True,
-    )
-    print(f"Transfer completed: tx={tx_result.tx_hash}, confirmed={tx_result.confirmed}")
+async def recipient() -> None:
+    """Resolve an NFT recipient without transferring an asset."""
+    async with make_client(account=True) as client:
+        show_result(await client.search_nft_transfer_recipient(
+            required("FRAGMENT_TARGET")
+        ))
 
 
-async def withdraw_nft_to_wallet():
-    """Withdraw an NFT to an external wallet (two-step confirmation)."""
-    client = FragmentClient(cookies=COOKIES, seed=SEED, api_key=API_KEY)
-
-    transaction_id = "some_transaction_id_from_fragment"
-
-    state = await client.get_nft_withdrawal_state(transaction_id)
-    print(f"Withdrawal state: {state}")
-
-    init_result = await client.init_nft_withdrawal(
-        transaction=transaction_id,
-        keep_gift=False,
-    )
-
-    if not init_result.ok:
-        print(f"Init failed: {init_result.error}")
-        return
-
-    print(f"Confirm message: {init_result.confirm_message}")
-    print(f"Confirm button:  {init_result.confirm_button}")
-
-    confirm_result = await client.confirm_nft_withdrawal(
-        transaction=transaction_id,
-        confirm_hash=init_result.confirm_hash,
-        keep_gift=False,
-    )
-    print(f"Withdrawal confirmed: ok={confirm_result.ok}, mode={confirm_result.mode}")
+async def transfer() -> None:
+    """Initialize and broadcast a transfer to the explicitly selected recipient."""
+    async with make_client(mode="pay", account=True) as client:
+        found = await client.search_nft_transfer_recipient(required("FRAGMENT_TARGET"))
+        if found is None:
+            print("Recipient not found.")
+            return
+        request = await client.init_nft_transfer(
+            required("FRAGMENT_SLUG"),
+            found.recipient,
+        )
+        show_result(await client.transfer_nft(request.req_id))
 
 
-async def withdraw_stars_to_wallet():
-    """Withdraw Stars revenue to an external wallet (two-step confirmation)."""
-    client = FragmentClient(cookies=COOKIES, seed=SEED, api_key=API_KEY)
+async def nft_init() -> None:
+    """Initialize an NFT withdrawal without automatically accepting its challenge."""
+    require_execution()
+    async with make_client(mode="prepare", account=True) as client:
+        show_result(await client.init_nft_withdrawal(
+            required("FRAGMENT_TRANSACTION"),
+            keep_gift=False,
+        ))
 
-    transaction_id = "some_stars_transaction_id"
 
-    state = await client.get_stars_withdrawal_state(transaction_id)
-    print(f"Stars withdrawal state:")
-    print(f"  Transaction: {state.transaction}")
-    print(f"  Data: {state.withdrawal_data}")
+async def nft_confirm() -> None:
+    """Submit a separately reviewed NFT withdrawal challenge."""
+    require_execution()
+    async with make_client(mode="prepare", account=True) as client:
+        show_result(await client.confirm_nft_withdrawal(
+            required("FRAGMENT_TRANSACTION"),
+            required("FRAGMENT_CONFIRM_HASH"),
+            keep_gift=False,
+        ))
 
-    init_result = await client.init_stars_withdrawal(
-        transaction=state.transaction,
-        withdrawal_data=state.withdrawal_data,
-    )
 
-    if not init_result.ok:
-        print(f"Init failed: {init_result.error}")
-        return
+async def stars_init() -> None:
+    """Read current Stars withdrawal state and request an approval challenge."""
+    require_execution()
+    async with make_client(mode="prepare", account=True) as client:
+        state = await client.get_stars_withdrawal_state(required("FRAGMENT_TRANSACTION"))
+        show_result(await client.init_stars_withdrawal(
+            state.transaction,
+            state.withdrawal_data,
+        ))
 
-    print(f"Confirm message: {init_result.confirm_message}")
 
-    confirm_result = await client.confirm_stars_withdrawal(
-        transaction=state.transaction,
-        withdrawal_data=state.withdrawal_data,
-        confirm_hash=init_result.confirm_hash,
-    )
-    print(f"Stars withdrawal: ok={confirm_result.ok}, mode={confirm_result.mode}")
+async def stars_confirm() -> None:
+    """Confirm a reviewed Stars withdrawal using its original opaque state."""
+    require_execution()
+    async with make_client(mode="prepare", account=True) as client:
+        show_result(await client.confirm_stars_withdrawal(
+            required("FRAGMENT_TRANSACTION"),
+            required("FRAGMENT_WITHDRAWAL_DATA"),
+            required("FRAGMENT_CONFIRM_HASH"),
+        ))
+
+
+async def ads_init() -> None:
+    """Request an Ads withdrawal approval challenge."""
+    require_execution()
+    async with make_client(mode="prepare", account=True) as client:
+        show_result(await client.init_ads_withdrawal(required("FRAGMENT_TRANSACTION")))
+
+
+async def ads_confirm() -> None:
+    """Confirm a separately reviewed Ads withdrawal."""
+    require_execution()
+    async with make_client(mode="prepare", account=True) as client:
+        show_result(await client.confirm_ads_withdrawal(
+            required("FRAGMENT_TRANSACTION"),
+            required("FRAGMENT_CONFIRM_HASH"),
+        ))
 
 
 if __name__ == "__main__":
-    asyncio.run(transfer_nft_to_user())
+    run(
+        {
+            "recipient": recipient,
+            "transfer": transfer,
+            "nft-init": nft_init,
+            "nft-confirm": nft_confirm,
+            "stars-init": stars_init,
+            "stars-confirm": stars_confirm,
+            "ads-init": ads_init,
+            "ads-confirm": ads_confirm,
+        },
+        "recipient",
+    )

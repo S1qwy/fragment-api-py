@@ -1,55 +1,28 @@
-"""
-Transaction history retrieval examples.
+"""Read user-owned purchase history using a full-account cookie session."""
 
-Demonstrates fetching Stars, Premium, and Ads top-up
-transaction history from Fragment.
-"""
-
-import asyncio
-from FragmentAPI import FragmentClient
+from _common import make_client, run, show_result
 
 
-COOKIES = {
-    "stel_ssid": "your_ssid",
-    "stel_dt": "-180",
-    "stel_token": "your_token",
-    "stel_ton_token": "your_ton_token",
-}
+async def stars() -> None:
+    """Read Stars purchases, newest first."""
+    async with make_client(account=True) as client:
+        for item in await client.get_stars_history(sort="desc"):
+            show_result(item)
 
 
-async def stars_history():
-    """Fetch Stars transaction history (newest first)."""
-    client = FragmentClient(cookies=COOKIES)
-
-    transactions = await client.get_stars_history(sort="desc")
-    print(f"Stars transactions: {len(transactions)}")
-
-    for tx in transactions[:10]:
-        print(f"  @{tx.recipient} — {tx.stars} stars — {tx.price_gram} GRAM — {tx.date}")
-        print(f"    Price TON (alias): {tx.price_ton}")
+async def premium() -> None:
+    """Read Premium gifts, newest first."""
+    async with make_client(account=True) as client:
+        for item in await client.get_premium_history(sort="desc"):
+            show_result(item)
 
 
-async def premium_history():
-    """Fetch Premium gift transaction history (newest first)."""
-    client = FragmentClient(cookies=COOKIES)
-
-    transactions = await client.get_premium_history(sort="desc")
-    print(f"Premium transactions: {len(transactions)}")
-
-    for tx in transactions[:10]:
-        print(f"  @{tx.recipient} — {tx.duration} — {tx.price_gram} GRAM — {tx.date}")
-
-
-async def topup_history():
-    """Fetch Ads GRAM top-up history (oldest first)."""
-    client = FragmentClient(cookies=COOKIES)
-
-    transactions = await client.get_topup_history(sort="asc")
-    print(f"Top-up transactions: {len(transactions)}")
-
-    for tx in transactions[:10]:
-        print(f"  @{tx.recipient} — {tx.amount} GRAM — {tx.date}")
+async def topups() -> None:
+    """Read Ads top-up history."""
+    async with make_client(account=True) as client:
+        for item in await client.get_topup_history(sort="asc"):
+            show_result(item)
 
 
 if __name__ == "__main__":
-    asyncio.run(stars_history())
+    run({"stars": stars, "premium": premium, "topups": topups}, "stars")

@@ -1,71 +1,49 @@
-"""
-Raw Fragment API call examples.
+"""Raw API access with method restrictions and explicit BOC reporting."""
 
-Demonstrates using the low-level call() method for direct API access,
-and the confirm_request() method for manual transaction confirmation.
-"""
-
-import asyncio
-from FragmentAPI import FragmentClient
-
-
-COOKIES = {
-    "stel_ssid": "your_ssid",
-    "stel_dt": "-180",
-    "stel_token": "your_token",
-    "stel_ton_token": "your_ton_token",
-}
+from _common import (
+    make_client,
+    require_execution,
+    required,
+    run,
+    setting,
+)
 
 
-async def raw_search_call():
-    """Make a raw searchAuctions API call."""
-    client = FragmentClient(cookies=COOKIES)
-
-    result = await client.call(
-        "searchAuctions",
-        {
-            "type": "usernames",
-            "query": "test",
-            "sort": "price_asc",
-        },
-    )
-    print(f"Raw result keys: {list(result.keys())}")
-    if "html" in result:
-        print(f"HTML length: {len(result['html'])} chars")
-    if "next_offset_id" in result:
-        print(f"Next offset: {result['next_offset_id']}")
+async def search() -> None:
+    """Read raw search response keys without assuming a single HTML field."""
+    async with make_client() as client:
+        result = await client.call(
+            "searchAuctions",
+            {"type": "usernames", "query": "", "sort": "price_asc"},
+        )
+        print(f"Response keys: {sorted(result)}")
+        if result.get("error"):
+            print(f"Fragment error: {result['error']}")
 
 
-async def raw_update_prices():
-    """Make a raw updateStarsPrices API call."""
-    client = FragmentClient(cookies=COOKIES)
-
-    result = await client.call(
-        "updateStarsPrices",
-        {
-            "stars": "0",
-            "quantity": "1000",
-        },
-        page_url="https://fragment.com/stars",
-    )
-    print(f"Price update result: {result}")
+async def prices() -> None:
+    """Request raw Stars pricing from the correct purchase page."""
+    async with make_client() as client:
+        result = await client.call(
+            "updateStarsPrices",
+            {"stars": "0", "quantity": 1000},
+            page_url="https://fragment.com/stars/buy",
+        )
+        print(f"Response keys: {sorted(result)}")
 
 
-async def manual_confirm_request():
-    """Manually confirm a transaction after broadcasting.
-
-    This is useful when you manage the transaction lifecycle
-    yourself and need to notify Fragment of the broadcast.
-    """
-    client = FragmentClient(cookies=COOKIES)
-
-    result = await client.confirm_request(
-        req_id="12345",
-        boc="base64_encoded_boc_here",
-        referer="stars/buy",
-    )
-    print(f"Confirm result: {result}")
+async def confirm() -> None:
+    """Report an already broadcast BOC using the invoice's original session."""
+    require_execution()
+    async with make_client(account=True) as client:
+        result = await client.confirm_request(
+            required("FRAGMENT_REQ_ID"),
+            required("TON_SIGNED_BOC"),
+            referer=setting("FRAGMENT_CONFIRM_REFERER", "stars/buy"),
+        )
+        print(f"Confirmation response keys: {sorted(result)}")
+        print("This response alone is not a fulfillment receipt.")
 
 
 if __name__ == "__main__":
-    asyncio.run(raw_search_call())
+    run({"search": search, "prices": prices, "confirm": confirm}, "search")

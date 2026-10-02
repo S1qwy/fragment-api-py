@@ -1,77 +1,46 @@
-"""
-Fragment authentication examples.
+"""Explicit Telegram authentication with persistent, non-printed cookies."""
 
-Demonstrates how to obtain session cookies via TON wallet proof
-combined with Telegram OAuth (QR code or phone confirmation).
-"""
+import os
 
-import asyncio
-from FragmentAPI import FragmentClient
+from FragmentAPI import FileSessionStorage, FragmentClient
+
+from _common import required, run, setting
 
 
-async def authenticate_with_qr():
-    """Authenticate using QR code scanning flow.
-
-    This will print a QR code to the terminal. Scan it with
-    the Telegram app to complete authentication.
-    The returned cookies can be saved and reused for future sessions.
-    """
+async def authenticate(phone: str | None = None) -> None:
+    """Authenticate interactively and save cookies without printing their values."""
     cookies = await FragmentClient.authenticate(
-        seed="word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24",
-        wallet_version="V5R1",
-        print_qr=True,
-    )
-
-    print("Authentication successful!")
-    print(f"Cookies: {cookies}")
-
-    client = FragmentClient(
-        cookies=cookies,
-        seed="word1 word2 ... word24",
-        api_key="your_api_key_here_at_least_48_chars_long_xxxxxxxxxxxxxxxxx",
-    )
-    print(f"Client ready: {client}")
-
-
-async def authenticate_with_phone():
-    """Authenticate using phone number confirmation.
-
-    Instead of scanning a QR code, Telegram will send a confirmation
-    request to the device associated with the phone number.
-    """
-    cookies = await FragmentClient.authenticate(
-        seed="word1 word2 ... word24",
-        wallet_version="V5R1",
-        phone="+1234567890",
-        print_qr=False,
-    )
-    print(f"Authenticated via phone: {cookies}")
-
-
-async def authenticate_with_status_callback():
-    """Authenticate with a status callback to track progress."""
-
-    def on_status(status: str, payload):
-        """Handle authentication status updates."""
-        if status == "qr_link":
-            print(f"QR link generated: {payload}")
-        elif status == "consumed":
-            print("QR code scanned, waiting for confirmation...")
-        elif status == "confirmed":
-            print("Authentication confirmed by Telegram!")
-        elif status == "refresh":
-            print(f"QR token refreshed: {payload}")
-        elif status == "phone_sent":
-            print("Phone confirmation sent, check your Telegram app")
-
-    cookies = await FragmentClient.authenticate(
-        seed="word1 word2 ... word24",
-        wallet_version="V5R1",
+        seed=required("TON_SEED"),
+        wallet_version=setting("TON_WALLET_VERSION", "V5R1"),
+        phone=phone,
+        print_qr=phone is None,
+        proxy=os.getenv("FRAGMENT_PROXY") or None,
         on_status=on_status,
-        print_qr=True,
     )
-    print(f"Cookies obtained: {len(cookies)} keys")
+    storage = FileSessionStorage(setting("FRAGMENT_SESSION_DIR", ".fragment_sessions"))
+    await storage.save(
+        setting("FRAGMENT_SESSION_ID", "default"),
+        cookies,
+        {"mode": "cookies"},
+    )
+    print("Authentication completed. Session saved locally.")
+
+
+def on_status(status: str, payload: object) -> None:
+    """Report progress without logging OAuth tokens or cookie values."""
+    if status != "qr_link":
+        print(f"Authentication status: {status}")
+
+
+async def qr() -> None:
+    """Display the interactive QR authentication link."""
+    await authenticate()
+
+
+async def phone() -> None:
+    """Request Telegram approval using the configured phone number."""
+    await authenticate(required("TELEGRAM_PHONE"))
 
 
 if __name__ == "__main__":
-    asyncio.run(authenticate_with_qr())
+    run({"qr": qr, "phone": phone}, "qr")

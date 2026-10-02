@@ -1,184 +1,60 @@
-"""
-Error handling examples.
+"""Validation, restricted capabilities, and non-replaying payment error handling."""
 
-Demonstrates proper exception handling for all error categories:
-client configuration errors, API errors, transaction errors,
-and wallet errors.
-"""
-
-import asyncio
 from FragmentAPI import (
-    FragmentClient,
+    BroadcastUncertainError,
     ConfigurationError,
-    CookieError,
-    FragmentAPIError,
-    FragmentPageError,
-    UserNotFoundError,
-    AlreadySubscribedError,
-    TransactionError,
+    FragmentClient,
+    FragmentError,
     VerificationError,
     WalletError,
-    UnexpectedError,
-    FragmentError,
 )
 
-
-async def handle_configuration_errors():
-    """Demonstrate client configuration error handling."""
-    try:
-        FragmentClient(cookies="")
-    except CookieError as e:
-        print(f"Cookie error: {e}")
-
-    try:
-        FragmentClient(
-            cookies="stel_ssid=a; stel_dt=b; stel_token=c",
-            seed="only three words",
-        )
-    except ConfigurationError as e:
-        print(f"Config error: {e}")
-
-    try:
-        FragmentClient(
-            cookies="stel_ssid=a; stel_dt=b; stel_token=c",
-            api_provider="unsupported",
-        )
-    except ConfigurationError as e:
-        print(f"Provider error: {e}")
+from _common import make_client, required, run, show_result
 
 
-async def handle_wallet_requirement():
-    """Demonstrate errors when wallet is required but not configured."""
-    client = FragmentClient(
-        cookies="stel_ssid=a; stel_dt=b; stel_token=c; stel_ton_token=d",
-    )
-
-    try:
-        await client.get_wallet()
-    except ConfigurationError as e:
-        print(f"Wallet required: {e}")
-
-    try:
-        await client.purchase_stars("user", 100, payment_method="gram")
-    except ConfigurationError as e:
-        print(f"Seed required for GRAM payment: {e}")
+async def validation() -> None:
+    """Demonstrate validation failures before authentication or HTTP requests."""
+    async with FragmentClient() as client:
+        checks = [
+            ("Boolean quantity", lambda: client.purchase_stars("example", True)),
+            ("Invalid duration", lambda: client.purchase_premium("example", 5)),
+            ("Invalid package", lambda: client.giveaway_stars("example", 1, 501)),
+        ]
+        for label, operation in checks:
+            try:
+                await operation()
+            except ConfigurationError as exc:
+                print(f"{label}: {exc}")
 
 
-async def handle_ton_token_requirement():
-    """Demonstrate errors when stel_ton_token is missing."""
-    client = FragmentClient(
-        cookies="stel_ssid=a; stel_dt=b; stel_token=c",
-    )
-
-    try:
-        await client.get_profile()
-    except ConfigurationError as e:
-        print(f"TON token required: {e}")
-
-    try:
-        await client.topup_gram("user", 10)
-    except ConfigurationError as e:
-        print(f"TON token for topup: {e}")
+async def restrictions() -> None:
+    """Show that restricted wallet-auth sessions cannot read account state."""
+    async with FragmentClient() as client:
+        try:
+            await client.get_sessions()
+        except ConfigurationError as exc:
+            print(exc)
 
 
-async def handle_purchase_errors():
-    """Demonstrate error handling during purchase operations."""
-    client = FragmentClient(
-        cookies={
-            "stel_ssid": "a", "stel_dt": "b",
-            "stel_token": "c", "stel_ton_token": "d",
-        },
-        seed="word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24",
-        api_key="x" * 48,
-    )
-
-    try:
-        await client.purchase_stars("nonexistent_user_12345", 100)
-    except UserNotFoundError as e:
-        print(f"User not found: {e}")
-    except FragmentPageError as e:
-        print(f"Page error (cookies expired?): {e}")
-    except TransactionError as e:
-        print(f"Transaction failed: {e}")
-    except WalletError as e:
-        print(f"Wallet issue: {e}")
-    except VerificationError as e:
-        print(f"KYC required: {e}")
-    except FragmentAPIError as e:
-        print(f"API error: {e}")
-    except FragmentError as e:
-        print(f"General Fragment error: {e}")
-
-
-async def handle_validation_errors():
-    """Demonstrate input validation error handling."""
-    client = FragmentClient(
-        cookies="stel_ssid=a; stel_dt=b; stel_token=c; stel_ton_token=d",
-        seed="word " * 24,
-        api_key="x" * 48,
-    )
-
-    try:
-        await client.purchase_stars("user", 10)
-    except ConfigurationError as e:
-        print(f"Stars amount too low: {e}")
-
-    try:
-        await client.purchase_premium("user", months=5)
-    except ConfigurationError as e:
-        print(f"Invalid months: {e}")
-
-    try:
-        await client.purchase_stars("user", 100, payment_method="bitcoin")
-    except ConfigurationError as e:
-        print(f"Invalid payment method: {e}")
-
-
-async def comprehensive_try_except():
-    """Recommended error handling pattern for production code."""
-    client = FragmentClient(
-        cookies={
-            "stel_ssid": "a", "stel_dt": "b",
-            "stel_token": "c", "stel_ton_token": "d",
-        },
-        seed="word " * 24,
-        api_key="x" * 48,
-    )
-
-    try:
-        result = await client.purchase_stars("target_user", 100)
-        print(f"Success: {result}")
-
-    except ConfigurationError as e:
-        print(f"[CONFIG] Check your setup: {e}")
-
-    except UserNotFoundError as e:
-        print(f"[USER] User doesn't exist: {e}")
-
-    except AlreadySubscribedError as e:
-        print(f"[PREMIUM] Already has Premium: {e}")
-
-    except VerificationError as e:
-        print(f"[KYC] Complete verification first: {e}")
-
-    except WalletError as e:
-        print(f"[WALLET] Insufficient balance or wallet issue: {e}")
-
-    except TransactionError as e:
-        print(f"[TX] Transaction failed: {e}")
-
-    except FragmentPageError as e:
-        print(f"[PAGE] Cookies may be expired: {e}")
-
-    except FragmentAPIError as e:
-        print(f"[API] Fragment returned error: {e}")
-
-    except UnexpectedError as e:
-        print(f"[BUG] Unexpected error: {e}")
-
-    except FragmentError as e:
-        print(f"[GENERAL] Fragment error: {e}")
+async def purchase() -> None:
+    """Handle an actual purchase once, without automatically retrying it."""
+    async with make_client(mode="pay") as client:
+        try:
+            result = await client.purchase_stars(required("FRAGMENT_TARGET"), 100)
+        except BroadcastUncertainError:
+            print("Unknown broadcast outcome. Stop and reconcile before retrying.")
+        except VerificationError:
+            print("Fragment requires verification for this operation.")
+        except WalletError as exc:
+            print(f"Wallet preflight failed: {exc}")
+        except FragmentError as exc:
+            print(f"Operation failed: {type(exc).__name__}: {exc}")
+        else:
+            show_result(result)
 
 
 if __name__ == "__main__":
-    asyncio.run(handle_configuration_errors())
+    run(
+        {"validation": validation, "restrictions": restrictions, "purchase": purchase},
+        "validation",
+    )

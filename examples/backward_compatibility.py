@@ -1,88 +1,48 @@
-"""
-Backward compatibility examples.
+"""Supported aliases without implying that v13 has no breaking changes."""
 
-Demonstrates that code written for v9.x continues to work
-with v10.x through property aliases and method aliases.
-All renamed fields (ton -> gram) have backward-compatible accessors.
-"""
+from FragmentAPI import (
+    ConfigError,
+    ConfigurationError,
+    StarsPrice,
+    StarsPrices,
+    StarsTransaction,
+    WalletInfo,
+)
+from FragmentAPI.utils.validation import normalize_payment_method
 
-import asyncio
-from FragmentAPI import FragmentClient, ConfigurationError
-
-try:
-    from FragmentAPI import ConfigError
-    print("ConfigError alias available (backward compat)")
-except ImportError:
-    print("ConfigError not available")
+from _common import run
 
 
-COOKIES = "stel_ssid=abc; stel_dt=-180; stel_token=xyz; stel_ton_token=tok"
-SEED = "word " * 24
-API_KEY = "x" * 48
-
-
-async def ton_rate_aliases():
-    """Demonstrate that ton_rate properties still work."""
-    client = FragmentClient(cookies=COOKIES)
-
-    prices = await client.get_stars_prices()
-    print(f"gram_rate: {prices.gram_rate}")
-    print(f"ton_rate (alias): {prices.ton_rate}")
-    assert prices.gram_rate == prices.ton_rate
-
-    for pkg in prices.packages[:2]:
-        print(f"  gram_price: {pkg.gram_price}")
-        print(f"  ton_price (alias): {pkg.ton_price}")
-        assert pkg.gram_price == pkg.ton_price
-
-
-async def wallet_balance_aliases():
-    """Demonstrate that balance_ton property still works on WalletInfo."""
-    client = FragmentClient(cookies=COOKIES, seed=SEED, api_key=API_KEY)
-
-    wallet = await client.get_wallet()
-    print(f"gram_balance: {wallet.gram_balance}")
-    print(f"balance_ton (alias): {wallet.balance_ton}")
-    assert wallet.gram_balance == wallet.balance_ton
-
-
-async def topup_ton_still_works():
-    """Demonstrate that topup_ton() is an alias for topup_gram()."""
-    print("topup_ton() is available and delegates to topup_gram()")
-    print("Both accept the same parameters and return the same result type")
-
-
-async def payment_method_aliases():
-    """Demonstrate that 'ton' and 'gram' payment methods are equivalent."""
-    print("'gram' and 'ton' are treated identically:")
-    print("  payment_method='gram'  ->  internally uses 'ton' for Fragment API")
-    print("  payment_method='ton'   ->  works as before")
-    print("  payment_method='usdt_gram'  ->  internally uses 'usdt_ton'")
-    print("  payment_method='usdt_ton'   ->  works as before")
-
-
-async def config_error_alias():
-    """Demonstrate that ConfigError is an alias for ConfigurationError."""
+async def aliases() -> None:
+    """Verify compatibility properties and payment aliases without network access."""
     assert ConfigError is ConfigurationError
-    print("ConfigError is ConfigurationError: True")
+    assert normalize_payment_method("gram") == "ton"
+    assert normalize_payment_method("usdt_gram") == "usdt_ton"
 
-    try:
-        raise ConfigError("test")
-    except ConfigurationError:
-        print("ConfigError caught as ConfigurationError")
+    price = StarsPrice(stars=100, gram_price="1.25", usd_price="2.50")
+    prices = StarsPrices(packages=[price], gram_rate=2.0)
+    wallet = WalletInfo(
+        address="display-only",
+        state="active",
+        gram_balance=10.0,
+        usdt_balance=None,
+        balance_nanoton=10_000_000_000,
+    )
+    history = StarsTransaction(
+        recipient="example",
+        stars=100,
+        price_gram="1.25",
+        date="2025-01-01",
+    )
 
-
-async def history_price_aliases():
-    """Demonstrate that price_ton aliases work on transaction history."""
-    client = FragmentClient(cookies=COOKIES)
-
-    transactions = await client.get_stars_history()
-    if transactions:
-        tx = transactions[0]
-        print(f"price_gram: {tx.price_gram}")
-        print(f"price_ton (alias): {tx.price_ton}")
-        assert tx.price_gram == tx.price_ton
+    assert price.ton_price == price.gram_price
+    assert prices.ton_rate == prices.gram_rate
+    assert wallet.balance_ton == wallet.gram_balance
+    assert wallet.balance_usdt is None
+    assert history.price_ton == history.price_gram
+    print("Supported compatibility aliases verified.")
+    print("MarketApp integration and cross-invoice transaction batching were removed.")
 
 
 if __name__ == "__main__":
-    asyncio.run(ton_rate_aliases())
+    run({"aliases": aliases}, "aliases")
