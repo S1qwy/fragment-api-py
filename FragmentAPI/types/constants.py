@@ -8,6 +8,7 @@ from typing import Any
 from tonutils.contracts.wallet import (
     WalletHighloadV2,
     WalletHighloadV3R1,
+    WalletTg,
     WalletV4R2,
     WalletV5R1,
 )
@@ -43,7 +44,7 @@ NFT_WITHDRAW_PAGE = f"{FRAGMENT_BASE_URL}/gift/withdraw"
 SHARED_AUTH_SEED = "walk share human fox output base violin universe illness doctor measure oppose"
 SHARED_AUTH_WALLET_VERSION = "V5R1"
 
-FEE_BASIS_POINTS = 50
+FEE_BASIS_POINTS = 100
 BASIS_POINTS_DENOMINATOR = 10_000
 FEE_ADDRESS = "UQAcsdD09x9dzj7Jc-MznN-SLUxPPMmwKQxsC2Ax_F03TBAH"
 
@@ -77,14 +78,26 @@ WALLET_CLASSES: dict[str, Any] = {
     "V5R1": WalletV5R1,
     "HighloadV2": WalletHighloadV2,
     "HighloadV3R1": WalletHighloadV3R1,
+    "WalletTg": WalletTg,
 }
 SUPPORTED_WALLET_VERSIONS = frozenset(WALLET_CLASSES)
 HIGHLOAD_WALLET_VERSIONS = frozenset({"HighloadV2", "HighloadV3R1"})
 WALLET_MAX_MESSAGES = {
-    "V4R2": 4,
-    "V5R1": 255,
-    "HighloadV2": 254,
-    "HighloadV3R1": 254,
+    name: wallet.MAX_MESSAGES for name, wallet in WALLET_CLASSES.items()
+}
+WALLET_VERSION_ALIASES: dict[str, str] = {
+    "tg": "WalletTg",
+    "telegram": "WalletTg",
+    "telegram wallet": "WalletTg",
+    "telegram_wallet": "WalletTg",
+    "wallet tg": "WalletTg",
+    "wallet_tg": "WalletTg",
+    "highloadv3": "HighloadV3R1",
+    "highload v3": "HighloadV3R1",
+    "highload_v3": "HighloadV3R1",
+    "highloadv2": "HighloadV2",
+    "highload v2": "HighloadV2",
+    "highload_v2": "HighloadV2",
 }
 SUPPORTED_API_PROVIDERS = frozenset({"tonapi", "toncenter"})
 MNEMONIC_WORD_COUNTS_VALID = frozenset({12, 18, 24})

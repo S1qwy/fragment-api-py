@@ -32,8 +32,8 @@ def test_native_fee_excludes_attached_gas() -> None:
         amount=100,
         gas_reserve_nanoton=50_000_000,
     )
-    assert result.fee_nanoton == 5_000_000
-    assert result.required_nanoton == 1_155_000_000
+    assert result.fee_nanoton == 10_000_000
+    assert result.required_nanoton == 1_160_000_000
     assert len(result.messages) == 2
     assert len(original["transaction"]["messages"]) == 1
 
@@ -77,6 +77,34 @@ def test_fee_consumes_wallet_message_capacity() -> None:
             payment_method="ton",
             payment_nanoton=1_000_000_000,
             wallet_version="V4R2",
+            item_kind="stars",
+            target="recipient",
+            amount=100,
+        )
+
+
+def test_highload_v3_capacity_is_not_clipped_to_254() -> None:
+    """Report the real contract capacity instead of the highload v2 one."""
+    data = payload(1_000_000)
+    data["transaction"]["messages"] = [
+        {"address": FEE_ADDRESS, "amount": "1000000"} for _ in range(300)
+    ]
+    prepared = prepare_transaction(
+        data,
+        payment_method="ton",
+        payment_nanoton=1_000_000,
+        wallet_version="HighloadV3R1",
+        item_kind="stars",
+        target="recipient",
+        amount=100,
+    )
+    assert len(prepared.messages) == 301
+    with pytest.raises(TransactionError):
+        prepare_transaction(
+            data,
+            payment_method="ton",
+            payment_nanoton=1_000_000,
+            wallet_version="HighloadV2",
             item_kind="stars",
             target="recipient",
             amount=100,

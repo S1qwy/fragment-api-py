@@ -1199,7 +1199,7 @@ class FragmentClient:
         return receipt, transaction
 
     async def place_bid(self, item_type: int, slug: str, bid: int) -> M.BidResult:
-        """Place a native-TON bid with its separate 0.5 percent fee."""
+        """Place a native-TON bid with its separate 1 percent fee."""
         integer(bid, 1, 10 ** 12, ConfigurationError.INVALID_BID_AMOUNT)
         page = self._item_url(item_type, slug)
         receipt, transaction = await self._account_transaction(

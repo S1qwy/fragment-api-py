@@ -5,10 +5,17 @@ from __future__ import annotations
 import base64
 import copy
 import inspect
+import secrets
+import threading
 import time
 from typing import TYPE_CHECKING, Any
 
-from ton_core import Address, NetworkGlobalID
+from ton_core import (
+    Address,
+    NetworkGlobalID,
+    WalletHighloadV2Params,
+    WalletHighloadV3Params,
+)
 from tonutils.clients import TonapiClient, ToncenterClient
 from tonutils.contracts.jetton import (
     get_wallet_address_get_method,
@@ -27,6 +34,7 @@ from FragmentAPI.types.constants import (
     FEE_ADDRESS,
     FEE_BASIS_POINTS,
     GAS_RESERVE_NANOTON,
+    HIGHLOAD_WALLET_VERSIONS,
     NANO_PER_TON,
     TVM_EXIT_ACCOUNT_NOT_FOUND,
     USDT_TON_MASTER_ADDRESS,
@@ -47,9 +55,45 @@ from FragmentAPI.utils.validation import decimal_units, normalize_payment_method
 if TYPE_CHECKING:
     from FragmentAPI.client import FragmentClient
 
+HIGHLOAD_QUERY_ID_SPACE = 1 << 23
+HIGHLOAD_BIT_NUMBER_SPACE = 1 << 10
+HIGHLOAD_BIT_NUMBER_MASK = HIGHLOAD_BIT_NUMBER_SPACE - 1
+
+_query_id_lock = threading.Lock()
+_query_id_sequence = secrets.randbits(23)
+
+
+def next_highload_query_id() -> int:
+    """Allocate a unique Highload v3 query id.
+
+    The contract splits the id into a 13-bit dictionary shift and a 10-bit
+    bit number, rejects the reserved bit number 1023, and refuses to run a
+    second payment that reuses a pair still inside its retention window.
+    """
+    global _query_id_sequence
+    with _query_id_lock:
+        for _ in range(HIGHLOAD_BIT_NUMBER_SPACE):
+            _query_id_sequence = (_query_id_sequence + 1) % HIGHLOAD_QUERY_ID_SPACE
+            if _query_id_sequence & HIGHLOAD_BIT_NUMBER_MASK != HIGHLOAD_BIT_NUMBER_MASK:
+                return _query_id_sequence
+    raise WalletError("Highload wallet query identifiers are exhausted.")
+
+
+def build_wallet_params(wallet_version: str) -> Any | None:
+    """Allocate broadcast-time parameters for wallets that require them."""
+    if wallet_version == "HighloadV2":
+        return WalletHighloadV2Params()
+    if wallet_version == "HighloadV3R1":
+        return WalletHighloadV3Params(query_id=next_highload_query_id())
+    if wallet_version in HIGHLOAD_WALLET_VERSIONS:
+        raise WalletError(
+            f"No transaction parameter builder exists for {wallet_version}."
+        )
+    return None
+
 
 def native_fee(payment_nanoton: int) -> int:
-    """Calculate ceil(payment_nanoton * 50 / 10000), with zero fee for zero principal."""
+    """Charge the service fee in basis points, rounding nanotons upward; a zero principal carries no fee."""
     if isinstance(payment_nanoton, bool) or not isinstance(payment_nanoton, int) or payment_nanoton < 0:
         raise ConfigurationError("Payment principal must be nonnegative integer nanotons.")
     return (
@@ -262,15 +306,15 @@ def _builder(message: PreparedTransactionMessage) -> Any:
     return TONTransferBuilder(**arguments)
 
 
-async def _transfer(wallet: Any, prepared: PreparedTransaction) -> Any:
+async def _transfer(wallet: Any, prepared: PreparedTransaction, params: Any = None) -> Any:
     """Use available tonutils message APIs, selecting the API before broadcasting."""
     single = getattr(wallet, "transfer_message", None)
     batch = getattr(wallet, "batch_transfer_message", None)
     if len(prepared.messages) == 1 and callable(single):
-        return await single(_builder(prepared.messages[0]))
+        return await single(_builder(prepared.messages[0]), params)
     if callable(batch):
         builders = [_builder(message) for message in prepared.messages]
-        return await batch(builders)
+        return await batch(builders, params)
 
     if len(prepared.messages) == 1:
         message = prepared.messages[0]
@@ -278,11 +322,14 @@ async def _transfer(wallet: Any, prepared: PreparedTransaction) -> Any:
             raise TransactionError("This wallet transfer API cannot preserve state_init.")
         transfer = getattr(wallet, "transfer", None)
         if callable(transfer):
-            return await transfer(
-                destination=message.address,
-                amount=int(message.amount),
-                body=decode_boc(message.payload) if message.payload else None,
-            )
+            arguments: dict[str, Any] = {
+                "destination": message.address,
+                "amount": int(message.amount),
+                "body": decode_boc(message.payload) if message.payload else None,
+            }
+            if "params" in inspect.signature(transfer).parameters:
+                arguments["params"] = params
+            return await transfer(**arguments)
     raise TransactionError(
         "Installed tonutils wallet does not expose the required atomic multi-message API."
     )
@@ -355,8 +402,9 @@ async def execute_prepared(
                             required=required_usdt_units / USDT_UNITS,
                         )
                     )
+            params = build_wallet_params(client.wallet_version)
             try:
-                result = await _transfer(wallet, prepared)
+                result = await _transfer(wallet, prepared, params)
             except TransactionError:
                 raise
             except Exception as exc:

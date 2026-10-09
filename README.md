@@ -70,7 +70,7 @@ A new authentication and transaction architecture.
 | Authentication | Restricted wallet-proof sessions replace the MarketApp integration |
 | Transport | A reusable client-owned HTTP session with cached API hashes |
 | Payments | Distinct unsigned preparation, broadcast, and fulfillment states |
-| Wallets | V4R2, V5R1, HighloadV2, and HighloadV3R1 configuration |
+| Wallets | V4R2, V5R1, HighloadV2, HighloadV3R1, and Telegram WalletTg configuration |
 | Batches | Ordered invoice processing with per-item outcomes |
 | Storage | Atomic file replacement, collision-resistant filenames, and explicit Redis cleanup |
 | Parsing | Table-fragment handling, decimal preservation, responsive statuses, and merged gift filters |

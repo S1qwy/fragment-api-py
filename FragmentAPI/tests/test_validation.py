@@ -8,6 +8,7 @@ from FragmentAPI.utils.validation import (
     integer,
     months,
     normalize_payment_method,
+    normalize_wallet_version,
     stars_giveaway,
 )
 from FragmentAPI.utils.wallet import native_fee
@@ -15,11 +16,46 @@ from FragmentAPI.utils.wallet import native_fee
 
 @pytest.mark.parametrize(
     ("principal", "expected"),
-    [(0, 0), (1, 1), (199, 1), (200, 1), (201, 2), (1_000_000_000, 5_000_000)],
+    [
+        (0, 0),
+        (1, 1),
+        (99, 1),
+        (100, 1),
+        (101, 2),
+        (199, 2),
+        (200, 2),
+        (201, 3),
+        (1_000_000_000, 10_000_000),
+    ],
 )
 def test_fee_rounding(principal: int, expected: int) -> None:
     """Round fee fractions upward using integer arithmetic."""
     assert native_fee(principal) == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("V5R1", "V5R1"),
+        ("v4r2", "V4R2"),
+        ("WalletTg", "WalletTg"),
+        ("wallettg", "WalletTg"),
+        ("Tg", "WalletTg"),
+        (" telegram ", "WalletTg"),
+        ("Telegram Wallet", "WalletTg"),
+        ("HighloadV3", "HighloadV3R1"),
+        ("highload_v2", "HighloadV2"),
+    ],
+)
+def test_wallet_version_aliases(value: str, expected: str) -> None:
+    """Resolve Telegram Wallet and shorthand names to supported versions."""
+    assert normalize_wallet_version(value) == expected
+
+
+def test_unknown_wallet_version_is_rejected() -> None:
+    """Keep unsupported contracts out of the client configuration."""
+    with pytest.raises(ConfigurationError):
+        normalize_wallet_version("WalletV3")
 
 
 @pytest.mark.parametrize("value", [True, False, 1.0, "1", None])

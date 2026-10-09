@@ -16,6 +16,7 @@ from FragmentAPI.types.constants import (
     SUPPORTED_API_PROVIDERS,
     SUPPORTED_WALLET_VERSIONS,
     VALID_PAYMENT_METHODS,
+    WALLET_VERSION_ALIASES,
 )
 
 
@@ -40,8 +41,12 @@ def normalize_seed(seed: str) -> str:
 def normalize_wallet_version(version: str) -> str:
     """Resolve wallet names case-insensitively."""
     if isinstance(version, str):
+        key = version.strip().casefold()
+        alias = WALLET_VERSION_ALIASES.get(key)
+        if alias is not None:
+            return alias
         for candidate in SUPPORTED_WALLET_VERSIONS:
-            if candidate.casefold() == version.strip().casefold():
+            if candidate.casefold() == key:
                 return candidate
     raise ConfigurationError(
         ConfigurationError.UNSUPPORTED_VERSION.format(

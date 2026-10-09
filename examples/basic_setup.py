@@ -26,6 +26,15 @@ async def highload() -> None:
         print(client)
 
 
+async def telegram_wallet() -> None:
+    """Use the Telegram WalletTg contract."""
+    async with make_client(
+        mode="wallet",
+        wallet_version="WalletTg",
+    ) as client:
+        print(client)
+
+
 async def external() -> None:
     """Configure external preparation without enabling automatic broadcasting."""
     async with make_client(mode="prepare") as client:
@@ -39,6 +48,7 @@ if __name__ == "__main__":
             "read": read_only,
             "payer": payer,
             "highload": highload,
+            "tg": telegram_wallet,
             "external": external,
         },
         "read",
