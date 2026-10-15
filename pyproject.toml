@@ -12,10 +12,10 @@ license = {text = "MIT"}
 requires-python = ">=3.10"
 dependencies = [
     "curl_cffi>=0.7.4",
-    "tonutils>=2.3.2",
+    "tonutils>=2.3.2,<3",
     "pynacl>=1.5.0",
-    "ton-core>=0.6.1",
-    "pydantic>=2.0",
+    "ton-core>=0.6.1,<1",
+    "pydantic>=2.0,<3",
     "selectolax>=0.3.0",
     "aiofiles>=23.0"
 ]
@@ -40,7 +40,8 @@ dev = [
     "python-semantic-release>=9.0.0",
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
-    "build>=1.0"
+    "build>=1.0",
+    "ruff>=0.8"
 ]
 
 [tool.flit.module]
@@ -48,7 +49,7 @@ name = "FragmentAPI"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
+testpaths = ["FragmentAPI/tests"]
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
