@@ -3,6 +3,7 @@
 import asyncio
 import subprocess
 import sys
+import uuid
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -176,26 +177,31 @@ async def test_separate_wallet_locks_serialize_and_cancel_cleanly():
 
 
 async def test_wallet_lock_is_shared_with_processes_and_released_after_crash():
+    lock_address = "test-process-wallet-" + uuid.uuid4().hex
     code = """
 import asyncio
-from FragmentAPI.utils.locking import file_wallet_lock
+import runpy
+import sys
+file_wallet_lock = runpy.run_path(sys.argv[2])['file_wallet_lock']
 async def main():
-    async with file_wallet_lock('test-process-wallet'):
+    async with file_wallet_lock(sys.argv[1]):
         print('locked', flush=True)
-        await asyncio.sleep(30)
+        await asyncio.Event().wait()
 asyncio.run(main())
 """
     child = subprocess.Popen(
-        [sys.executable, "-c", code], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        [sys.executable, "-I", "-c", code, lock_address,
+         sys.modules[file_wallet_lock.__module__].__file__],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     entered = asyncio.Event()
     async def acquire():
-        async with file_wallet_lock("test-process-wallet"):
+        async with file_wallet_lock(lock_address):
             entered.set()
     waiter = None
     try:
-        line = await asyncio.wait_for(asyncio.to_thread(child.stdout.readline), 10)
+        line = await asyncio.wait_for(asyncio.to_thread(child.stdout.readline), 30)
         assert line.strip() == "locked"
         waiter = asyncio.create_task(acquire())
         await asyncio.sleep(0.15)
