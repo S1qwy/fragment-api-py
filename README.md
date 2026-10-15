@@ -71,14 +71,15 @@ A new authentication and transaction architecture.
 | Transport | A reusable client-owned HTTP session with cached API hashes |
 | Payments | Distinct unsigned preparation, broadcast, and fulfillment states |
 | Wallets | V4R2, V5R1, HighloadV2, HighloadV3R1, and Telegram WalletTg configuration |
-| Batches | Ordered invoice processing with per-item outcomes |
+| Batches | One combined wallet submission with per-invoice outcomes |
 | Storage | Atomic file replacement, collision-resistant filenames, and explicit Redis cleanup |
 | Parsing | Table-fragment handling, decimal preservation, responsive statuses, and merged gift filters |
 | Validation | Strict integer inputs, original giveaway package limits, and capability guards |
 
 > [!IMPORTANT]
 > Version 13 includes breaking changes. MarketApp parameters and exports are removed.
-> Batch purchases no longer represent a single transaction across multiple invoices.
+> On `dev`, batch purchases again combine complete invoices into one wallet submission.
+> Fragment fulfillment is tracked separately for each invoice.
 > Read the [migration notes](https://github.com/S1qwy/fragment-api-py/wiki/Home#migrating-to-1300) before upgrading.
 
 ## Choose your workflow
@@ -126,6 +127,29 @@ The repository keeps executable examples in one place rather than duplicating co
 | Handle payment outcomes | [Error handling](https://github.com/S1qwy/fragment-api-py/blob/main/examples/error_handling.py) |
 
 **[Browse the complete example guide](https://github.com/S1qwy/fragment-api-py/wiki/Examples)**
+
+## Batches, fees, and recovery
+
+`batch_purchase(items)` prepares all invoices and submits their combined messages
+in one wallet transaction. A batch that exceeds wallet capacity is rejected
+before broadcasting; it is never silently split. In preparation mode,
+`result.transaction` contains the combined payload for external signing.
+
+Native TON purchases include a separate service fee configured by
+`FEE_BASIS_POINTS` (`150` means **1.5%**), sent to `FEE_ADDRESS` in
+`FragmentAPI/types/constants.py`. This is additional to network fees and separate
+from voluntary support. Inspect `payment_nanoton`, `fee_nanoton`,
+`gas_reserve_nanoton`, and `required_nanoton` before signing. The percentage fee
+does not apply to USDT or external EVM payments.
+
+Automatic payments durably record the signed BOC before broadcast. Use
+`list_payments()`, `get_payment(operation_id)`, and
+`reconcile_payment(operation_id)` to recover after cancellation or restart
+without repeating a blockchain payment. The default journal and wallet locks
+are stored under `~/.fragment-api`; deployments must preserve that directory.
+
+See [payment batches and recovery](https://github.com/S1qwy/fragment-api-py/wiki/Payment-Batches-and-Recovery) for result semantics,
+confirmation limits, operator resolution, and coordination across processes/hosts.
 
 ## Payment networks
 
@@ -187,7 +211,8 @@ Availability is subject to Fragment's response and operation-specific restrictio
 - Keep payer credentials, session cookies, and login codes out of source control and logs.
 - Use your own sender account for external signing.
 - Never deposit funds into the shared authentication wallet.
-- Coordinate access when multiple clients or processes use the same payer.
+- Local clients/processes sharing a payer use OS wallet locks and a durable journal.
+  Multi-host deployments must configure shared payment storage and distributed locks.
 - Fragment HTML and private endpoints can change independently of this package.
 - This project is not affiliated with or endorsed by Fragment, Telegram, or TON.
 

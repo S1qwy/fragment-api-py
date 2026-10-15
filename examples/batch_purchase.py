@@ -1,4 +1,4 @@
-"""Ordered per-invoice batches, not a single cross-invoice transaction."""
+"""Prepare all invoices and send their messages in one wallet transaction."""
 
 from FragmentAPI import PurchaseItem
 
@@ -22,19 +22,19 @@ def items() -> list[PurchaseItem]:
 
 
 async def prepare() -> None:
-    """Prepare each invoice without broadcasting any of them."""
+    """Inspect result.transaction: the combined payload for one external signature."""
     async with make_client(mode="prepare") as client:
         show_result(await client.batch_purchase(items(), payment_method="ton"))
 
 
 async def purchase() -> None:
-    """Process invoices in order and display each item's lifecycle status."""
+    """Send one wallet message and display each invoice's fulfillment status."""
     async with make_client(mode="pay") as client:
         show_result(await client.batch_purchase(items(), payment_method="ton"))
 
 
 async def highload() -> None:
-    """Use HighloadV3R1 without implying cross-invoice atomicity."""
+    """Use HighloadV3R1 for a larger single broadcast; fulfillment is per invoice."""
     async with make_client(
         mode="pay",
         wallet_version="HighloadV3R1",
