@@ -4,7 +4,7 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "fragment-api-py"
-version = "13.0.0"
+version = "14.0.0"
 description = "Async Fragment client with reusable transport, wallet authentication, external signing, and explicit payment receipts"
 readme = "README.md"
 authors = [{name = "S1qwy", email = "S1qwy@internet.ru"}]
@@ -29,6 +29,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Framework :: AsyncIO"
 ]

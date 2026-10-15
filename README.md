@@ -61,26 +61,26 @@ Operate user-owned assets, listings, offers, assignments, withdrawals, and sessi
 </tr>
 </table>
 
-## Release 13.0.0
+## Release 14.0.0
 
-A new authentication and transaction architecture.
+Single-submission batches, durable payment recovery, and coordinated payer access.
 
 | Area | What changed |
 |:--|:--|
-| Authentication | Restricted wallet-proof sessions replace the MarketApp integration |
+| Authentication | Restricted wallet-proof sessions remain separate from the real payer |
 | Transport | A reusable client-owned HTTP session with cached API hashes |
-| Payments | Distinct unsigned preparation, broadcast, and fulfillment states |
+| Payments | Signed intent is journaled before broadcast; interrupted payments can be reconciled |
 | Wallets | V4R2, V5R1, HighloadV2, HighloadV3R1, and Telegram WalletTg configuration |
 | Batches | One combined wallet submission with per-invoice outcomes |
-| Storage | Atomic file replacement, collision-resistant filenames, and explicit Redis cleanup |
+| Storage | SQLite payment journal, local process locks, and shared-store/distributed-lock extension points |
 | Parsing | Table-fragment handling, decimal preservation, responsive statuses, and merged gift filters |
 | Validation | Strict integer inputs, original giveaway package limits, and capability guards |
 
 > [!IMPORTANT]
-> Version 13 includes breaking changes. MarketApp parameters and exports are removed.
-> On `dev`, batch purchases again combine complete invoices into one wallet submission.
-> Fragment fulfillment is tracked separately for each invoice.
-> Read the [migration notes](https://github.com/S1qwy/fragment-api-py/wiki/Home#migrating-to-1300) before upgrading.
+> Version 14 includes breaking changes. Batches combine all invoices into one wallet submission
+> and reject preparation/capacity failures before sending. TON preparation requires a real payer
+> identity; the shared authentication wallet is never a fallback. Fulfillment remains per invoice.
+> Read the [migration notes](https://github.com/S1qwy/fragment-api-py/wiki/Home#migrating-to-1400) before upgrading.
 
 ## Choose your workflow
 
@@ -135,8 +135,8 @@ in one wallet transaction. A batch that exceeds wallet capacity is rejected
 before broadcasting; it is never silently split. In preparation mode,
 `result.transaction` contains the combined payload for external signing.
 
-Native TON purchases include a separate service fee configured by
-`FEE_BASIS_POINTS` (`150` means **1.5%**), sent to `FEE_ADDRESS` in
+Native TON purchases include a separate **1.5%** service fee
+(`FEE_BASIS_POINTS = 150`), sent to `FEE_ADDRESS` in
 `FragmentAPI/types/constants.py`. This is additional to network fees and separate
 from voluntary support. Inspect `payment_nanoton`, `fee_nanoton`,
 `gas_reserve_nanoton`, and `required_nanoton` before signing. The percentage fee

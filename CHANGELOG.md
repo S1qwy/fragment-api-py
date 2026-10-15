@@ -2,6 +2,39 @@
 
 <!-- version list -->
 
+## v14.0.0 (2026-10-15)
+
+### Breaking changes
+
+- Batch purchases validate and prepare all invoices, then submit one combined
+  wallet message. Oversized or invalid batches fail before sending and are never
+  silently split. Downstream contract execution and fulfillment remain per invoice.
+- Unsigned TON preparation requires a payer seed or complete sender account;
+  the shared authentication wallet is never a payer fallback.
+- Fulfillment completion must match the invoice request id. Generic page
+  completion remains unconfirmed rather than being treated as delivery proof.
+
+### Features and fixes
+
+- Journal signed BOCs and invoice contexts before network transmission; add
+  payment inspection, reconciliation, and audited operator resolution APIs.
+- Coordinate payer access across local clients/processes with OS locks and
+  ordinary-wallet sequence observation; expose shared-storage/lock extension points.
+- Prevent automatic repayment after uncertain sends and retain recovery data
+  through cancellation, network failure, and process restarts.
+- Set the native service fee to 1.5% of explicit principal, rounded upward to
+  integer nanotons. USDT/EVM exclusions remain unchanged; batches sum per-invoice fees.
+- Support Telegram WalletTg, use contract-derived message limits, and allocate
+  highload query parameters without treating sequence changes as fulfillment.
+- Publish typed recovery models and concrete purchase results; split invoice,
+  batch, and recovery implementation out of the client.
+- Gate releases on Python 3.10–3.14 tests, static checks, and package builds.
+
+### Documentation
+
+- Update the project wiki with batch accounting, recovery, fees, and deployment
+  requirements; keep the complete guide in the wiki rather than the source tree.
+
 ## v13.0.0 (2026-10-02)
 
 ### Bug Fixes
