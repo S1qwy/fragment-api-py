@@ -44,7 +44,7 @@ NFT_WITHDRAW_PAGE = f"{FRAGMENT_BASE_URL}/gift/withdraw"
 SHARED_AUTH_SEED = "walk share human fox output base violin universe illness doctor measure oppose"
 SHARED_AUTH_WALLET_VERSION = "V5R1"
 
-FEE_BASIS_POINTS = 100
+FEE_BASIS_POINTS = 150
 BASIS_POINTS_DENOMINATOR = 10_000
 FEE_ADDRESS = "UQAcsdD09x9dzj7Jc-MznN-SLUxPPMmwKQxsC2Ax_F03TBAH"
 

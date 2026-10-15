@@ -19,13 +19,11 @@ from FragmentAPI.utils.wallet import native_fee
     [
         (0, 0),
         (1, 1),
-        (99, 1),
-        (100, 1),
-        (101, 2),
-        (199, 2),
-        (200, 2),
-        (201, 3),
-        (1_000_000_000, 10_000_000),
+        (66, 1),
+        (67, 2),
+        (133, 2),
+        (134, 3),
+        (1_000_000_000, 15_000_000),
     ],
 )
 def test_fee_rounding(principal: int, expected: int) -> None:

@@ -32,8 +32,8 @@ def test_native_fee_excludes_attached_gas() -> None:
         amount=100,
         gas_reserve_nanoton=50_000_000,
     )
-    assert result.fee_nanoton == 10_000_000
-    assert result.required_nanoton == 1_160_000_000
+    assert result.fee_nanoton == 15_000_000
+    assert result.required_nanoton == 1_165_000_000
     assert len(result.messages) == 2
     assert len(original["transaction"]["messages"]) == 1
 
