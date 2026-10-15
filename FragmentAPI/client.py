@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import re
-import time
 from typing import Any
+from collections.abc import Callable
+from typing import AsyncContextManager
 from urllib.parse import quote, urlencode, urlsplit
 
 from curl_cffi import requests
@@ -14,15 +16,17 @@ from curl_cffi import requests
 from FragmentAPI.exceptions import (
     AlreadySubscribedError,
     AnonymousNumberError,
-    BroadcastUncertainError,
     ConfigurationError,
     CookieError,
     FragmentAPIError,
     ParseError,
-    TransactionError,
     UserNotFoundError,
 )
+from FragmentAPI.methods.purchases import PurchaseMixin
+from FragmentAPI.methods.recovery import PaymentRecoveryMixin
 from FragmentAPI.storage.base import SessionStorage
+from FragmentAPI.storage.payments import PaymentStorage, SQLitePaymentStorage
+from FragmentAPI.utils.locking import file_wallet_lock
 from FragmentAPI.types import constants as C
 from FragmentAPI.types import models as M
 from FragmentAPI.utils import html as H
@@ -31,14 +35,12 @@ from FragmentAPI.utils.auth import (
     authenticate,
     fragment_cookies,
 )
-from FragmentAPI.utils.evm import fetch_evm_invoice
 from FragmentAPI.utils.http import FragmentTransport, raise_api_error
 from FragmentAPI.utils.proxy import build_curl_proxy_args, parse_proxy
 from FragmentAPI.utils.validation import (
     decimal_units,
     integer,
     months as validate_months,
-    normalize_payment_method,
     normalize_provider,
     normalize_seed,
     normalize_wallet_version,
@@ -49,51 +51,18 @@ from FragmentAPI.utils.validation import (
 )
 from FragmentAPI.utils.wallet import (
     build_account_info,
-    execute_prepared,
     execute_transaction,
     fetch_wallet_info,
-    prepare_transaction,
 )
 
-_FLOWS = {
-    "stars": (
-        C.STARS_BUY_PAGE, "searchStarsRecipient", "updateStarsBuyState",
-        "initBuyStarsRequest", "getBuyStarsLink",
-    ),
-    "premium": (
-        C.PREMIUM_GIFT_PAGE, "searchPremiumGiftRecipient", "updatePremiumState",
-        "initGiftPremiumRequest", "getGiftPremiumLink",
-    ),
-    "ton": (
-        C.ADS_TOPUP_PAGE, "searchAdsTopupRecipient", "updateAdsTopupState",
-        "initAdsTopupRequest", "getAdsTopupLink",
-    ),
-    "giveaway_stars": (
-        C.STARS_GIVEAWAY_PAGE, "searchStarsGiveawayRecipient", "updateStarsGiveawayState",
-        "initGiveawayStarsRequest", "getGiveawayStarsLink",
-    ),
-    "giveaway_premium": (
-        C.PREMIUM_GIVEAWAY_PAGE, "searchPremiumGiveawayRecipient", "updatePremiumGiveawayState",
-        "initGiveawayPremiumRequest", "getGiveawayPremiumLink",
-    ),
-    "ads_recharge": (
-        C.ADS_PAY_PAGE, None, "updateAdsState",
-        "initAdsRechargeRequest", "getAdsRechargeLink",
-    ),
-    "gateway": (
-        C.GATEWAY_PAGE, None, "updateGatewayState",
-        "initGatewayRechargeRequest", "getGatewayRechargeLink",
-    ),
-}
 
 
-class FragmentClient:
+class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
     """Fragment client with cookie and restricted wallet-auth operating modes.
 
     Missing cookies selects wallet_auth. The shared V5R1 phrase authenticates
     the session only; it is never selected as the automatic paying wallet.
-    Replace the SHARED_AUTH_SEED placeholder or pass shared_auth_seed before
-    using that mode.
+    Pass shared_auth_seed to override the shared authentication identity.
 
     A payer seed plus API key enables automatic broadcasting. Otherwise TON
     operations return PreparedTransaction. sender_account may specify the
@@ -121,14 +90,16 @@ class FragmentClient:
         gas_reserve_nanoton: int = C.GAS_RESERVE_NANOTON,
         confirmation_timeout: float = C.CONFIRMATION_TIMEOUT,
         wallet_auth: bool | None = None,
+        payment_storage: PaymentStorage | None = None,
+        wallet_lock_factory: Callable[[str], AsyncContextManager[None]] | None = None,
     ) -> None:
         self.seed = normalize_seed(seed) if seed is not None else None
         self.api_key = api_key.strip() if api_key else None
         self.api_provider = normalize_provider(api_provider)
         self.wallet_version = normalize_wallet_version(wallet_version)
-        if isinstance(timeout, bool) or timeout <= 0:
+        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or timeout <= 0:
             raise ConfigurationError("timeout must be positive.")
-        if isinstance(confirmation_timeout, bool) or confirmation_timeout <= 0:
+        if isinstance(confirmation_timeout, bool) or not isinstance(confirmation_timeout, (int, float)) or not math.isfinite(confirmation_timeout) or confirmation_timeout <= 0:
             raise ConfigurationError("confirmation_timeout must be positive.")
         self.timeout = float(timeout)
         self.confirmation_timeout = float(confirmation_timeout)
@@ -156,6 +127,8 @@ class FragmentClient:
         self._transport: FragmentTransport | None = None
         self._auth_lock = asyncio.Lock()
         self._wallet_lock = asyncio.Lock()
+        self.payment_storage = payment_storage if payment_storage is not None else SQLitePaymentStorage()
+        self.wallet_lock_factory = wallet_lock_factory or file_wallet_lock
         self._flow_lock = asyncio.Lock()
         self._closed = False
         self._authenticated = bool(
@@ -465,434 +438,6 @@ class FragmentClient:
             quantity=winners, months=months,
         )
 
-    async def _confirm(
-        self,
-        transaction: dict[str, Any],
-        receipt: M.TransactionResult,
-        account: dict[str, Any],
-        req_id: str,
-        page_url: str,
-        state_method: str | None,
-    ) -> M.TransactionResult:
-        """Report the signed BOC and poll only explicit successful completion."""
-        if not receipt.boc:
-            receipt.confirmation_error = "The wallet result did not contain a signed BOC."
-            return receipt
-        try:
-            method = str(transaction.get("confirm_method") or "confirmReq")
-            parameters = transaction.get("confirm_params") or {"id": req_id}
-            if not isinstance(parameters, dict):
-                raise ParseError("Invalid confirmation parameters.")
-            await self._api(
-                method,
-                {
-                    **parameters,
-                    "account": json.dumps(account),
-                    "device": C.DEVICE_FINGERPRINT,
-                    "boc": receipt.boc,
-                },
-                page_url,
-            )
-            if state_method is None:
-                return receipt
-            deadline = time.monotonic() + self.confirmation_timeout
-            mode = "new"
-            while time.monotonic() < deadline:
-                remaining = deadline - time.monotonic()
-                response = await asyncio.wait_for(
-                    self._api(
-                        state_method,
-                        {"mode": mode, "lv": "false", "dh": str(time.time_ns())},
-                        page_url,
-                    ),
-                    timeout=max(0.001, remaining),
-                )
-                mode = str(response.get("mode", mode))
-                if mode == "done" and response.get("need_update") is False:
-                    receipt.confirmed = True
-                    receipt.status = "confirmed"
-                    return receipt
-                await asyncio.sleep(min(C.CONFIRMATION_INTERVAL, max(0, deadline - time.monotonic())))
-            receipt.confirmation_error = "Fragment fulfillment confirmation timed out."
-        except Exception as exc:
-            receipt.confirmation_error = str(exc)
-        return receipt
-
-    async def _purchase_flow(
-        self,
-        kind: str,
-        target: str,
-        amount: int,
-        *,
-        payment_method: str = "ton",
-        show_sender: bool = True,
-        winners: int | None = None,
-    ) -> tuple[M.TransactionResult, str] | M.PreparedTransaction | M.EvmPaymentResult:
-        """Prepare, optionally broadcast, and confirm one invoice."""
-        method = normalize_payment_method(payment_method)
-        page, search_method, state_method, init_method, link_method = _FLOWS[kind]
-        if kind in {"ton", "ads_recharge", "gateway"} and method != "ton":
-            raise ConfigurationError("This operation supports native TON only.")
-        async with self._flow_lock:
-            await self._api(
-                state_method,
-                {"mode": "new", "lv": "false", "dh": str(time.time_ns())},
-                page,
-            )
-            resolved: M.RecipientInfo | None = None
-            search_extra: dict[str, Any] = {}
-            if kind == "stars":
-                search_extra["quantity"] = ""
-            elif kind in {"premium", "giveaway_premium"}:
-                search_extra["months"] = amount
-            if winners is not None:
-                search_extra["quantity"] = winners
-            if kind == "giveaway_stars":
-                search_extra["stars"] = amount
-            if search_method:
-                resolved = await self._recipient(
-                    search_method, target, page, **search_extra
-                )
-                if resolved is None:
-                    raise UserNotFoundError(
-                        UserNotFoundError.NOT_FOUND.format(username=target)
-                    )
-            data: dict[str, Any] = (
-                {"recipient": resolved.recipient}
-                if resolved else {"account": target}
-            )
-            if kind == "stars":
-                data["quantity"] = amount
-            elif kind == "premium":
-                data["months"] = amount
-            elif kind == "giveaway_stars":
-                data.update(quantity=winners, stars=amount)
-                await self._api(
-                    "updateStarsGiveawayPrices",
-                    {"quantity": winners, "stars": amount}, page,
-                )
-            elif kind == "giveaway_premium":
-                data.update(quantity=winners, months=amount)
-                await self._api(
-                    "updatePremiumGiveawayPrices", {"quantity": winners}, page
-                )
-            elif kind == "gateway":
-                data["credits"] = amount
-            else:
-                data["amount"] = amount
-            if kind not in {"ton", "ads_recharge", "gateway"}:
-                data["payment_method"] = method
-            initialized = await self._api(init_method, data, page)
-            req_id = str(initialized.get("req_id") or "")
-            if not req_id:
-                raise FragmentAPIError(
-                    FragmentAPIError.NO_REQUEST_ID.format(context=kind)
-                )
-
-            if method in C.EVM_PAYMENT_METHODS:
-                invoice = await fetch_evm_invoice(
-                    self.cookies, urlsplit(page).path,
-                    resolved.recipient if resolved else target,
-                    method,
-                    quantity=amount if kind == "stars" else winners if kind == "giveaway_stars" else None,
-                    months=amount if kind in {"premium", "giveaway_premium"} else None,
-                    amount=amount if kind == "giveaway_stars" else None,
-                    winners=winners if kind == "giveaway_premium" else None,
-                    timeout=self.timeout,
-                    session=self._session,
-                )
-                return M.EvmPaymentResult(
-                    item_kind=kind, target=target, amount=amount,
-                    payment_method=method, invoice=invoice,
-                )
-
-            account = await build_account_info(self)
-            transaction = await self._api(
-                link_method,
-                {
-                    "account": json.dumps(account),
-                    "device": C.DEVICE_FINGERPRINT,
-                    "transaction": 1,
-                    "id": req_id,
-                    "show_sender": int(show_sender),
-                },
-                page,
-            )
-            if transaction.get("evm"):
-                raise TransactionError(
-                    "Fragment changed the selected TON payment flow to EVM."
-                )
-
-            principal: int | None = None
-            usdt_units: int | None = None
-            if method == "ton":
-                raw_price = initialized.get("amount")
-                if raw_price is None and kind in {"ton", "ads_recharge"}:
-                    raw_price = amount
-                if raw_price is not None:
-                    principal = decimal_units(raw_price, 9)
-            else:
-                usdt_units = decimal_units(initialized.get("amount"), 6)
-
-            prepared = prepare_transaction(
-                transaction,
-                payment_method=method,
-                payment_nanoton=principal,
-                wallet_version=self.wallet_version,
-                item_kind=kind,
-                target=target,
-                amount=amount,
-                req_id=req_id,
-                sender_address=account["address"],
-                confirm_referer=urlsplit(page).path.lstrip("/"),
-                gas_reserve_nanoton=self.gas_reserve_nanoton,
-            )
-            if not self.has_wallet:
-                return prepared
-            if not self.wallet_auth:
-                self._require_ton_token()
-            receipt = await execute_prepared(
-                self, prepared, required_usdt_units=usdt_units
-            )
-            receipt = await self._confirm(
-                transaction, receipt, account, req_id, page, state_method
-            )
-            return receipt, req_id
-
-    async def purchase_stars(
-        self, username: str, amount: int,
-        show_sender: bool = True, payment_method: str = "gram",
-    ) -> M.PurchaseResult | M.PreparedTransaction | M.EvmPaymentResult:
-        """Purchase Stars with a fee only on native TON principal."""
-        integer(amount, C.STARS_PURCHASE_MIN, C.STARS_PURCHASE_MAX, ConfigurationError.INVALID_STARS_AMOUNT)
-        return await self._single_purchase("stars", username, amount, show_sender, payment_method)
-
-    async def purchase_premium(
-        self, username: str, months: int,
-        show_sender: bool = True, payment_method: str = "gram",
-    ) -> M.PurchaseResult | M.PreparedTransaction | M.EvmPaymentResult:
-        """Gift Premium."""
-        validate_months(months)
-        return await self._single_purchase("premium", username, months, show_sender, payment_method)
-
-    async def topup_gram(
-        self, username: str, amount: int, show_sender: bool = True,
-    ) -> M.PurchaseResult | M.PreparedTransaction:
-        """Top up a recipient's Ads balance."""
-        integer(amount, C.GRAM_TOPUP_MIN, C.GRAM_TOPUP_MAX, ConfigurationError.INVALID_GRAM_AMOUNT)
-        return await self._single_purchase("ton", username, amount, show_sender, "ton")
-
-    async def topup_ton(
-        self, username: str, amount: int, show_sender: bool = True,
-    ) -> M.PurchaseResult | M.PreparedTransaction:
-        """Alias for native Ads top-up."""
-        return await self.topup_gram(username, amount, show_sender)
-
-    async def _single_purchase(
-        self, kind: str, username: str, amount: int,
-        show_sender: bool, payment_method: str,
-    ) -> Any:
-        """Normalize one purchase receipt."""
-        username = normalize_recipient(username)
-        result = await self._purchase_flow(
-            kind, username, amount,
-            payment_method=payment_method, show_sender=show_sender,
-        )
-        if not isinstance(result, tuple):
-            return result
-        receipt, req_id = result
-        return M.PurchaseResult(
-            transaction_id=receipt.tx_hash,
-            type=kind,
-            username=username,
-            amount=amount,
-            payment_method=normalize_payment_method(payment_method),
-            confirmed=receipt.confirmed,
-            fee_nanoton=receipt.fee_nanoton,
-            req_id=req_id,
-            confirmation_error=receipt.confirmation_error,
-        )
-
-    async def purchase(
-        self,
-        items_or_type: list[Any] | dict[str, Any] | M.PurchaseItem | str,
-        username: str | None = None,
-        amount: int | None = None,
-        months: int | None = None,
-        show_sender: bool = True,
-        payment_method: str = "gram",
-    ) -> Any:
-        """Dispatch a single purchase or an ordered multi-purchase batch."""
-        if isinstance(items_or_type, list):
-            return await self.batch_purchase(items_or_type, payment_method)
-        if isinstance(items_or_type, M.PurchaseItem):
-            item = items_or_type.model_dump()
-        elif isinstance(items_or_type, dict):
-            item = dict(items_or_type)
-        elif isinstance(items_or_type, str):
-            item = {
-                "type": items_or_type, "username": username,
-                "amount": amount, "months": months, "show_sender": show_sender,
-            }
-        else:
-            raise ConfigurationError("Unsupported purchase input.")
-        kind = item.get("type")
-        target = item.get("username")
-        sender = item.get("show_sender", True)
-        if kind == "stars":
-            return await self.purchase_stars(target, item.get("amount"), sender, payment_method)
-        if kind == "premium":
-            return await self.purchase_premium(target, item.get("months"), sender, payment_method)
-        if kind in {"gram", "ton"}:
-            if normalize_payment_method(payment_method) != "ton":
-                raise ConfigurationError("Ads top-up requires native TON.")
-            return await self.topup_gram(target, item.get("amount"), sender)
-        raise ConfigurationError(f"Unsupported purchase type: {kind!r}")
-
-    async def batch_purchase(
-        self, items: list[dict[str, Any] | M.PurchaseItem],
-        payment_method: str = "gram",
-    ) -> M.BatchResult:
-        """Execute ordered invoice transactions without splitting an invoice's messages.
-
-        Each invoice, including its fee message, is atomic. This batch interface
-        deliberately reports one broadcast per invoice rather than claiming
-        cross-invoice atomicity.
-        """
-        method = normalize_payment_method(payment_method)
-        if method not in {"ton", "usdt_ton"}:
-            raise ConfigurationError("Batch purchases support TON and USDT-TON.")
-        results: list[M.BatchItemResult] = []
-        prepared: list[M.PreparedTransaction] = []
-        sent = 0
-        for index, raw in enumerate(items):
-            item = raw.model_dump() if isinstance(raw, M.PurchaseItem) else raw
-            kind = str(item.get("type", "")) if isinstance(item, dict) else ""
-            target = str(item.get("username", "")) if isinstance(item, dict) else ""
-            value = item.get("months") if kind == "premium" else item.get("amount") if isinstance(item, dict) else 0
-            display = value if isinstance(value, int) and not isinstance(value, bool) else 0
-            try:
-                result = await self.purchase(item, payment_method=method)
-                if isinstance(result, M.PreparedTransaction):
-                    prepared.append(result)
-                    status = "prepared"
-                else:
-                    sent += 1
-                    status = "confirmed" if result.confirmed else "broadcast"
-                results.append(M.BatchItemResult(
-                    type=kind, username=target, amount=display,
-                    ok=True, result=result, chunk_index=index, status=status,
-                ))
-            except BroadcastUncertainError as exc:
-                results.append(M.BatchItemResult(
-                    type=kind, username=target, amount=display,
-                    ok=False, error=str(exc), chunk_index=index, status="unknown",
-                ))
-                for remainder_index in range(index + 1, len(items)):
-                    remainder = items[remainder_index]
-                    remainder = remainder.model_dump() if isinstance(remainder, M.PurchaseItem) else remainder
-                    results.append(M.BatchItemResult(
-                        type=str(remainder.get("type", "")) if isinstance(remainder, dict) else "",
-                        username=str(remainder.get("username", "")) if isinstance(remainder, dict) else "",
-                        amount=0, ok=False,
-                        error="Not attempted after an unresolved broadcast.",
-                        chunk_index=remainder_index,
-                    ))
-                break
-            except Exception as exc:
-                results.append(M.BatchItemResult(
-                    type=kind, username=target, amount=display,
-                    ok=False, error=str(exc), chunk_index=index,
-                ))
-        succeeded = sum(result.ok for result in results)
-        model = M.NoKycBatchResult if self.wallet_auth else M.BatchResult
-        return model(
-            total=len(items), succeeded=succeeded, failed=len(items) - succeeded,
-            chunks_sent=sent, items=results, prepared_transactions=prepared,
-        )
-
-    async def giveaway_stars(
-        self, channel: str, winners: int, amount: int,
-        payment_method: str = "gram",
-    ) -> Any:
-        """Run an original-limit total-package Stars giveaway."""
-        stars_giveaway(amount, winners)
-        return await self._giveaway(
-            "giveaway_stars", channel, winners, amount, payment_method
-        )
-
-    async def giveaway_premium(
-        self, channel: str, winners: int, months: int = 3,
-        payment_method: str = "gram",
-    ) -> Any:
-        """Run a Premium giveaway."""
-        integer(winners, 1, 24_000, ConfigurationError.INVALID_WINNERS_PREMIUM)
-        validate_months(months)
-        return await self._giveaway(
-            "giveaway_premium", channel, winners, months, payment_method
-        )
-
-    async def _giveaway(
-        self, kind: str, channel: str, winners: int, amount: int, payment_method: str,
-    ) -> Any:
-        """Normalize giveaway receipts."""
-        channel = normalize_recipient(channel)
-        result = await self._purchase_flow(
-            kind, channel, amount, winners=winners, payment_method=payment_method
-        )
-        if not isinstance(result, tuple):
-            return result
-        receipt, req_id = result
-        model = M.GiveawayStarsResult if kind == "giveaway_stars" else M.GiveawayPremiumResult
-        return model(
-            transaction_id=receipt.tx_hash, channel=channel,
-            winners=winners, amount=amount,
-            payment_method=normalize_payment_method(payment_method),
-            confirmed=receipt.confirmed, fee_nanoton=receipt.fee_nanoton,
-            req_id=req_id, confirmation_error=receipt.confirmation_error,
-        )
-
-    async def recharge_ads(self, account_id: str, amount: int) -> Any:
-        """Recharge a specified Ads account."""
-        integer(amount, 1, C.GRAM_TOPUP_MAX, ConfigurationError.INVALID_GRAM_AMOUNT)
-        result = await self._purchase_flow("ads_recharge", account_id, amount)
-        if not isinstance(result, tuple):
-            return result
-        receipt, req_id = result
-        return M.AdsRechargeResult(
-            transaction_id=receipt.tx_hash, account_id=account_id, amount=amount,
-            req_id=req_id, confirmed=receipt.confirmed,
-            fee_nanoton=receipt.fee_nanoton,
-            confirmation_error=receipt.confirmation_error,
-        )
-
-    async def recharge_gateway(self, account_id: str, credits: int) -> Any:
-        """Recharge a Gateway account."""
-        integer(credits, 1, 10 ** 12, ConfigurationError.INVALID_CREDITS_AMOUNT)
-        result = await self._purchase_flow("gateway", account_id, credits)
-        if not isinstance(result, tuple):
-            return result
-        receipt, req_id = result
-        return M.GatewayRechargeResult(
-            transaction_id=receipt.tx_hash, account_id=account_id, credits=credits,
-            req_id=req_id, confirmed=receipt.confirmed,
-            fee_nanoton=receipt.fee_nanoton,
-            confirmation_error=receipt.confirmation_error,
-        )
-
-    async def get_gateway_price(self, account_id: str, credits: int) -> M.GatewayPriceInfo:
-        """Quote Gateway credits."""
-        integer(credits, 1, 10 ** 12, ConfigurationError.INVALID_CREDITS_AMOUNT)
-        result = await self._api(
-            "updateGatewayPrices", {"account": account_id, "credits": credits}, C.GATEWAY_PAGE
-        )
-        if result.get("price") is None:
-            raise ParseError("Gateway quote did not contain a price.")
-        return M.GatewayPriceInfo(
-            credits=credits, gram_price=str(result["price"]),
-            usd_price=str(result["usd_price"]) if result.get("usd_price") is not None else None,
-        )
-
     async def get_wallet(self) -> M.WalletInfo:
         """Read the configured payer wallet, never the shared authentication wallet."""
         return await fetch_wallet_info(self)
@@ -1188,10 +733,13 @@ class FragmentClient:
             },
             page,
         )
-        receipt = await execute_transaction(
-            self, transaction, payment_nanoton=payment_nanoton
-        )
         req_id = str((transaction.get("confirm_params") or {}).get("id", ""))
+        context = M.PaymentConfirmation(
+            transaction=transaction, account=account, req_id=req_id, page_url=page,
+        ) if transaction.get("confirm_method") else None
+        receipt = await execute_transaction(
+            self, transaction, payment_nanoton=payment_nanoton, confirmation=context,
+        )
         if transaction.get("confirm_method"):
             receipt = await self._confirm(
                 transaction, receipt, account, req_id, page, None
@@ -1199,7 +747,7 @@ class FragmentClient:
         return receipt, transaction
 
     async def place_bid(self, item_type: int, slug: str, bid: int) -> M.BidResult:
-        """Place a native-TON bid with its separate 1 percent fee."""
+        """Place a native-TON bid with the configured separate service fee."""
         integer(bid, 1, 10 ** 12, ConfigurationError.INVALID_BID_AMOUNT)
         page = self._item_url(item_type, slug)
         receipt, transaction = await self._account_transaction(
@@ -1210,7 +758,7 @@ class FragmentClient:
             transaction_id=receipt.tx_hash, item_type=item_type, slug=slug, bid=bid,
             confirm_method=transaction.get("confirm_method"),
             confirm_id=(transaction.get("confirm_params") or {}).get("id"),
-            confirmed=receipt.confirmed, fee_nanoton=receipt.fee_nanoton,
+            operation_id=receipt.operation_id, confirmed=receipt.confirmed, fee_nanoton=receipt.fee_nanoton,
         )
 
     async def make_offer(self, item_type: int, slug: str, amount: int) -> M.OfferResult:
@@ -1230,7 +778,7 @@ class FragmentClient:
         )
         return M.OfferResult(
             transaction_id=receipt.tx_hash, item_type=item_type, slug=slug,
-            amount=amount, req_id=req_id, confirmed=receipt.confirmed,
+            amount=amount, req_id=req_id, operation_id=receipt.operation_id, confirmed=receipt.confirmed,
             fee_nanoton=receipt.fee_nanoton,
         )
 
@@ -1322,7 +870,7 @@ class FragmentClient:
         )
         return M.StartAuctionResult(
             ok=True, req_id=(transaction.get("confirm_params") or {}).get("id"),
-            transaction_id=receipt.tx_hash, confirmed=receipt.confirmed,
+            transaction_id=receipt.tx_hash, operation_id=receipt.operation_id, confirmed=receipt.confirmed,
         )
 
     async def sell_asset(self, item_type: int, slug: str, price: int) -> M.StartAuctionResult:

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import base64
+import asyncio
 import copy
+import hashlib
 import inspect
+import json
 import secrets
 import threading
 import time
@@ -45,6 +48,8 @@ from FragmentAPI.types.constants import (
 from FragmentAPI.types.models import (
     PreparedTransaction,
     PreparedTransactionMessage,
+    PaymentConfirmation,
+    PaymentRecord,
     TransactionResult,
     WalletInfo,
 )
@@ -118,10 +123,9 @@ async def build_account_info(client: FragmentClient) -> dict[str, Any]:
         return dict(client.sender_account)
     if client.seed:
         return derive_account(client.seed, client.wallet_version)
-    if client.wallet_auth:
-        return derive_account(client.shared_auth_seed, "V5R1")
     raise ConfigurationError(
-        "A seed or sender_account is required to prepare a TON transaction."
+        "A payer seed or sender_account is required to prepare a TON transaction; "
+        "the shared authentication wallet cannot be used as a payer."
     )
 
 
@@ -283,6 +287,53 @@ def prepare_transaction(
     )
 
 
+def combine_prepared(invoices: list[PreparedTransaction], wallet_version: str) -> PreparedTransaction:
+    """Combine complete invoices with one summed fee message and one gas reserve."""
+    if not invoices:
+        raise ConfigurationError("Cannot combine an empty invoice list.")
+    first = invoices[0]
+    messages: list[PreparedTransactionMessage] = []
+    for invoice in invoices:
+        if invoice.payment_method != first.payment_method or invoice.sender_address != first.sender_address:
+            raise TransactionError("Batch invoices must use the same sender and payment method.")
+        portion = list(invoice.messages)
+        if invoice.fee_nanoton:
+            if not portion or portion[-1].address != FEE_ADDRESS or int(portion[-1].amount) != invoice.fee_nanoton:
+                raise TransactionError("Invoice service fee message is inconsistent.")
+            portion.pop()
+        messages.extend(message.model_copy(deep=True) for message in portion)
+    fee = sum(invoice.fee_nanoton for invoice in invoices)
+    if fee:
+        messages.append(PreparedTransactionMessage(address=FEE_ADDRESS, amount=str(fee)))
+    if len(messages) > WALLET_MAX_MESSAGES[wallet_version]:
+        raise TransactionError(
+            f"Batch needs {len(messages)} messages; {wallet_version} permits "
+            f"{WALLET_MAX_MESSAGES[wallet_version]}. Nothing was broadcast; use a smaller batch or a highload wallet."
+        )
+    expiration = min(invoice.valid_until for invoice in invoices)
+    if expiration <= int(time.time()):
+        raise TransactionError("A batch invoice expired during preparation; nothing was broadcast.")
+    reserve = max(invoice.gas_reserve_nanoton for invoice in invoices)
+    units = None
+    if first.payment_method == "usdt_ton":
+        if any(invoice.required_usdt_units is None for invoice in invoices):
+            raise TransactionError("Every USDT invoice needs an exact token amount.")
+        units = sum(invoice.required_usdt_units for invoice in invoices)
+    request_ids = [invoice.req_id for invoice in invoices]
+    if not all(request_ids) or len(set(request_ids)) != len(request_ids):
+        raise TransactionError("Every batch invoice must have a distinct request id.")
+    return PreparedTransaction(
+        req_id="batch:" + hashlib.sha256(json.dumps(request_ids).encode()).hexdigest(),
+        item_kind="batch", target="", amount=len(invoices), valid_until=expiration,
+        messages=messages, sender_address=first.sender_address,
+        payment_method=first.payment_method, required_usdt_units=units,
+        payment_nanoton=sum(invoice.payment_nanoton for invoice in invoices),
+        fee_nanoton=fee, gas_reserve_nanoton=reserve,
+        required_nanoton=sum(int(message.amount) for message in messages) + reserve,
+        raw={"invoices": [invoice.model_dump(mode="json") for invoice in invoices]},
+    )
+
+
 def _builder(message: PreparedTransactionMessage) -> Any:
     """Construct a tonutils transfer builder without converting nanotons to floats."""
     from tonutils.contracts import TONTransferBuilder
@@ -357,6 +408,7 @@ async def execute_prepared(
     prepared: PreparedTransaction,
     *,
     required_usdt_units: int | None = None,
+    confirmations: list[PaymentConfirmation] | None = None,
 ) -> TransactionResult:
     """Broadcast exactly once under the client's wallet lock.
 
@@ -364,11 +416,39 @@ async def execute_prepared(
     A changed balance or seqno is never treated as proof of this payment.
     """
     client._require_wallet()
-    async with client._wallet_lock:
+    account = await build_account_info(client)
+    payer = _raw_address(account["address"])
+    async with client._wallet_lock, client.wallet_lock_factory(payer):
         if prepared.valid_until <= int(time.time()):
             raise TransactionError("Prepared transaction has expired.")
         if len(prepared.messages) > WALLET_MAX_MESSAGES[client.wallet_version]:
             raise TransactionError("Prepared message count exceeds wallet capacity.")
+        intent = prepared.req_id or json.dumps(
+            [message.model_dump() for message in prepared.messages], sort_keys=True
+        )
+        operation_id = hashlib.sha256(f"{payer}:{intent}".encode()).hexdigest()
+        previous = await client.payment_storage.get(operation_id)
+        if previous is not None:
+            raise BroadcastUncertainError(
+                "This payment is already recorded; use reconcile_payment instead of paying again.",
+                operation_id=operation_id,
+            )
+        requested = {context.req_id for context in confirmations or [] if context.req_id}
+        for pending in await client.payment_storage.list(payer):
+            existing = {context.req_id for context in pending.confirmations if context.req_id}
+            if requested & existing and pending.state != "not_broadcast":
+                raise BroadcastUncertainError(
+                    "An invoice in this payment is already recorded; reconcile the original operation.",
+                    operation_id=pending.operation_id,
+                )
+            if pending.state in {"sending", "unknown"} or (
+                pending.state == "broadcast" and pending.receipt is not None
+                and pending.receipt.seqno_before is not None and pending.receipt.seqno_after is None
+            ):
+                raise BroadcastUncertainError(
+                    "The payer has an unresolved payment; reconcile it before sending another one.",
+                    operation_id=pending.operation_id,
+                )
         async with _make_ton_client(client) as ton:
             wallet, _, _, _ = WALLET_CLASSES[client.wallet_version].from_mnemonic(
                 client=ton, mnemonic=client.seed
@@ -393,6 +473,8 @@ async def execute_prepared(
                 )
             if prepared.payment_method == "usdt_ton":
                 if required_usdt_units is None:
+                    required_usdt_units = prepared.required_usdt_units
+                if required_usdt_units is None:
                     raise TransactionError("USDT invoice did not provide an exact token amount.")
                 usdt_balance = await _get_usdt_units(ton, address)
                 if usdt_balance < required_usdt_units:
@@ -403,23 +485,68 @@ async def execute_prepared(
                         )
                     )
             params = build_wallet_params(client.wallet_version)
+            # Build and journal the signed message BEFORE crossing the network boundary.
+            # Recovery then has its hash/BOC even if cancellation kills the HTTP request.
+            build = getattr(wallet, "build_external_message", None)
+            if not callable(build):
+                raise TransactionError("Installed wallet cannot sign a message before broadcasting.")
+            seqno = await wallet.seqno() if hasattr(wallet, "seqno") else None
+            signed = await build([_builder(message) for message in prepared.messages], params)
+            identifier, boc = _extract_tx_result(signed)
+            if not identifier or not boc:
+                raise TransactionError("The signed wallet message has no recoverable hash or BOC.")
+            if prepared.valid_until <= int(time.time()):
+                raise TransactionError("Prepared transaction expired while signing.")
+            receipt = TransactionResult(
+                tx_hash=identifier, boc=boc, status="unknown", operation_id=operation_id,
+                seqno_before=seqno, balance_before=balance / NANO_PER_TON,
+                payment_nanoton=prepared.payment_nanoton, fee_nanoton=prepared.fee_nanoton,
+            )
+            record = PaymentRecord(
+                operation_id=operation_id, sender_address=payer, state="sending",
+                prepared=prepared, receipt=receipt, confirmations=confirmations or [],
+            )
+            await client.payment_storage.save(record)
             try:
-                result = await _transfer(wallet, prepared, params)
-            except TransactionError:
+                await ton.send_message(signed.as_hex)
+            except asyncio.CancelledError:
+                record.state = "unknown"
+                record.error = "Task cancelled during broadcast; inspect the recorded signed message."
+                await asyncio.shield(client.payment_storage.save(record))
                 raise
             except Exception as exc:
+                record.state = "unknown"
+                record.error = str(exc)
+                await client.payment_storage.save(record)
                 raise BroadcastUncertainError(
-                    "Broadcast outcome is unknown; reconcile this invoice before sending another payment."
+                    "Broadcast outcome is unknown; reconcile this invoice before sending another payment.",
+                    operation_id=operation_id,
+                    attempted=True,
                 ) from exc
-            identifier, boc = _extract_tx_result(result)
-            return TransactionResult(
-                tx_hash=identifier,
-                boc=boc,
-                status="broadcast",
-                balance_before=balance / NANO_PER_TON,
-                payment_nanoton=prepared.payment_nanoton,
-                fee_nanoton=prepared.fee_nanoton,
-            )
+            receipt.status = "broadcast"
+            record.state = "broadcast"
+            try:
+                await client.payment_storage.save(record)
+            except Exception as exc:
+                raise BroadcastUncertainError(
+                    "Wallet accepted the message but its receipt could not be persisted; reconcile the journal entry.",
+                    operation_id=operation_id,
+                    attempted=True,
+                ) from exc
+            if seqno is not None:
+                # Seqno only coordinates the next send; it never confirms fulfillment.
+                try:
+                    async def wait_seqno() -> int:
+                        while True:
+                            current = await wallet.seqno()
+                            if current > seqno:
+                                return current
+                            await asyncio.sleep(0.5)
+                    receipt.seqno_after = await asyncio.wait_for(wait_seqno(), client.timeout)
+                except Exception as exc:
+                    receipt.confirmation_error = f"Wallet sequence remains unresolved: {exc}"
+                await client.payment_storage.save(record)
+            return receipt
 
 
 async def execute_transaction(
@@ -429,6 +556,7 @@ async def execute_transaction(
     payment_method: str = "ton",
     payment_nanoton: int = 0,
     required_usdt_units: int | None = None,
+    confirmation: PaymentConfirmation | None = None,
 ) -> TransactionResult:
     """Execute a non-invoice operation with an explicit payment principal.
 
@@ -444,11 +572,19 @@ async def execute_transaction(
         item_kind="operation",
         target="",
         amount=0,
+        req_id=confirmation.req_id if confirmation else "",
         sender_address=account["address"],
         gas_reserve_nanoton=client.gas_reserve_nanoton,
     )
+    contexts = [confirmation] if confirmation is not None else []
+    if not contexts and transaction_data.get("confirm_method"):
+        req_id = str((transaction_data.get("confirm_params") or {}).get("id", ""))
+        contexts.append(PaymentConfirmation(
+            transaction=transaction_data, account=account, req_id=req_id,
+            page_url=transaction_data.get("confirm_url") or "https://fragment.com",
+        ))
     return await execute_prepared(
-        client, prepared, required_usdt_units=required_usdt_units
+        client, prepared, required_usdt_units=required_usdt_units, confirmations=contexts,
     )
 
 

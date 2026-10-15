@@ -44,6 +44,7 @@ class PreparedTransaction(FragmentBaseModel):
     fee_nanoton: int = 0
     gas_reserve_nanoton: int = 0
     required_nanoton: int = 0
+    required_usdt_units: int | None = None
 
 
 class TransactionResult(FragmentBaseModel):
@@ -64,6 +65,31 @@ class TransactionResult(FragmentBaseModel):
     payment_nanoton: int = 0
     fee_nanoton: int = 0
     confirmation_error: str | None = None
+    operation_id: str | None = None
+
+
+class PaymentConfirmation(FragmentBaseModel):
+    """Original invoice context needed to report a signed BOC after a restart."""
+
+    transaction: dict[str, Any]
+    account: dict[str, Any]
+    req_id: str
+    page_url: str
+    state_method: str | None = None
+    receipt: TransactionResult | None = None
+
+
+class PaymentRecord(FragmentBaseModel):
+    """Durable broadcast intent and its latest known result, without credentials."""
+
+    operation_id: str
+    sender_address: str
+    state: Literal["sending", "broadcast", "confirmed", "unknown", "settled", "not_broadcast"]
+    prepared: PreparedTransaction
+    receipt: TransactionResult | None = None
+    confirmations: list[PaymentConfirmation] = Field(default_factory=list)
+    error: str | None = None
+    resolution_evidence: str | None = None
 
 
 class EvmInvoice(FragmentBaseModel):
@@ -146,6 +172,7 @@ class PurchaseResult(FragmentBaseModel):
     fee_nanoton: int = 0
     req_id: str | None = None
     confirmation_error: str | None = None
+    operation_id: str | None = None
 
 
 class PremiumResult(PurchaseResult):
@@ -175,6 +202,7 @@ class GiveawayStarsResult(FragmentBaseModel):
     amount: int
     payment_method: str = "ton"
     confirmed: bool = False
+    operation_id: str | None = None
     fee_nanoton: int = 0
     req_id: str | None = None
     confirmation_error: str | None = None
@@ -245,6 +273,7 @@ class BidResult(FragmentBaseModel):
     confirm_method: str | None = None
     confirm_id: str | None = None
     confirmed: bool = False
+    operation_id: str | None = None
     fee_nanoton: int = 0
 
 
@@ -257,6 +286,7 @@ class OfferResult(FragmentBaseModel):
     amount: int
     req_id: str | None = None
     confirmed: bool = False
+    operation_id: str | None = None
     fee_nanoton: int = 0
 
 
@@ -570,6 +600,7 @@ class StartAuctionResult(FragmentBaseModel):
     req_id: str | None = None
     transaction_id: str | None = None
     confirmed: bool = False
+    operation_id: str | None = None
 
 
 class NftTransferRecipient(RecipientInfo):
@@ -612,14 +643,18 @@ class BatchItemResult(FragmentBaseModel):
     username: str
     amount: int
     ok: bool
-    result: Any = None
+    result: PurchaseResult | PreparedTransaction | None = None
     error: str | None = None
     chunk_index: int = 0
     status: Literal["prepared", "broadcast", "confirmed", "failed", "unknown"] = "failed"
 
 
 class BatchResult(FragmentBaseModel):
-    """Batch results; succeeded means broadcast, not necessarily fulfillment."""
+    """One wallet submission; succeeded counts preparation/broadcast, not fulfillment.
+
+    transaction is the combined unsigned payload. prepared_transactions are the
+    component invoices for inspection and must not also be broadcast separately.
+    """
 
     total: int
     succeeded: int
@@ -627,6 +662,9 @@ class BatchResult(FragmentBaseModel):
     chunks_sent: int
     items: list[BatchItemResult] = Field(default_factory=list)
     prepared_transactions: list[PreparedTransaction] = Field(default_factory=list)
+    transaction: PreparedTransaction | None = None
+    receipt: TransactionResult | None = None
+    operation_id: str | None = None
 
 
 class NoKycBatchResult(BatchResult):
@@ -641,6 +679,7 @@ class GatewayRechargeResult(FragmentBaseModel):
     credits: int
     req_id: str | None = None
     confirmed: bool = False
+    operation_id: str | None = None
     fee_nanoton: int = 0
     confirmation_error: str | None = None
 
@@ -661,6 +700,7 @@ class AdsRechargeResult(FragmentBaseModel):
     amount: int
     req_id: str | None = None
     confirmed: bool = False
+    operation_id: str | None = None
     fee_nanoton: int = 0
     confirmation_error: str | None = None
 

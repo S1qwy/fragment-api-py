@@ -8,6 +8,7 @@ from FragmentAPI.exceptions import __all__ as _exceptions
 from FragmentAPI.storage.base import SessionStorage
 from FragmentAPI.storage.file import FileSessionStorage
 from FragmentAPI.storage.redis import RedisSessionStorage
+from FragmentAPI.storage.payments import PaymentStorage, SQLitePaymentStorage
 from FragmentAPI.types.models import *
 from FragmentAPI.types.models import __all__ as _models
 
@@ -23,6 +24,8 @@ __all__ = [
     "SessionStorage",
     "FileSessionStorage",
     "RedisSessionStorage",
+    "PaymentStorage",
+    "SQLitePaymentStorage",
     *_exceptions,
     *_models,
 ]

@@ -101,6 +101,11 @@ class TransactionError(FragmentAPIError):
 class BroadcastUncertainError(TransactionError):
     """Broadcast outcome is unknown and must not be retried as a new payment."""
 
+    def __init__(self, message: str, *, operation_id: str | None = None, attempted: bool = False) -> None:
+        super().__init__(message)
+        self.operation_id = operation_id
+        self.attempted = attempted
+
 
 class PaidMessageLimitError(FragmentAPIError):
     """Recipient purchase minimum was not met."""
