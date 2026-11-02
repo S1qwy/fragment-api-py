@@ -1,6 +1,6 @@
 # Example Workspace
 
-**Fragment API Python · 14.1.0**
+**Fragment API Python · 14.1.1**
 
 [Documentation](https://github.com/S1qwy/fragment-api-py/wiki) · [Example guide](https://github.com/S1qwy/fragment-api-py/wiki/Examples) · [Repository](https://github.com/S1qwy/fragment-api-py)
 
@@ -32,7 +32,6 @@ Configuration comes from environment variables. The examples do not automaticall
 | `TON_API_PROVIDER` | `tonapi` or `toncenter`; defaults to `tonapi` |
 | `TON_WALLET_VERSION` | Defaults to `V5R1` |
 | `TON_SENDER_ACCOUNT` | Complete TON Connect account as JSON for external signing |
-| `FRAGMENT_SHARED_AUTH_SEED` | Optional restricted authentication seed override |
 | `FRAGMENT_PROXY` | Optional HTTP or SOCKS proxy URL |
 | `FRAGMENT_TARGET` | Recipient username |
 | `FRAGMENT_SECOND_TARGET` | Second batch recipient |
@@ -74,7 +73,7 @@ Configuration comes from environment variables. The examples do not automaticall
 
 The read mode can still create an unpaid invoice when an invoice action is selected.
 
-Without cookies, the client uses restricted wallet authentication. It does not gain access to private account features.
+All Fragment HTTP operations require `FRAGMENT_COOKIES`. Use `authentication.py` with your own wallet to obtain a session. Missing cookies never trigger automatic authentication.
 
 ## Important behavior
 
@@ -86,14 +85,13 @@ Without cookies, the client uses restricted wallet authentication. It does not g
 - A batch processes invoices individually; it is not one transaction for all recipients.
 - Wallet locks belong to one client instance. They do not coordinate separate processes.
 - File storage contains credentials in plaintext. Protect its directory.
-- The shared authentication mnemonic is not a safe place to hold funds.
 - Preserve the original Fragment session when confirming an externally signed invoice.
 
 ## File map
 
 | Area | Files |
 |:--|:--|
-| Setup and authentication | `basic_setup.py`, `authentication.py`, `wallet_auth.py`, `session_storage.py` |
+| Setup and authentication | `basic_setup.py`, `authentication.py`, `session_storage.py` |
 | Payments | `purchase_stars.py`, `purchase_premium.py`, `batch_purchase.py`, `giveaways.py` |
 | External payments | `external_signing.py`, `evm_payment_automation.py` |
 | Ads and Gateway | `topup_grams.py`, `gateway_and_ads.py` |

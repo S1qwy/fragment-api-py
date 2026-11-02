@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v14.1.1 (2026-11-02)
+
+### Authentication changes
+
+- Remove shared authentication entirely: no built-in public seed, automatic
+  shared-wallet proof, shared-mode options, or method allowlist.
+- Require user-owned cookies for every Fragment HTTP operation; missing cookies
+  fail before network access. Offline client construction remains supported.
+- Keep explicit login and cookie refresh using only the caller's wallet seed.
+- Remove `wallet_auth`, `shared_auth_seed`, `nokyc_mode`, `NoKycBatchResult`,
+  and the obsolete shared-auth example/module. Batches return `BatchResult`.
+- Update examples, documentation, and authentication regression coverage.
+
 ## v14.1.0 (2026-11-02)
 
 ### Features and fixes

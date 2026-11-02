@@ -59,7 +59,6 @@ def make_client(
         "wallet_version": setting("TON_WALLET_VERSION", "V5R1"),
         "api_provider": setting("TON_API_PROVIDER", "tonapi"),
         "proxy": os.getenv("FRAGMENT_PROXY") or None,
-        "shared_auth_seed": os.getenv("FRAGMENT_SHARED_AUTH_SEED") or None,
     }
 
     if mode == "pay":

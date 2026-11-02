@@ -61,26 +61,31 @@ Operate user-owned assets, listings, offers, assignments, withdrawals, and sessi
 </tr>
 </table>
 
-## Release 14.1.0
+## Release 14.1.1
 
-Current Fragment account headers, updated giveaway requests, and ordinary API error handling without a separate KYC workflow.
+Shared authentication has been removed. Fragment requests now use your own cookie session, with explicit authentication using your own wallet when needed.
 
 | Area | What changed |
 |:--|:--|
+| Authentication | The built-in public auth seed, automatic shared-wallet proof, and shared-mode options are removed |
+| Sessions | Fragment HTTP operations require user-owned cookies; missing cookies fail before any request |
+| Batches | All batches return `BatchResult`; the shared-mode result type is removed |
 | Profile | `get_profile()` reads the full page header; the removed `/my/profile` route is no longer requested |
 | Account fields | Name, photo, wallet address and label; `username` is empty because the header does not expose it |
 | API errors | KYC-specific classification is removed; `VerificationError` remains an import alias of `FragmentAPIError` |
 | Giveaways | Stars recipient search sends only `query`, matching the current Fragment interface |
 | Marketplace | Wallet owners and history support the current `gram.org/address/` explorer links |
 
-`ProfileInfo.identity_verified` and `ProfileInfo.wallet_verified` were removed with the old profile page. Applications should stop reading these fields. Historical wallet-auth aliases such as `nokyc_mode` remain available.
+Remove `shared_auth_seed` and `wallet_auth` constructor arguments and stop using `nokyc_mode` or `NoKycBatchResult`. Supply `cookies` directly, load them from session storage, or call `FragmentClient.authenticate()` with your own wallet before constructing the client. No built-in wallet is used for authentication or payment.
+
+`ProfileInfo.identity_verified` and `ProfileInfo.wallet_verified` were removed in 14.1.0 with the old profile page.
 
 Live checks on November 2, 2026 returned request IDs and unsigned native-TON transactions for Stars, Premium, both giveaway types, and Ads top-ups without a verification challenge in the tested session. No payments were submitted. Withdrawals and asset mutations require valid operation links or assets and were not exercised by that check.
 
 > [!IMPORTANT]
 > Version 14 includes breaking changes. Batches combine all invoices into one wallet submission
 > and reject preparation/capacity failures before sending. TON preparation requires a real payer
-> identity; the shared authentication wallet is never a fallback. Fulfillment remains per invoice.
+> identity. Fulfillment remains per invoice.
 > Read the [migration notes](https://github.com/S1qwy/fragment-api-py/wiki/Home#migrating-to-1400) before upgrading.
 
 ## Choose your workflow
@@ -88,14 +93,13 @@ Live checks on November 2, 2026 returned request IDs and unsigned native-TON tra
 | Workflow | Configuration | Result |
 |:--|:--|:--|
 | Account browsing | Your Fragment cookies | Marketplace and user-owned account data |
-| Restricted session | No cookies; wallet authentication | Allowed public and purchase workflows |
-| External TON signing | A complete sender account or an offline-derived payer account, without automatic payment credentials | `PreparedTransaction` |
-| Automatic TON payment | Payer seed and blockchain API key | Broadcast receipt with explicit confirmation state |
-| EVM payment | Supported EVM payment method | An invoice for external payment |
+| External TON signing | Your cookies and a complete sender account or offline-derived payer account | `PreparedTransaction` |
+| Automatic TON payment | Your cookies, payer seed and blockchain API key | Broadcast receipt with explicit confirmation state |
+| EVM payment | Your cookies and a supported EVM payment method | An invoice for external payment |
 
-Account operations require a user-owned cookie session. Native automatic payments in cookie mode additionally require a wallet-connected session.
+All Fragment HTTP operations require a user-owned cookie session. Native automatic payments additionally require a wallet-connected session.
 
-The shared authentication wallet is separate from the configured payer. Account-management restrictions protect shared-wallet state and remain in effect.
+Constructing a client without cookies is supported for offline validation and wallet utilities. It does not trigger authentication. Explicit login and cookie refresh use only the seed supplied by the caller.
 
 ## Installation
 
@@ -121,7 +125,6 @@ The repository keeps executable examples in one place rather than duplicating co
 |:--|:--|
 | Configure the client | [Basic setup](https://github.com/S1qwy/fragment-api-py/blob/main/examples/basic_setup.py) |
 | Authenticate a full account | [Authentication](https://github.com/S1qwy/fragment-api-py/blob/main/examples/authentication.py) |
-| Understand restricted mode | [Wallet authentication](https://github.com/S1qwy/fragment-api-py/blob/main/examples/wallet_auth.py) |
 | Buy Stars or Premium | [Stars](https://github.com/S1qwy/fragment-api-py/blob/main/examples/purchase_stars.py) · [Premium](https://github.com/S1qwy/fragment-api-py/blob/main/examples/purchase_premium.py) |
 | Prepare an external payment | [External signing](https://github.com/S1qwy/fragment-api-py/blob/main/examples/external_signing.py) |
 | Search gifts and attributes | [Marketplace search](https://github.com/S1qwy/fragment-api-py/blob/main/examples/search_marketplace.py) |
@@ -211,7 +214,6 @@ Availability is subject to Fragment's response and operation-specific restrictio
 - Reuse a client and close it with an asynchronous context manager or `aclose()`.
 - Keep payer credentials, session cookies, and login codes out of source control and logs.
 - Use your own sender account for external signing.
-- Never deposit funds into the shared authentication wallet.
 - Local clients/processes sharing a payer use OS wallet locks and a durable journal.
   Multi-host deployments must configure shared payment storage and distributed locks.
 - Fragment HTML and private endpoints can change independently of this package.

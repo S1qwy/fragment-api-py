@@ -10,7 +10,7 @@ from _common import (
 
 
 async def wallet() -> None:
-    """Read the configured payer wallet rather than the shared auth wallet."""
+    """Read the configured payer wallet."""
     async with make_client(mode="wallet") as client:
         show_result(await client.get_wallet())
 

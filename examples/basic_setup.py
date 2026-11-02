@@ -4,10 +4,10 @@ from _common import make_client, run
 
 
 async def read_only() -> None:
-    """Use cookies when provided, otherwise select restricted wallet authentication."""
+    """Inspect a client configured with user-owned cookies."""
     async with make_client() as client:
         print(client)
-        print(f"Wallet authentication: {client.wallet_auth}")
+        print(f"Cookies configured: {client.has_cookies}")
         print(f"Automatic payment credentials: {client.has_wallet}")
 
 

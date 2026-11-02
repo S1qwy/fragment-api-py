@@ -1,4 +1,4 @@
-"""Validation, restricted capabilities, and non-replaying payment error handling."""
+"""Validation, missing cookies, and non-replaying payment error handling."""
 
 from FragmentAPI import (
     BroadcastUncertainError,
@@ -27,7 +27,7 @@ async def validation() -> None:
 
 
 async def restrictions() -> None:
-    """Show that restricted wallet-auth sessions cannot read account state."""
+    """Show that network operations require user-owned cookies."""
     async with FragmentClient() as client:
         try:
             await client.get_sessions()
