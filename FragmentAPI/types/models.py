@@ -665,10 +665,6 @@ class BatchResult(FragmentBaseModel):
     operation_id: str | None = None
 
 
-class NoKycBatchResult(BatchResult):
-    """Compatibility result name for wallet-auth batch operations."""
-
-
 class GatewayRechargeResult(FragmentBaseModel):
     """Gateway recharge receipt."""
 

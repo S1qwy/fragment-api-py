@@ -133,8 +133,7 @@ class PurchaseMixin(BatchMixin):
             prepared, context = result
             if not self.has_wallet:
                 return prepared
-            if not self.wallet_auth:
-                self._require_ton_token()
+            self._require_ton_token()
             receipt = await execute_prepared(self, prepared, confirmations=[context])
             receipt = await self._confirm(
                 context.transaction, receipt, context.account, context.req_id,

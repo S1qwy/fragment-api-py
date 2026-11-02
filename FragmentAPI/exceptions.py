@@ -33,8 +33,6 @@ class ConfigurationError(ClientError):
     UNSUPPORTED_VERSION = "Unsupported wallet version '{version}'. Supported: {supported}."
     UNSUPPORTED_PROVIDER = "Unsupported provider '{provider}'. Supported: {supported}."
     INVALID_PROXY = "Invalid proxy URL."
-    WALLET_AUTH_UNSUPPORTED = "Operation '{operation}' is unavailable in wallet_auth mode."
-    NOKYC_UNSUPPORTED_OPERATION = WALLET_AUTH_UNSUPPORTED
     INVALID_GIVEAWAY_PACKAGE = "Invalid Stars package {amount}. Supported: {packages}."
     INVALID_GIVEAWAY_WINNERS = "For {amount} Stars, winners must be between 1 and {max_winners}."
 

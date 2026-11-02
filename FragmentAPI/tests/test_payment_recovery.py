@@ -145,9 +145,9 @@ async def test_operator_resolution_requires_evidence_and_does_not_claim_fulfillm
     assert record.resolution_evidence
 
 
-async def test_shared_auth_wallet_cannot_be_a_payer():
+async def test_preparation_requires_explicit_payer():
     client = FragmentClient()
-    with pytest.raises(ConfigurationError, match="shared authentication wallet"):
+    with pytest.raises(ConfigurationError, match="payer seed or sender_account"):
         await wallets.build_account_info(client)
 
 

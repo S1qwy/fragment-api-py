@@ -1,4 +1,4 @@
-"""Async Fragment client with restricted wallet-auth fallback and explicit receipts."""
+"""Async Fragment client with user-owned sessions and explicit receipts."""
 
 from __future__ import annotations
 
@@ -58,11 +58,10 @@ from FragmentAPI.utils.wallet import (
 
 
 class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
-    """Fragment client with cookie and restricted wallet-auth operating modes.
+    """Fragment client using explicitly supplied user-owned cookie sessions.
 
-    Missing cookies selects wallet_auth. The shared V5R1 phrase authenticates
-    the session only; it is never selected as the automatic paying wallet.
-    Pass shared_auth_seed to override the shared authentication identity.
+    Network operations require cookies. Constructing a client without cookies
+    remains available for offline validation and wallet preparation utilities.
 
     A payer seed plus API key enables automatic broadcasting. Otherwise TON
     operations return PreparedTransaction. sender_account may specify the
@@ -85,11 +84,9 @@ class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
         session_id: str | None = None,
         auto_refresh_cookies: bool = False,
         *,
-        shared_auth_seed: str | None = None,
         sender_account: dict[str, Any] | None = None,
         gas_reserve_nanoton: int = C.GAS_RESERVE_NANOTON,
         confirmation_timeout: float = C.CONFIRMATION_TIMEOUT,
-        wallet_auth: bool | None = None,
         payment_storage: PaymentStorage | None = None,
         wallet_lock_factory: Callable[[str], AsyncContextManager[None]] | None = None,
     ) -> None:
@@ -108,11 +105,8 @@ class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
             gas_reserve_nanoton, 0, 10 ** 18, "Invalid gas reserve."
         )
         self.cookies = parse_cookies(cookies) if cookies else {}
-        inferred_wallet_auth = not bool(self.cookies)
-        self._wallet_auth = inferred_wallet_auth if wallet_auth is None else bool(wallet_auth)
-        if not self._wallet_auth:
+        if self.cookies:
             validate_cookie_keys(self.cookies, C.REQUIRED_COOKIE_KEYS)
-        self.shared_auth_seed = shared_auth_seed or C.SHARED_AUTH_SEED
         self.sender_account = dict(sender_account) if sender_account else None
         if self.sender_account:
             required = {"address", "chain", "publicKey", "walletStateInit"}
@@ -131,19 +125,6 @@ class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
         self.wallet_lock_factory = wallet_lock_factory or file_wallet_lock
         self._flow_lock = asyncio.Lock()
         self._closed = False
-        self._authenticated = bool(
-            self.cookies.get("stel_ton_token") if self._wallet_auth else self.cookies
-        )
-
-    @property
-    def wallet_auth(self) -> bool:
-        """Return whether account-management access is restricted."""
-        return self._wallet_auth
-
-    @property
-    def nokyc_mode(self) -> bool:
-        """Compatibility alias for wallet_auth."""
-        return self.wallet_auth
 
     @property
     def has_wallet(self) -> bool:
@@ -169,7 +150,7 @@ class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
         """Return configuration without credentials."""
         return (
             f"FragmentClient(wallet_version={self.wallet_version!r}, "
-            f"wallet_auth={self.wallet_auth}, auto_pay={self.has_wallet})"
+            f"has_cookies={self.has_cookies}, auto_pay={self.has_wallet})"
         )
 
     def _require_wallet(self) -> None:
@@ -183,6 +164,7 @@ class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
         """Require an existing cookie jar."""
         if not self.cookies:
             raise ConfigurationError(ConfigurationError.COOKIES_REQUIRED)
+        validate_cookie_keys(self.cookies, C.REQUIRED_COOKIE_KEYS)
         return self.cookies
 
     def _require_ton_token(self) -> None:
@@ -190,16 +172,8 @@ class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
         if not self.has_ton_token:
             raise ConfigurationError(ConfigurationError.TON_TOKEN_REQUIRED)
 
-    def _require_not_nokyc(self, operation: str) -> None:
-        """Compatibility guard for account-scoped operations."""
-        self._require_account(operation)
-
     def _require_account(self, operation: str) -> None:
-        """Block shared-wallet account state and destructive account actions."""
-        if self.wallet_auth:
-            raise ConfigurationError(
-                ConfigurationError.WALLET_AUTH_UNSUPPORTED.format(operation=operation)
-            )
+        """Require user-owned cookies for account operations."""
         self._require_cookies()
 
     def _get_transport(self) -> FragmentTransport:
@@ -219,25 +193,12 @@ class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
         return self._transport
 
     async def _ensure_auth(self) -> None:
-        """Initialize the restricted shared-wallet session once."""
+        """Require explicit cookies without initiating wallet or Telegram login."""
+        self._require_cookies()
         self._get_transport()
-        if not self.wallet_auth or self._authenticated:
-            return
-        async with self._auth_lock:
-            if self._authenticated:
-                return
-            seed = normalize_seed(self.shared_auth_seed)
-            self.cookies = await auth_ton_proof(
-                seed, "V5R1", self.timeout,
-                proxy=self.proxy, session=self._session,
-            )
-            self._authenticated = True
-            self._get_transport().invalidate()
 
     async def _save_cookies(self) -> None:
         """Persist only user-owned full-account sessions."""
-        if self.wallet_auth:
-            return
         if self._session is not None:
             self.cookies.update(fragment_cookies(self._session))
         if self._session_storage is not None and self._session_id and self.cookies:
@@ -288,19 +249,14 @@ class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
         """Refresh wallet proof without silently initiating Telegram OAuth."""
         transport = self._get_transport()
         async with self._auth_lock:
-            if self.wallet_auth:
-                seed, version = normalize_seed(self.shared_auth_seed), "V5R1"
-            else:
-                if not self.seed:
-                    raise ConfigurationError(ConfigurationError.SEED_REQUIRED)
-                seed, version = self.seed, self.wallet_version
+            if not self.seed:
+                raise ConfigurationError(ConfigurationError.SEED_REQUIRED)
+            seed, version = self.seed, self.wallet_version
             self.cookies = await auth_ton_proof(
                 seed, version, self.timeout,
                 proxy=self.proxy, session=self._session,
             )
-            if not self.wallet_auth:
-                validate_cookie_keys(self.cookies, C.REQUIRED_COOKIE_KEYS)
-            self._authenticated = True
+            validate_cookie_keys(self.cookies, C.REQUIRED_COOKIE_KEYS)
             transport.invalidate()
             await self._save_cookies()
             return dict(self.cookies)
@@ -339,16 +295,8 @@ class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
         *,
         page_url: str = C.FRAGMENT_BASE_URL,
     ) -> dict[str, Any]:
-        """Call an API method while enforcing wallet-auth capability restrictions."""
+        """Call an API method using the user's authenticated cookie session."""
         method = str(method)
-        if self.wallet_auth and method not in C.WALLET_AUTH_ALLOWED_METHODS:
-            raise ConfigurationError(
-                ConfigurationError.WALLET_AUTH_UNSUPPORTED.format(operation=method)
-            )
-        if self.wallet_auth:
-            path = urlsplit(page_url).path
-            if path.startswith("/my/") or "/withdraw" in path:
-                raise ConfigurationError("Account pages are unavailable in wallet_auth mode.")
         await self._ensure_auth()
         result = await self._get_transport().call(method, data, page_url)
         error = str(result.get("error", "")).casefold()

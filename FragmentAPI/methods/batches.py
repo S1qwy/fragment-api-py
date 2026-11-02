@@ -61,7 +61,7 @@ class BatchMixin:
                 invoices.append(invoice)
                 contexts.append(context)
             combined = combine_prepared(invoices, self.wallet_version)
-            model = M.NoKycBatchResult if self.wallet_auth else M.BatchResult
+            model = M.BatchResult
             if not self.has_wallet:
                 return model(
                     total=len(items), succeeded=len(items), failed=0, chunks_sent=0,
@@ -71,8 +71,7 @@ class BatchMixin:
                         result=invoice, status="prepared", chunk_index=0,
                     ) for (kind, target, value, _), invoice in zip(normalized, invoices)],
                 )
-            if not self.wallet_auth:
-                self._require_ton_token()
+            self._require_ton_token()
             try:
                 receipt = await execute_prepared(self, combined, confirmations=contexts)
             except BroadcastUncertainError as exc:

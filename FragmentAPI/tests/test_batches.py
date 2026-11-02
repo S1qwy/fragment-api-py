@@ -100,7 +100,10 @@ async def test_prepare_returns_one_external_signing_transaction():
 
 async def test_batch_broadcasts_once_and_confirms_every_invoice(monkeypatch, tmp_path):
     from FragmentAPI.methods import batches
-    client = FragmentClient(payment_storage=SQLitePaymentStorage(tmp_path / "payments.db"))
+    client = FragmentClient(
+        cookies={"stel_ssid": "ssid", "stel_dt": "0", "stel_token": "token", "stel_ton_token": "ton"},
+        payment_storage=SQLitePaymentStorage(tmp_path / "payments.db"),
+    )
     client.seed, client.api_key = "test-payer", "test-key"
     invoices = [invoice(1), invoice(2)]
     client._prepare_purchase = AsyncMock(side_effect=[(item, context(item)) for item in invoices])

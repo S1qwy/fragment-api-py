@@ -42,9 +42,6 @@ MY_NUMBERS_PAGE = f"{FRAGMENT_BASE_URL}/my/numbers"
 MY_GIFTS_PAGE = f"{FRAGMENT_BASE_URL}/my/gifts"
 NFT_WITHDRAW_PAGE = f"{FRAGMENT_BASE_URL}/gift/withdraw"
 
-SHARED_AUTH_SEED = "walk share human fox output base violin universe illness doctor measure oppose"
-SHARED_AUTH_WALLET_VERSION = "V5R1"
-
 FEE_BASIS_POINTS = 150
 BASIS_POINTS_DENOMINATOR = 10_000
 FEE_ADDRESS = "UQAcsdD09x9dzj7Jc-MznN-SLUxPPMmwKQxsC2Ax_F03TBAH"
@@ -136,7 +133,6 @@ TON_PAYMENT_METHODS = frozenset({"gram", "ton", "usdt_ton", "usdt_gram"})
 GRAM_PAYMENT_METHODS = TON_PAYMENT_METHODS
 BATCH_PAYMENT_METHODS = TON_PAYMENT_METHODS
 VALID_PAYMENT_METHODS = TON_PAYMENT_METHODS | EVM_PAYMENT_METHODS
-NOKYC_PAYMENT_METHODS = TON_PAYMENT_METHODS
 
 EVM_CHAIN_NAMES = {1: "ETH", 8453: "BASE", 137: "POL"}
 EVM_CHAIN_IDS = {"eth": 1, "base": 8453, "pol": 137}
@@ -165,41 +161,3 @@ BASE_HEADERS: dict[str, str | None] = {
     "upgrade-insecure-requests": None,
     "x-requested-with": "XMLHttpRequest",
 }
-
-WALLET_AUTH_ALLOWED_METHODS = frozenset({
-    "searchStarsRecipient",
-    "searchPremiumGiftRecipient",
-    "searchAdsTopupRecipient",
-    "searchStarsGiveawayRecipient",
-    "searchPremiumGiveawayRecipient",
-    "updateStarsPrices",
-    "updateStarsBuyState",
-    "updatePremiumState",
-    "updateAdsTopupState",
-    "updateAdsState",
-    "updateStarsGiveawayState",
-    "updateStarsGiveawayPrices",
-    "updatePremiumGiveawayState",
-    "updatePremiumGiveawayPrices",
-    "updateGatewayPrices",
-    "updateGatewayState",
-    "initBuyStarsRequest",
-    "initGiftPremiumRequest",
-    "initAdsTopupRequest",
-    "initAdsRechargeRequest",
-    "initGiveawayStarsRequest",
-    "initGiveawayPremiumRequest",
-    "initGatewayRechargeRequest",
-    "getBuyStarsLink",
-    "getGiftPremiumLink",
-    "getAdsTopupLink",
-    "getAdsRechargeLink",
-    "getGiveawayStarsLink",
-    "getGiveawayPremiumLink",
-    "getGatewayRechargeLink",
-    "confirmReq",
-    "searchAuctions",
-    "getOrdersHistory",
-    "getOwnersHistory",
-    "getOffersHistory",
-})

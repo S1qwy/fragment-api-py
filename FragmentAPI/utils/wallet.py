@@ -124,8 +124,7 @@ async def build_account_info(client: FragmentClient) -> dict[str, Any]:
     if client.seed:
         return derive_account(client.seed, client.wallet_version)
     raise ConfigurationError(
-        "A payer seed or sender_account is required to prepare a TON transaction; "
-        "the shared authentication wallet cannot be used as a payer."
+        "A payer seed or sender_account is required to prepare a TON transaction."
     )
 
 
