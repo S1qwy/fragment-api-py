@@ -214,7 +214,7 @@ def _asset_link(root: Any, prefixes: tuple[str, ...]) -> tuple[Any, str | None]:
 
 
 def _wallet_address(root: Any) -> str | None:
-    """Extract a wallet identifier from a Tonviewer link."""
+    """Read current Gram explorer addresses and legacy Tonviewer links."""
     if root is None:
         return None
     for link in root.css("a[href]"):
@@ -224,6 +224,10 @@ def _wallet_address(root: Any) -> str | None:
             continue
         if parsed.hostname in {"tonviewer.com", "www.tonviewer.com"}:
             return parsed.path.strip("/") or None
+        if parsed.hostname in {"gram.org", "www.gram.org"}:
+            parts = parsed.path.strip("/").split("/")
+            if len(parts) == 2 and parts[0] == "address" and parts[1]:
+                return parts[1]
     return None
 
 
@@ -691,74 +695,20 @@ def _wallet_init(html: str) -> dict[str, Any]:
     return {}
 
 
-def _settings_scope(tree: Any, title: str) -> Any:
-    """Find the settings row containing a named section heading."""
-    for heading in tree.css(".tm-settings-item-head, h3, h4"):
-        if title.casefold() not in _words(heading).casefold():
-            continue
-        parent = heading.parent
-        while parent is not None and parent.tag not in {"body", "html"}:
-            classes = _attr(parent, "class").split()
-            if "tm-settings-item" in classes:
-                return parent
-            if parent.css_first(".tm-settings-item-desc") is not None:
-                return parent
-            parent = parent.parent
-    return None
-
-
 def parse_profile(html: str) -> ProfileInfo:
-    """Read profile information and scope linked-wallet details correctly."""
+    """Read Telegram and wallet details from the current full-page header."""
     tree = _tree(html)
-    account = _first(
-        tree,
-        ".tm-settings-account",
-        ".tm-settings-item-account",
-    )
-    if account is None:
-        photo = tree.css_first(".tm-settings-account-photo")
-        parent = photo.parent if photo is not None else None
-        while parent is not None and parent.tag not in {"body", "html"}:
-            if parent.css_first(".tm-settings-item-head") is not None:
-                account = parent
-                break
-            parent = parent.parent
-    if account is None:
-        account = tree
-
-    linked = _settings_scope(tree, "Linked Wallet")
-    identity = _settings_scope(tree, "Identity")
     data = _wallet_init(html)
     address = data.get("address")
     if not isinstance(address, str) or address.casefold() in {"", "false", "null"}:
         address = None
-
-    label = _words(_first(
-        linked,
-        ".tm-settings-item-desc .short",
-        ".short",
-        ".tm-wallet",
-        ".tm-settings-item-desc",
-    )) or None
-
-    identity_verified = any(
-        "identity" in _words(node).casefold()
-        for node in tree.css(".tm-badge-verified")
-    )
-    if identity is not None and identity.css_first(".tm-badge-verified") is not None:
-        identity_verified = True
-
+    menu_account = tree.css_first(".tm-menu-tg-account")
     return ProfileInfo(
-        name=_words(account.css_first(".tm-settings-item-head")),
-        username=_text(account.css_first(".tm-settings-item-desc")).lstrip("@"),
-        photo_url=_image(tree.css_first(".tm-settings-account-photo")),
-        identity_verified=identity_verified,
+        name=_words(_first(menu_account, ".tm-menu-tg-account-name")),
+        username="",  # The current header does not expose the Telegram username.
+        photo_url=_image(_first(menu_account, ".tm-menu-tg-account-photo")),
         wallet_address=address,
-        wallet_label=label,
-        wallet_verified=bool(
-            linked is not None
-            and linked.css_first(".tm-badge-verified") is not None
-        ),
+        wallet_label=_text(tree.css_first(".tm-menu-account-address .tm-wallet")) or None,
     )
 
 
