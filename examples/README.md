@@ -1,6 +1,6 @@
 # Example Workspace
 
-**Fragment API Python · 13.0.0**
+**Fragment API Python · 14.1.0**
 
 [Documentation](https://github.com/S1qwy/fragment-api-py/wiki) · [Example guide](https://github.com/S1qwy/fragment-api-py/wiki/Examples) · [Repository](https://github.com/S1qwy/fragment-api-py)
 

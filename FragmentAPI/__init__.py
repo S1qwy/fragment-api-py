@@ -14,7 +14,7 @@ from FragmentAPI.types.models import __all__ as _models
 
 logging.getLogger("FragmentAPI").addHandler(logging.NullHandler())
 
-__version__ = "14.0.0"
+__version__ = "14.1.0"
 __author__ = "S1qwy"
 __email__ = "S1qwy@internet.ru"
 
