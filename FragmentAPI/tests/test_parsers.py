@@ -11,6 +11,7 @@ from FragmentAPI.utils.html import (
     parse_my_assets,
     parse_my_bids,
     parse_owner_history,
+    parse_sold_owner,
     parse_profile,
     parse_sessions,
     parse_stars_price_from_html,
@@ -123,6 +124,30 @@ def test_transferred_owner_history() -> None:
     assert cursor == "42"
 
 
+def test_current_gram_explorer_owner_and_history() -> None:
+    """The explorer changed; do not lose wallet addresses or include /address/."""
+    html = '''
+    <div class="tm-section-bid-info"><a class="tm-wallet"
+      href="https://gram.org/address/EQOWNER?tab=transactions">UQ...owner</a></div>
+    <section><h3>Ownership History</h3><table><tbody><tr>
+      <td><div class="table-cell-value tm-value">Transferred</div></td>
+      <td><a href="https://gram.org/address/EQBUYER">Buyer</a></td>
+    </tr></tbody></table></section>
+    '''
+    assert parse_sold_owner(html) == "EQOWNER"
+    owners, _ = parse_owner_history(html)
+    assert owners[0].wallet == "EQBUYER"
+    assert owners[0].price == "Transferred"
+
+
+def test_unrelated_explorer_links_are_not_owners() -> None:
+    html = '''<div class="tm-section-bid-info">
+      <a href="https://gram.org/transaction/hash">Transaction</a>
+      <a href="https://gram.org.evil.test/address/WRONG">Other site</a>
+    </div>'''
+    assert parse_sold_owner(html) is None
+
+
 def test_rarity_not_part_of_attribute_value() -> None:
     """Separate a text-only property value from its rarity badge."""
     result = parse_gift_attributes("""
@@ -168,26 +193,50 @@ def test_row_level_assignment_and_zero_count() -> None:
 
 
 def test_profile_wallet_is_scoped() -> None:
-    """Ignore unrelated JSON addresses and preserve the linked wallet label."""
+    """Ignore unrelated addresses and badges from marketplace content."""
     result = parse_profile("""
-    <div class="tm-settings-account">
-      <div class="tm-settings-item-head">Alice</div>
-      <div class="tm-settings-item-desc">@alice</div>
+    <div class="tm-menu-tg-account">
+      <div class="tm-menu-tg-account-name">Alice</div>
+      <div class="tm-menu-tg-account-desc">Telegram Account</div>
     </div>
-    <div class="tm-settings-item">
-      <div class="tm-settings-item-head">Linked Wallet</div>
-      <div class="tm-settings-item-desc"><span class="short">UQ...abc</span></div>
-      <span class="tm-badge-verified">Verified</span>
-    </div>
+    <div class="tm-menu-account-address"><span class="tm-wallet">UQ...abc</span></div>
+    <main><span class="tm-wallet">WRONG</span><span class="tm-badge-verified">Verified</span></main>
     <script>
       other({"address":"WRONG"});
       Wallet.init({"address":"0:123","nested":{"a":1}});
     </script>
     """)
-    assert result.username == "alice"
+    assert result.name == "Alice"
+    assert result.username == ""
     assert result.wallet_address == "0:123"
     assert result.wallet_label == "UQ...abc"
-    assert result.wallet_verified is True
+
+
+def test_profile_from_current_header() -> None:
+    """Read current header details without obsolete profile fields."""
+    result = parse_profile('''
+    <div class="tm-menu-account-address"><span class="tm-wallet"><span
+      class="head">UQabc</span><span class="middle"></span><span class="tail">xyz</span></span></div>
+    <div class="tm-menu-tg-account">
+      <div class="tm-menu-tg-account-name">Alice</div>
+      <div class="tm-menu-tg-account-desc">Telegram Account</div>
+      <span class="tm-menu-tg-account-photo"><img src="https://example.com/alice.jpg"></span>
+    </div>
+    <script>Wallet.init({"address":"0:123","logged_in":true});</script>
+    ''')
+    assert result.name == "Alice"
+    assert result.username == ""
+    assert result.photo_url == "https://example.com/alice.jpg"
+    assert result.wallet_address == "0:123"
+    assert result.wallet_label == "UQabcxyz"
+    assert set(result.model_dump()) == {"name", "username", "photo_url", "wallet_address", "wallet_label"}
+
+
+def test_profile_without_wallet_or_telegram() -> None:
+    """Logged-out pages must not invent an account or use an unrelated image."""
+    result = parse_profile('<img src="gift.png"><script>Wallet.init({"address":false});</script>')
+    assert result.name == result.username == ""
+    assert result.photo_url is result.wallet_address is result.wallet_label is None
 
 
 def test_session_location_and_current_date() -> None:

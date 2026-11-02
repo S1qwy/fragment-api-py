@@ -2,6 +2,27 @@
 
 <!-- version list -->
 
+## v14.1.0 (2026-11-02)
+
+### Features and fixes
+
+- Read account details from the full page header instead of the removed
+  `/my/profile` page; leave the unavailable Telegram username empty.
+- Remove KYC-specific error classification and obsolete profile verification
+  fields. Keep `VerificationError` as a compatibility alias of `FragmentAPIError`.
+- Match the current query-only Stars giveaway recipient search in both the
+  public helper and invoice preparation.
+- Parse owner and history wallet addresses from current `gram.org/address/`
+  links while retaining Tonviewer support.
+
+### Validation
+
+- Add regression coverage for current account headers, explorer links, and all
+  five native purchase/giveaway/top-up preparation flows without broadcasting.
+- Check live account, price, history, marketplace, and collection-filter pages.
+  The five tested invoice flows returned unsigned transactions without a KYC
+  challenge; withdrawals and asset mutations were not exercised.
+
 ## v14.0.0 (2026-10-15)
 
 ### Breaking changes

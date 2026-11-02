@@ -142,7 +142,7 @@ class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
 
     @property
     def nokyc_mode(self) -> bool:
-        """Compatibility alias for wallet_auth; server verification rules still apply."""
+        """Compatibility alias for wallet_auth."""
         return self.wallet_auth
 
     @property
@@ -424,7 +424,6 @@ class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
         stars_giveaway(amount, winners)
         return await self._recipient(
             "searchStarsGiveawayRecipient", channel, C.STARS_GIVEAWAY_PAGE,
-            quantity=winners, stars=amount,
         )
 
     async def get_giveaway_premium_recipient(
@@ -643,9 +642,11 @@ class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
         return await self._history_page(C.ADS_HISTORY_PAGE, H.parse_topup_history, type="topup", sort=sort)
 
     async def get_profile(self) -> M.ProfileInfo:
-        """Read the user-owned profile."""
-        data = await self._page(C.PROFILE_PAGE, account=True)
-        return H.parse_profile(str(data.get("h", "")) + str(data.get("j", "")))
+        """Read user-owned account details from the full page header."""
+        self._require_account("get_profile")
+        await self._ensure_auth()
+        html = await self._get_transport().get_text(C.PROFILE_PAGE)
+        return H.parse_profile(html)
 
     async def get_sessions(self) -> list[M.SessionInfo]:
         """List user-owned Fragment sessions."""

@@ -37,6 +37,23 @@ async def test_raw_call_cannot_override_method() -> None:
     await client.aclose()
 
 
+async def test_profile_reads_full_home_page() -> None:
+    """The AJAX body omits account details from the shared page header."""
+    client = FragmentClient(
+        cookies={"stel_ssid": "ssid", "stel_dt": "0", "stel_token": "token"}
+    )
+    transport = client._get_transport()
+    transport.get_text = AsyncMock(return_value='''
+        <div class="tm-menu-tg-account"><div class="tm-menu-tg-account-name">Alice</div></div>
+        <script>Wallet.init({"address":"0:123"});</script>
+    ''')
+    result = await client.get_profile()
+    assert result.name == "Alice"
+    assert result.wallet_address == "0:123"
+    transport.get_text.assert_awaited_once_with("https://fragment.com/")
+    await client.aclose()
+
+
 async def test_session_reused_and_closed() -> None:
     """Reuse one transport and close its owned session exactly once."""
     client = FragmentClient(

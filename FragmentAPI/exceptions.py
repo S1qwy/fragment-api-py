@@ -127,10 +127,9 @@ class ParseError(FragmentAPIError):
     UNPARSEABLE = "Failed to parse {context}: {exc}"
 
 
-class VerificationError(FragmentAPIError):
-    """Fragment requires identity verification."""
-
-    KYC_REQUIRED = "Fragment requires identity verification for this operation."
+# Import compatibility for callers of earlier releases. There is no separate
+# verification workflow; server errors use the normal Fragment API exception.
+VerificationError = FragmentAPIError
 
 
 class OperationError(FragmentError):

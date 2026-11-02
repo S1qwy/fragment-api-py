@@ -61,20 +61,21 @@ Operate user-owned assets, listings, offers, assignments, withdrawals, and sessi
 </tr>
 </table>
 
-## Release 14.0.0
+## Release 14.1.0
 
-Single-submission batches, durable payment recovery, and coordinated payer access.
+Current Fragment account headers, updated giveaway requests, and ordinary API error handling without a separate KYC workflow.
 
 | Area | What changed |
 |:--|:--|
-| Authentication | Restricted wallet-proof sessions remain separate from the real payer |
-| Transport | A reusable client-owned HTTP session with cached API hashes |
-| Payments | Signed intent is journaled before broadcast; interrupted payments can be reconciled |
-| Wallets | V4R2, V5R1, HighloadV2, HighloadV3R1, and Telegram WalletTg configuration |
-| Batches | One combined wallet submission with per-invoice outcomes |
-| Storage | SQLite payment journal, local process locks, and shared-store/distributed-lock extension points |
-| Parsing | Table-fragment handling, decimal preservation, responsive statuses, and merged gift filters |
-| Validation | Strict integer inputs, original giveaway package limits, and capability guards |
+| Profile | `get_profile()` reads the full page header; the removed `/my/profile` route is no longer requested |
+| Account fields | Name, photo, wallet address and label; `username` is empty because the header does not expose it |
+| API errors | KYC-specific classification is removed; `VerificationError` remains an import alias of `FragmentAPIError` |
+| Giveaways | Stars recipient search sends only `query`, matching the current Fragment interface |
+| Marketplace | Wallet owners and history support the current `gram.org/address/` explorer links |
+
+`ProfileInfo.identity_verified` and `ProfileInfo.wallet_verified` were removed with the old profile page. Applications should stop reading these fields. Historical wallet-auth aliases such as `nokyc_mode` remain available.
+
+Live checks on November 2, 2026 returned request IDs and unsigned native-TON transactions for Stars, Premium, both giveaway types, and Ads top-ups without a verification challenge in the tested session. No payments were submitted. Withdrawals and asset mutations require valid operation links or assets and were not exercised by that check.
 
 > [!IMPORTANT]
 > Version 14 includes breaking changes. Batches combine all invoices into one wallet submission
@@ -94,7 +95,7 @@ Single-submission batches, durable payment recovery, and coordinated payer acces
 
 Account operations require a user-owned cookie session. Native automatic payments in cookie mode additionally require a wallet-connected session.
 
-Restricted wallet authentication does not bypass Fragment verification requirements. The shared authentication wallet is separate from the configured payer.
+The shared authentication wallet is separate from the configured payer. Account-management restrictions protect shared-wallet state and remain in effect.
 
 ## Installation
 
@@ -236,8 +237,6 @@ Development, maintenance, and issue reports are welcome.
   <a href="https://github.com/S1qwy/fragment-api-py">GitHub</a>
   &nbsp; / &nbsp;
   <a href="https://github.com/S1qwy/fragment-api-py/wiki">Documentation</a>
-  &nbsp; / &nbsp;
-  <a href="https://t.me/fragment_api_lib">Telegram</a>
   &nbsp; / &nbsp;
   <a href="https://opensource.org/licenses/MIT">MIT License</a>
 </p>
