@@ -238,7 +238,5 @@ Development, maintenance, and issue reports are welcome.
   &nbsp; / &nbsp;
   <a href="https://github.com/S1qwy/fragment-api-py/wiki">Documentation</a>
   &nbsp; / &nbsp;
-  <a href="https://t.me/fragment_api_lib">Telegram</a>
-  &nbsp; / &nbsp;
   <a href="https://opensource.org/licenses/MIT">MIT License</a>
 </p>
