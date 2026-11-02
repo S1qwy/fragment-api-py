@@ -142,7 +142,7 @@ class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
 
     @property
     def nokyc_mode(self) -> bool:
-        """Compatibility alias for wallet_auth; server verification rules still apply."""
+        """Compatibility alias for wallet_auth."""
         return self.wallet_auth
 
     @property
@@ -424,7 +424,6 @@ class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
         stars_giveaway(amount, winners)
         return await self._recipient(
             "searchStarsGiveawayRecipient", channel, C.STARS_GIVEAWAY_PAGE,
-            quantity=winners, stars=amount,
         )
 
     async def get_giveaway_premium_recipient(

@@ -3,7 +3,10 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from FragmentAPI.utils.http import FragmentTransport
+import pytest
+
+from FragmentAPI.exceptions import FragmentAPIError, VerificationError
+from FragmentAPI.utils.http import FragmentTransport, raise_api_error
 
 
 def response(data: dict) -> SimpleNamespace:
@@ -13,6 +16,14 @@ def response(data: dict) -> SimpleNamespace:
         url="https://fragment.com/api",
         json=lambda: data,
     )
+
+
+def test_server_error_uses_standard_api_exception() -> None:
+    """Preserve server error text without the removed verification classifier."""
+    with pytest.raises(FragmentAPIError, match="Operation unavailable") as caught:
+        raise_api_error({"error": "Operation unavailable", "need_verify": True})
+    assert type(caught.value) is FragmentAPIError
+    assert VerificationError is FragmentAPIError
 
 
 async def test_bad_hash_refreshes_once() -> None:

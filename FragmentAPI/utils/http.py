@@ -17,7 +17,6 @@ from FragmentAPI.exceptions import (
     FragmentPageError,
     PaidMessageLimitError,
     ParseError,
-    VerificationError,
 )
 from FragmentAPI.types.constants import (
     BASE_HEADERS,
@@ -71,8 +70,6 @@ def parse_json_response(response: Any, context: str) -> dict[str, Any]:
 
 def raise_api_error(result: dict[str, Any]) -> None:
     """Map known Fragment failures before callers inspect recipient or invoice fields."""
-    if result.get("need_verify"):
-        raise VerificationError(VerificationError.KYC_REQUIRED)
     error = result.get("error")
     if not error:
         return

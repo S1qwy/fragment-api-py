@@ -5,7 +5,6 @@ from FragmentAPI import (
     ConfigurationError,
     FragmentClient,
     FragmentError,
-    VerificationError,
     WalletError,
 )
 
@@ -43,8 +42,6 @@ async def purchase() -> None:
             result = await client.purchase_stars(required("FRAGMENT_TARGET"), 100)
         except BroadcastUncertainError:
             print("Unknown broadcast outcome. Stop and reconcile before retrying.")
-        except VerificationError:
-            print("Fragment requires verification for this operation.")
         except WalletError as exc:
             print(f"Wallet preflight failed: {exc}")
         except FragmentError as exc:

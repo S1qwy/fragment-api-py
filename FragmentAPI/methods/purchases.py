@@ -171,10 +171,8 @@ class PurchaseMixin(BatchMixin):
             search_extra["quantity"] = ""
         elif kind in {"premium", "giveaway_premium"}:
             search_extra["months"] = amount
-        if winners is not None:
+        if winners is not None and kind == "giveaway_premium":
             search_extra["quantity"] = winners
-        if kind == "giveaway_stars":
-            search_extra["stars"] = amount
         if search_method:
             resolved = await self._recipient(
                 search_method, target, page, **search_extra
