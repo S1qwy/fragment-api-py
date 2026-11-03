@@ -13,7 +13,7 @@ from FragmentAPI import (
     BatchResult,
     BroadcastUncertainError,
     ConfigurationError,
-    EvmPaymentResult,
+    ExternalPaymentResult,
     FragmentClient,
     FragmentError,
     PreparedTransaction,
@@ -109,7 +109,7 @@ def show_result(result: Any) -> None:
         print(f"Valid until: {result.valid_until}")
         return
 
-    if isinstance(result, EvmPaymentResult):
+    if isinstance(result, ExternalPaymentResult):
         invoice = result.invoice
         print("Invoice only: external payment is required.")
         print(f"Request: {invoice.req_id}")

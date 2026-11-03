@@ -15,8 +15,8 @@ async def validation() -> None:
     """Demonstrate validation failures before authentication or HTTP requests."""
     async with FragmentClient() as client:
         checks = [
-            ("Boolean quantity", lambda: client.purchase_stars("example", True)),
-            ("Invalid duration", lambda: client.purchase_premium("example", 5)),
+            ("Boolean quantity", lambda: client.purchase("stars", "example", True)),
+            ("Invalid duration", lambda: client.purchase("premium", "example", 5)),
             ("Invalid package", lambda: client.giveaway_stars("example", 1, 501)),
         ]
         for label, operation in checks:
@@ -39,7 +39,7 @@ async def purchase() -> None:
     """Handle an actual purchase once, without automatically retrying it."""
     async with make_client(mode="pay") as client:
         try:
-            result = await client.purchase_stars(required("FRAGMENT_TARGET"), 100)
+            result = await client.purchase("stars", required("FRAGMENT_TARGET"), 100)
         except BroadcastUncertainError:
             print("Unknown broadcast outcome. Stop and reconcile before retrying.")
         except WalletError as exc:

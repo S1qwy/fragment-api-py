@@ -12,13 +12,13 @@ async def recipient() -> None:
 async def prepare() -> None:
     """Prepare a one-TON Ads top-up."""
     async with make_client(mode="prepare") as client:
-        show_result(await client.topup_ton(required("FRAGMENT_TARGET"), 1))
+        show_result(await client.purchase("ton", required("FRAGMENT_TARGET"), 1))
 
 
 async def topup() -> None:
     """Broadcast a one-TON Ads top-up."""
     async with make_client(mode="pay") as client:
-        show_result(await client.topup_ton(required("FRAGMENT_TARGET"), 1))
+        show_result(await client.purchase("ton", required("FRAGMENT_TARGET"), 1))
 
 
 async def unified() -> None:

@@ -61,7 +61,16 @@ Operate user-owned assets, listings, offers, assignments, withdrawals, and sessi
 </tr>
 </table>
 
-## Release 14.1.1
+## Release 14.2.0
+
+USDT on TRON uses `payment_method="usdt_tron"` and returns `ExternalPaymentResult` with an `ExternalInvoice`. TRON payments are external: the SDK does not sign or broadcast TRC-20 transfers.
+
+### API migration
+
+Use `purchase("stars", username, amount)`, `purchase("premium", username, months=3)`, or `purchase("ton", username, amount)`. Batch purchases use `purchase([...])` and retain one combined TON submission. The separate `purchase_stars`, `purchase_premium`, `topup_gram`, `topup_ton`, and `batch_purchase` methods are removed.
+
+Function-style `FragmentAPI.methods` adapters, `list_sessions`, `ConfigError`, `VerificationError`, and old `EvmInvoice` / `EvmPaymentResult` names are removed. Use `FragmentClient`, `get_sessions`, `ConfigurationError`, `FragmentAPIError`, and the `External*` classes. Payment method aliases `gram` and `usdt_gram` are removed; use `ton` and `usdt_ton`.
+
 
 Shared authentication has been removed. Fragment requests now use your own cookie session, with explicit authentication using your own wallet when needed.
 
@@ -72,7 +81,7 @@ Shared authentication has been removed. Fragment requests now use your own cooki
 | Batches | All batches return `BatchResult`; the shared-mode result type is removed |
 | Profile | `get_profile()` reads the full page header; the removed `/my/profile` route is no longer requested |
 | Account fields | Name, photo, wallet address and label; `username` is empty because the header does not expose it |
-| API errors | KYC-specific classification is removed; `VerificationError` remains an import alias of `FragmentAPIError` |
+| API errors | KYC-specific classification is removed; errors use `FragmentAPIError` |
 | Giveaways | Stars recipient search sends only `query`, matching the current Fragment interface |
 | Marketplace | Wallet owners and history support the current `gram.org/address/` explorer links |
 
@@ -134,7 +143,7 @@ The repository keeps executable examples in one place rather than duplicating co
 
 ## Batches, fees, and recovery
 
-`batch_purchase(items)` prepares all invoices and submits their combined messages
+`purchase(items)` prepares all invoices and submits their combined messages
 in one wallet transaction. A batch that exceeds wallet capacity is rejected
 before broadcasting; it is never silently split. In preparation mode,
 `result.transaction` contains the combined payload for external signing.
@@ -159,8 +168,9 @@ confirmation limits, operator resolution, and coordination across processes/host
 
 | Method | Network | Asset | SDK behavior |
 |:--|:--|:--|:--|
-| `ton`, `gram` | TON | TON | Prepare or broadcast |
-| `usdt_ton`, `usdt_gram` | TON | USDT | Prepare or broadcast |
+| `ton` | TON | TON | Prepare or broadcast |
+| `usdt_ton` | TON | USDT | Prepare or broadcast |
+| `usdt_tron` | TRON | USDT | External invoice |
 | `usdt_eth` | Ethereum | USDT | External invoice |
 | `usdt_pol` | Polygon | USDT | External invoice |
 | `usdc_eth` | Ethereum | USDC | External invoice |

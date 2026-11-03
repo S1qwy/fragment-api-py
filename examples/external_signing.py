@@ -18,7 +18,7 @@ from _common import (
 async def prepare() -> None:
     """Export the complete message list without signing or broadcasting it."""
     async with make_client(mode="prepare") as client:
-        result = await client.purchase_stars(required("FRAGMENT_TARGET"), 100)
+        result = await client.purchase("stars", required("FRAGMENT_TARGET"), 100)
         if not isinstance(result, PreparedTransaction):
             raise RuntimeError("Expected a prepared TON transaction.")
         show_result(result)

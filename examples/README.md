@@ -1,6 +1,6 @@
 # Example Workspace
 
-**Fragment API Python · 14.1.1**
+**Fragment API Python · 14.2.0**
 
 [Documentation](https://github.com/S1qwy/fragment-api-py/wiki) · [Example guide](https://github.com/S1qwy/fragment-api-py/wiki/Examples) · [Repository](https://github.com/S1qwy/fragment-api-py)
 
@@ -93,11 +93,10 @@ All Fragment HTTP operations require `FRAGMENT_COOKIES`. Use `authentication.py`
 |:--|:--|
 | Setup and authentication | `basic_setup.py`, `authentication.py`, `session_storage.py` |
 | Payments | `purchase_stars.py`, `purchase_premium.py`, `batch_purchase.py`, `giveaways.py` |
-| External payments | `external_signing.py`, `evm_payment_automation.py` |
+| External payments | `external_signing.py`, `external_payment_automation.py` |
 | Ads and Gateway | `topup_grams.py`, `gateway_and_ads.py` |
 | Marketplace | `search_marketplace.py`, `item_details.py`, `prices.py` |
 | Account operations | `wallet_and_profile.py`, `transaction_history.py`, `marketplace_bids_and_auctions.py` |
 | Transfers and numbers | `nft_transfers_and_withdrawals.py`, `anonymous_numbers.py` |
-| Integration | `raw_api_calls.py`, `error_handling.py`, `backward_compatibility.py`, `logging_setup.py` |
 
 `_common.py` provides configuration, action selection, execution guards, and result summaries. It is not intended to be run directly.

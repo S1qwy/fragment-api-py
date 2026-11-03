@@ -12,13 +12,13 @@ async def recipient() -> None:
 async def prepare() -> None:
     """Prepare an unsigned native TON invoice."""
     async with make_client(mode="prepare") as client:
-        show_result(await client.purchase_stars(required("FRAGMENT_TARGET"), 100))
+        show_result(await client.purchase("stars", required("FRAGMENT_TARGET"), 100))
 
 
 async def purchase() -> None:
     """Broadcast one native TON purchase and inspect fulfillment status."""
     async with make_client(mode="pay") as client:
-        show_result(await client.purchase_stars(
+        show_result(await client.purchase("stars",
             required("FRAGMENT_TARGET"),
             100,
             payment_method="ton",
@@ -28,7 +28,7 @@ async def purchase() -> None:
 async def usdt() -> None:
     """Purchase using USDT on TON with token and native balance checks."""
     async with make_client(mode="pay") as client:
-        show_result(await client.purchase_stars(
+        show_result(await client.purchase("stars",
             required("FRAGMENT_TARGET"),
             100,
             payment_method="usdt_ton",

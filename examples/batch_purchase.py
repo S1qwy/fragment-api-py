@@ -24,13 +24,13 @@ def items() -> list[PurchaseItem]:
 async def prepare() -> None:
     """Inspect result.transaction: the combined payload for one external signature."""
     async with make_client(mode="prepare") as client:
-        show_result(await client.batch_purchase(items(), payment_method="ton"))
+        show_result(await client.purchase(items(), payment_method="ton"))
 
 
 async def purchase() -> None:
     """Send one wallet message and display each invoice's fulfillment status."""
     async with make_client(mode="pay") as client:
-        show_result(await client.batch_purchase(items(), payment_method="ton"))
+        show_result(await client.purchase(items(), payment_method="ton"))
 
 
 async def highload() -> None:

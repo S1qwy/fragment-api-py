@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v14.2.0 (2026-11-04)
+
+- Add external USDT TRON invoices (`usdt_tron`), including network validation and exact raw token units.
+- Rename external invoice models to `ExternalInvoice` and `ExternalPaymentResult`; no EVM compatibility aliases.
+- Initialize external payment links before loading invoice state.
+- Consolidate individual and batch purchases under `purchase`; remove duplicate purchase methods and function-style adapters.
+- Remove legacy error/payment aliases and `list_sessions`; update examples and migration documentation.
+
+
 ## v14.1.1 (2026-11-02)
 
 ### Authentication changes
