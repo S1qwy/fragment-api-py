@@ -13,7 +13,6 @@ from FragmentAPI.exceptions import ConfigurationError
     [
         ("get_profile", ()),
         ("get_sessions", ()),
-        ("list_sessions", ()),
         ("terminate_session", ("session",)),
         ("get_my_assets", ()),
         ("get_my_bids", ()),
@@ -136,7 +135,7 @@ async def test_bool_purchase_rejected_before_network() -> None:
     """Reject bool quantities before authentication or HTTP."""
     client = FragmentClient()
     with pytest.raises(ConfigurationError):
-        await client.topup_gram("recipient", True)
+        await client.purchase("ton", "recipient", True)
     with pytest.raises(ConfigurationError):
         await client.giveaway_premium("channel", True, 3)
     await client.aclose()

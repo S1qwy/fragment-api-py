@@ -92,13 +92,13 @@ class PaymentRecord(FragmentBaseModel):
     resolution_evidence: str | None = None
 
 
-class EvmInvoice(FragmentBaseModel):
-    """An external EVM invoice without a library TON fee."""
+class ExternalInvoice(FragmentBaseModel):
+    """An external EVM or TRON invoice without a library TON fee."""
 
     req_id: str
     invoice_address: str
     invoice_token: str
-    invoice_chain_id: int
+    invoice_chain_id: int | None
     invoice_chain_name: str
     invoice_amount_hex: str
     invoice_amount: float
@@ -109,16 +109,17 @@ class EvmInvoice(FragmentBaseModel):
     payment_method: str
     api_hash: str = ""
     page_url: str
+    invoice_network: str = "evm"
 
 
-class EvmPaymentResult(FragmentBaseModel):
-    """An EVM invoice awaiting external payment."""
+class ExternalPaymentResult(FragmentBaseModel):
+    """An invoice awaiting external payment on the selected network."""
 
     item_kind: str
     target: str
     amount: int
     payment_method: str
-    invoice: EvmInvoice
+    invoice: ExternalInvoice
 
 
 class WalletInfo(FragmentBaseModel):

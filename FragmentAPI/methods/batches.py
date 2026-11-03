@@ -14,8 +14,8 @@ from FragmentAPI.utils.wallet import combine_prepared, execute_prepared
 class BatchMixin:
     """A batch has one broadcast, without claiming atomic downstream fulfillment."""
 
-    async def batch_purchase(
-        self, items: list[dict | M.PurchaseItem], payment_method: str = "gram",
+    async def _batch_purchase(
+        self, items: list[dict | M.PurchaseItem], payment_method: str = "ton",
     ) -> M.BatchResult:
         """Validate and prepare all invoices, then send exactly one wallet message.
 
@@ -41,7 +41,7 @@ class BatchMixin:
                 value = months(item.get("months"))
             elif kind == "stars":
                 value = integer(item.get("amount"), C.STARS_PURCHASE_MIN, C.STARS_PURCHASE_MAX, ConfigurationError.INVALID_STARS_AMOUNT)
-            elif kind in {"ton", "gram"} and method == "ton":
+            elif kind == "ton" and method == "ton":
                 kind = "ton"
                 value = integer(item.get("amount"), C.GRAM_TOPUP_MIN, C.GRAM_TOPUP_MAX, ConfigurationError.INVALID_GRAM_AMOUNT)
             else:
@@ -56,7 +56,7 @@ class BatchMixin:
                     kind, target, value, payment_method=method, show_sender=show,
                 )
                 if not isinstance(result, tuple):
-                    raise ConfigurationError("A TON batch cannot include an EVM invoice.")
+                    raise ConfigurationError("A TON batch cannot include an external invoice.")
                 invoice, context = result
                 invoices.append(invoice)
                 contexts.append(context)

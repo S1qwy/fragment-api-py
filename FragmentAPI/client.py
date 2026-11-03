@@ -56,7 +56,6 @@ from FragmentAPI.utils.wallet import (
 )
 
 
-
 class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
     """Fragment client using explicitly supplied user-owned cookie sessions.
 
@@ -601,9 +600,6 @@ class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
         data = await self._page(C.SESSIONS_PAGE, account=True)
         return H.parse_sessions(data.get("h", ""))
 
-    async def list_sessions(self) -> list[M.SessionInfo]:
-        """Alias for get_sessions."""
-        return await self.get_sessions()
 
     async def terminate_session(self, session_id: str) -> bool:
         """Terminate a user-owned Fragment session."""

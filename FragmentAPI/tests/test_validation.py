@@ -93,5 +93,5 @@ def test_exact_decimal_units() -> None:
 
 def test_payment_aliases() -> None:
     """Normalize native and jetton aliases independently."""
-    assert normalize_payment_method("gram") == "ton"
-    assert normalize_payment_method("usdt_gram") == "usdt_ton"
+    assert normalize_payment_method("ton") == "ton"
+    assert normalize_payment_method("usdt_ton") == "usdt_ton"

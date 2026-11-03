@@ -14,7 +14,7 @@ from FragmentAPI.exceptions import (
 )
 from FragmentAPI.types import constants as C
 from FragmentAPI.types import models as M
-from FragmentAPI.utils.evm import fetch_evm_invoice
+from FragmentAPI.utils.external import fetch_external_invoice
 from FragmentAPI.utils.validation import (
     decimal_units, integer, months as validate_months,
     normalize_payment_method, recipient as normalize_recipient, stars_giveaway,
@@ -52,7 +52,6 @@ _FLOWS = {
         "initGatewayRechargeRequest", "getGatewayRechargeLink",
     ),
 }
-
 
 
 class PurchaseMixin(BatchMixin):
@@ -121,14 +120,14 @@ class PurchaseMixin(BatchMixin):
         self, kind: str, target: str, amount: int, *,
         payment_method: str = "ton", show_sender: bool = True,
         winners: int | None = None,
-    ) -> tuple[M.TransactionResult, str] | M.PreparedTransaction | M.EvmPaymentResult:
+    ) -> tuple[M.TransactionResult, str] | M.PreparedTransaction | M.ExternalPaymentResult:
         """Serialize Fragment's session state through preparation and confirmation."""
         async with self._flow_lock:
             result = await self._prepare_purchase(
                 kind, target, amount, payment_method=payment_method,
                 show_sender=show_sender, winners=winners,
             )
-            if isinstance(result, M.EvmPaymentResult):
+            if isinstance(result, M.ExternalPaymentResult):
                 return result
             prepared, context = result
             if not self.has_wallet:
@@ -150,7 +149,7 @@ class PurchaseMixin(BatchMixin):
         payment_method: str = "ton",
         show_sender: bool = True,
         winners: int | None = None,
-    ) -> tuple[M.PreparedTransaction, M.PaymentConfirmation] | M.EvmPaymentResult:
+    ) -> tuple[M.PreparedTransaction, M.PaymentConfirmation] | M.ExternalPaymentResult:
         """Prepare an invoice and retain its confirmation context without broadcasting."""
         method = normalize_payment_method(payment_method)
         page, search_method, state_method, init_method, link_method = _FLOWS[kind]
@@ -158,7 +157,7 @@ class PurchaseMixin(BatchMixin):
             raise ConfigurationError("This operation supports native TON only.")
         if not isinstance(show_sender, bool):
             raise ConfigurationError("show_sender must be a boolean.")
-        account = await build_account_info(self) if method not in C.EVM_PAYMENT_METHODS else None
+        account = await build_account_info(self) if method not in C.EXTERNAL_PAYMENT_METHODS else None
         await self._api(
             state_method,
             {"mode": "new", "lv": "false", "dh": str(time.time_ns())},
@@ -212,8 +211,13 @@ class PurchaseMixin(BatchMixin):
                 FragmentAPIError.NO_REQUEST_ID.format(context=kind)
             )
 
-        if method in C.EVM_PAYMENT_METHODS:
-            invoice = await fetch_evm_invoice(
+        if method in C.EXTERNAL_PAYMENT_METHODS:
+            await self._api(
+                link_method,
+                {"id": req_id, "transaction": 1, "show_sender": int(show_sender)},
+                page,
+            )
+            invoice = await fetch_external_invoice(
                 self.cookies, urlsplit(page).path,
                 resolved.recipient if resolved else target,
                 method,
@@ -224,7 +228,7 @@ class PurchaseMixin(BatchMixin):
                 timeout=self.timeout,
                 session=self._session,
             )
-            return M.EvmPaymentResult(
+            return M.ExternalPaymentResult(
                 item_kind=kind, target=target, amount=amount,
                 payment_method=method, invoice=invoice,
             )
@@ -275,39 +279,11 @@ class PurchaseMixin(BatchMixin):
             page_url=page, state_method=state_method,
         )
 
-    async def purchase_stars(
-        self, username: str, amount: int,
-        show_sender: bool = True, payment_method: str = "gram",
-    ) -> M.PurchaseResult | M.PreparedTransaction | M.EvmPaymentResult:
-        """Purchase Stars with a fee only on native TON principal."""
-        integer(amount, C.STARS_PURCHASE_MIN, C.STARS_PURCHASE_MAX, ConfigurationError.INVALID_STARS_AMOUNT)
-        return await self._single_purchase("stars", username, amount, show_sender, payment_method)
-
-    async def purchase_premium(
-        self, username: str, months: int,
-        show_sender: bool = True, payment_method: str = "gram",
-    ) -> M.PurchaseResult | M.PreparedTransaction | M.EvmPaymentResult:
-        """Gift Premium."""
-        validate_months(months)
-        return await self._single_purchase("premium", username, months, show_sender, payment_method)
-
-    async def topup_gram(
-        self, username: str, amount: int, show_sender: bool = True,
-    ) -> M.PurchaseResult | M.PreparedTransaction:
-        """Top up a recipient's Ads balance."""
-        integer(amount, C.GRAM_TOPUP_MIN, C.GRAM_TOPUP_MAX, ConfigurationError.INVALID_GRAM_AMOUNT)
-        return await self._single_purchase("ton", username, amount, show_sender, "ton")
-
-    async def topup_ton(
-        self, username: str, amount: int, show_sender: bool = True,
-    ) -> M.PurchaseResult | M.PreparedTransaction:
-        """Alias for native Ads top-up."""
-        return await self.topup_gram(username, amount, show_sender)
 
     async def _single_purchase(
         self, kind: str, username: str, amount: int,
         show_sender: bool, payment_method: str,
-    ) -> M.PurchaseResult | M.PreparedTransaction | M.EvmPaymentResult:
+    ) -> M.PurchaseResult | M.PreparedTransaction | M.ExternalPaymentResult:
         """Normalize one purchase receipt."""
         username = normalize_recipient(username)
         result = await self._purchase_flow(
@@ -336,11 +312,11 @@ class PurchaseMixin(BatchMixin):
         amount: int | None = None,
         months: int | None = None,
         show_sender: bool = True,
-        payment_method: str = "gram",
-    ) -> M.PurchaseResult | M.PreparedTransaction | M.EvmPaymentResult | M.BatchResult:
+        payment_method: str = "ton",
+    ) -> M.PurchaseResult | M.PreparedTransaction | M.ExternalPaymentResult | M.BatchResult:
         """Dispatch a single purchase or a batch sent in one wallet message."""
         if isinstance(items_or_type, list):
-            return await self.batch_purchase(items_or_type, payment_method)
+            return await self._batch_purchase(items_or_type, payment_method)
         if isinstance(items_or_type, M.PurchaseItem):
             item = items_or_type.model_dump()
         elif isinstance(items_or_type, dict):
@@ -356,19 +332,22 @@ class PurchaseMixin(BatchMixin):
         target = item.get("username")
         sender = item.get("show_sender", True)
         if kind == "stars":
-            return await self.purchase_stars(target, item.get("amount"), sender, payment_method)
+            value = integer(item.get("amount"), C.STARS_PURCHASE_MIN, C.STARS_PURCHASE_MAX, ConfigurationError.INVALID_STARS_AMOUNT)
+            return await self._single_purchase("stars", target, value, sender, payment_method)
         if kind == "premium":
-            return await self.purchase_premium(target, item.get("months"), sender, payment_method)
-        if kind in {"gram", "ton"}:
+            value = validate_months(item.get("months") if item.get("months") is not None else item.get("amount"))
+            return await self._single_purchase("premium", target, value, sender, payment_method)
+        if kind == "ton":
             if normalize_payment_method(payment_method) != "ton":
                 raise ConfigurationError("Ads top-up requires native TON.")
-            return await self.topup_gram(target, item.get("amount"), sender)
+            value = integer(item.get("amount"), C.GRAM_TOPUP_MIN, C.GRAM_TOPUP_MAX, ConfigurationError.INVALID_TON_AMOUNT)
+            return await self._single_purchase("ton", target, value, sender, "ton")
         raise ConfigurationError(f"Unsupported purchase type: {kind!r}")
 
     async def giveaway_stars(
         self, channel: str, winners: int, amount: int,
-        payment_method: str = "gram",
-    ) -> M.GiveawayStarsResult | M.PreparedTransaction | M.EvmPaymentResult:
+        payment_method: str = "ton",
+    ) -> M.GiveawayStarsResult | M.PreparedTransaction | M.ExternalPaymentResult:
         """Run an original-limit total-package Stars giveaway."""
         stars_giveaway(amount, winners)
         return await self._giveaway(
@@ -377,8 +356,8 @@ class PurchaseMixin(BatchMixin):
 
     async def giveaway_premium(
         self, channel: str, winners: int, months: int = 3,
-        payment_method: str = "gram",
-    ) -> M.GiveawayPremiumResult | M.PreparedTransaction | M.EvmPaymentResult:
+        payment_method: str = "ton",
+    ) -> M.GiveawayPremiumResult | M.PreparedTransaction | M.ExternalPaymentResult:
         """Run a Premium giveaway."""
         integer(winners, 1, 24_000, ConfigurationError.INVALID_WINNERS_PREMIUM)
         validate_months(months)
@@ -388,7 +367,7 @@ class PurchaseMixin(BatchMixin):
 
     async def _giveaway(
         self, kind: str, channel: str, winners: int, amount: int, payment_method: str,
-    ) -> M.GiveawayStarsResult | M.PreparedTransaction | M.EvmPaymentResult:
+    ) -> M.GiveawayStarsResult | M.PreparedTransaction | M.ExternalPaymentResult:
         """Normalize giveaway receipts."""
         channel = normalize_recipient(channel)
         result = await self._purchase_flow(

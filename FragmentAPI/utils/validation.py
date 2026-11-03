@@ -76,7 +76,7 @@ def normalize_payment_method(method: str) -> str:
                 method=method, supported=", ".join(sorted(VALID_PAYMENT_METHODS))
             )
         )
-    return {"gram": "ton", "usdt_gram": "usdt_ton"}.get(value, value)
+    return value
 
 
 def integer(value: Any, low: int, high: int, message: str) -> int:

@@ -1,4 +1,4 @@
-"""EVM invoice extraction through an existing Fragment session."""
+"""External EVM/TRON invoice extraction through a Fragment session."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from FragmentAPI.types.constants import (
     EVM_CHAIN_NAMES,
     FRAGMENT_BASE_URL,
 )
-from FragmentAPI.types.models import EvmInvoice
+from FragmentAPI.types.models import ExternalInvoice
 from FragmentAPI.utils.auth import embedded_object
 from FragmentAPI.utils.http import FragmentTransport
 from FragmentAPI.utils.proxy import build_curl_proxy_args
@@ -47,31 +47,33 @@ async def _fetch(
     session: requests.AsyncSession,
     invoice_url: str,
     payment_method: str,
-) -> EvmInvoice:
-    """Read an EVM invoice without adding native-TON messages."""
+) -> ExternalInvoice:
+    """Read a network-validated external invoice without native-TON messages."""
     text = await FragmentTransport(session).get_text(invoice_url)
     initial = embedded_object(text, "ajInit(")
     state = initial.get("state", {})
-    required = ("invoiceReqId", "invoiceAddress", "invoiceToken", "invoiceChainId", "invoiceAmount")
+    required = ("invoiceReqId", "invoiceAddress", "invoiceToken", "invoiceAmount")
     if not isinstance(state, dict) or any(state.get(key) is None for key in required):
-        raise FragmentAPIError("Fragment did not return complete EVM invoice data.")
+        raise FragmentAPIError("Fragment did not return complete external invoice data.")
     method = normalize_payment_method(payment_method)
     symbol, chain = method.split("_", 1)
-    chain_id = int(state["invoiceChainId"])
-    if EVM_CHAIN_IDS.get(chain) != chain_id:
+    network = str(state.get("invoiceNetwork") or "evm")
+    chain_id = int(state["invoiceChainId"]) if state.get("invoiceChainId") is not None else None
+    if (chain == "tron" and (network != "tron" or chain_id != 728126428)) or (chain != "tron" and (network == "tron" or EVM_CHAIN_IDS.get(chain) != chain_id)):
         raise FragmentAPIError("Invoice network differs from the selected payment method.")
     raw_hex = str(state["invoiceAmount"])
     raw_amount = int(raw_hex, 16)
     decimals = int(state.get("invoiceTokenDecimals", 6))
     if raw_amount < 0 or not 0 <= decimals <= 36:
-        raise FragmentAPIError("Invalid EVM invoice amount or precision.")
+        raise FragmentAPIError("Invalid external invoice amount or precision.")
     match = re.search(r"hash=([a-fA-F0-9]+)", str(initial.get("apiUrl", "")))
-    return EvmInvoice(
+    return ExternalInvoice(
         req_id=str(state["invoiceReqId"]),
         invoice_address=str(state["invoiceAddress"]),
         invoice_token=str(state["invoiceToken"]),
         invoice_chain_id=chain_id,
-        invoice_chain_name=EVM_CHAIN_NAMES.get(chain_id, str(chain_id)),
+        invoice_chain_name="TRON" if chain == "tron" else EVM_CHAIN_NAMES.get(chain_id, str(chain_id)),
+        invoice_network=network,
         invoice_amount_hex=raw_hex,
         invoice_amount_raw=raw_amount,
         invoice_amount=float(Decimal(raw_amount) / (10 ** decimals)),
@@ -84,7 +86,7 @@ async def _fetch(
     )
 
 
-async def fetch_evm_invoice(
+async def fetch_external_invoice(
     cookies: dict[str, Any],
     page_path: str,
     recipient: str,
@@ -97,8 +99,8 @@ async def fetch_evm_invoice(
     *,
     session: requests.AsyncSession | None = None,
     proxy: str | None = None,
-) -> EvmInvoice:
-    """Return an unsigned EVM invoice using the caller's session when provided."""
+) -> ExternalInvoice:
+    """Return an external invoice using the caller's session when provided."""
     url = _build_invoice_url(page_path, recipient, quantity, months, amount, winners)
     if session is not None:
         return await _fetch(session, url, payment_method)

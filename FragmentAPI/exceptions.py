@@ -37,9 +37,6 @@ class ConfigurationError(ClientError):
     INVALID_GIVEAWAY_WINNERS = "For {amount} Stars, winners must be between 1 and {max_winners}."
 
 
-ConfigError = ConfigurationError
-
-
 class CookieError(ClientError):
     """Invalid, unavailable, or expired session cookies."""
 
@@ -127,7 +124,6 @@ class ParseError(FragmentAPIError):
 
 # Import compatibility for callers of earlier releases. There is no separate
 # verification workflow; server errors use the normal Fragment API exception.
-VerificationError = FragmentAPIError
 
 
 class OperationError(FragmentError):

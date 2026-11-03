@@ -80,7 +80,7 @@ async def test_invalid_batch_never_prepares_or_sends(bad):
     client = FragmentClient()
     client._prepare_purchase = AsyncMock()
     with pytest.raises(ConfigurationError):
-        await client.batch_purchase(bad)
+        await client.purchase(bad)
     client._prepare_purchase.assert_not_awaited()
 
 
@@ -88,7 +88,7 @@ async def test_prepare_returns_one_external_signing_transaction():
     client = FragmentClient()
     invoices = [invoice(1), invoice(2)]
     client._prepare_purchase = AsyncMock(side_effect=[(item, context(item)) for item in invoices])
-    result = await client.batch_purchase([
+    result = await client.purchase([
         {"type": "stars", "username": "target1", "amount": 100},
         {"type": "stars", "username": "target2", "amount": 100},
     ])
@@ -111,7 +111,7 @@ async def test_batch_broadcasts_once_and_confirms_every_invoice(monkeypatch, tmp
     send = AsyncMock(return_value=receipt)
     monkeypatch.setattr(batches, "execute_prepared", send)
     client._confirm = AsyncMock(side_effect=lambda transaction, receipt, *args: receipt)
-    result = await client.batch_purchase([
+    result = await client.purchase([
         {"type": "stars", "username": "target1", "amount": 100},
         {"type": "stars", "username": "target2", "amount": 100},
     ])
@@ -132,7 +132,7 @@ async def test_preparation_failure_never_sends(monkeypatch):
     send = AsyncMock()
     monkeypatch.setattr(batches, "execute_prepared", send)
     with pytest.raises(TransactionError, match="bad invoice"):
-        await client.batch_purchase([
+        await client.purchase([
             {"type": "stars", "username": "target1", "amount": 100},
             {"type": "stars", "username": "target2", "amount": 100},
         ])

@@ -123,16 +123,17 @@ ITEM_TYPE_NUMBER = 3
 ITEM_TYPE_GIFT = 5
 ITEM_TYPE_URL_PREFIX = {1: "username", 3: "number", 5: "gift"}
 VALID_ITEM_TYPES = frozenset(ITEM_TYPE_URL_PREFIX)
-PURCHASE_TYPES = frozenset({"stars", "premium", "gram", "ton"})
+PURCHASE_TYPES = frozenset({"stars", "premium", "ton"})
 
 EVM_PAYMENT_METHODS = frozenset({
     "usdt_eth", "usdt_pol", "usdc_eth", "usdc_base", "usdc_pol",
 })
-NATIVE_PAYMENT_METHODS = frozenset({"gram", "ton"})
-TON_PAYMENT_METHODS = frozenset({"gram", "ton", "usdt_ton", "usdt_gram"})
+NATIVE_PAYMENT_METHODS = frozenset({"ton"})
+TON_PAYMENT_METHODS = frozenset({"ton", "usdt_ton"})
 GRAM_PAYMENT_METHODS = TON_PAYMENT_METHODS
 BATCH_PAYMENT_METHODS = TON_PAYMENT_METHODS
-VALID_PAYMENT_METHODS = TON_PAYMENT_METHODS | EVM_PAYMENT_METHODS
+EXTERNAL_PAYMENT_METHODS = EVM_PAYMENT_METHODS | {"usdt_tron"}
+VALID_PAYMENT_METHODS = TON_PAYMENT_METHODS | EXTERNAL_PAYMENT_METHODS
 
 EVM_CHAIN_NAMES = {1: "ETH", 8453: "BASE", 137: "POL"}
 EVM_CHAIN_IDS = {"eth": 1, "base": 8453, "pol": 137}
