@@ -25,6 +25,7 @@ from FragmentAPI.exceptions import (
 )
 from FragmentAPI.methods.purchases import PurchaseMixin
 from FragmentAPI.methods.recovery import PaymentRecoveryMixin
+from FragmentAPI.methods.withdrawals import WithdrawalMixin
 from FragmentAPI.storage.base import SessionStorage
 from FragmentAPI.storage.payments import PaymentStorage, SQLitePaymentStorage
 from FragmentAPI.utils.locking import file_wallet_lock
@@ -58,7 +59,7 @@ from FragmentAPI.utils.wallet import (
 )
 
 
-class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
+class FragmentClient(PurchaseMixin, PaymentRecoveryMixin, WithdrawalMixin):
     """Fragment client using explicitly supplied user-owned cookie sessions.
 
     Network operations require cookies. Constructing a client without cookies
@@ -127,6 +128,7 @@ class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
         self.payment_storage = payment_storage if payment_storage is not None else SQLitePaymentStorage()
         self.wallet_lock_factory = wallet_lock_factory or file_wallet_lock
         self._flow_lock = asyncio.Lock()
+        self._withdrawal_submissions: set[str] = set()
         self._closed = False
 
     @property
@@ -956,7 +958,7 @@ class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
 
     async def _withdraw(
         self, method: str, transaction: str,
-        confirm_hash: str | None = None, **extra: Any,
+        confirm_hash: str | None = None, *, page_url: str = C.FRAGMENT_BASE_URL, **extra: Any,
     ) -> dict[str, Any]:
         """Initialize or confirm a user-owned withdrawal to the payer account."""
         self._require_account(method)
@@ -968,7 +970,7 @@ class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
         }
         if confirm_hash is not None:
             data["confirm_hash"] = confirm_hash
-        result = await self.call(method, data)
+        result = await self.call(method, data, page_url=page_url)
         if method in {"initStarsRevenueWithdrawalRequest", "initAdsRevenueWithdrawalRequest"} and result.get("need_verify"):
             raise KycRequiredError("Fragment requires KYC to withdraw monetization rewards. Complete verification in your Fragment profile.")
         return result

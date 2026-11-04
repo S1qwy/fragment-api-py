@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v14.3.2 (2026-11-04)
+
+- Add revenue withdrawal workflows from validated Fragment URLs: GET-only inspection, server initialization and separate explicit confirmation.
+- Return frozen `WithdrawalInfo` / `WithdrawalRequest` models with optional metadata, KYC status and server challenge.
+- Reject unsupported or ambiguous URLs, expired state, changed destinations and duplicate challenge submission in one client.
+- Preserve server errors and KYC challenges; do not auto-replay uncertain confirmation requests.
+- Add a review-driven example and regression coverage. No real withdrawal was executed.
+
+
 ## v14.3.1 (2026-11-04)
 
 - `link_wallet()` links an already connected TON wallet using the current user session.

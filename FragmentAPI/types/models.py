@@ -264,6 +264,35 @@ class StarsWithdrawalState(FragmentBaseModel):
     withdrawal_data: str
 
 
+class WithdrawalInfo(FragmentBaseModel):
+    """Read-only state of a Fragment revenue withdrawal link."""
+
+    model_config = ConfigDict(frozen=True)
+    kind: Literal["stars", "ads"]
+    url: str = Field(repr=False)
+    transaction: str = Field(repr=False)
+    withdrawal_data: str | None = Field(default=None, repr=False)
+    destination: str | None = None
+    amount: str | None = None
+    currency: str | None = None
+    source: str | None = None
+    mode: str = "unknown"
+    kyc_required: bool | None = None
+
+
+class WithdrawalRequest(FragmentBaseModel):
+    """Server initialization result; review its message before explicit confirmation."""
+
+    model_config = ConfigDict(frozen=True)
+    info: WithdrawalInfo
+    destination: str
+    confirm_message: str | None = None
+    confirm_button: str | None = None
+    confirm_hash: str | None = Field(default=None, repr=False)
+    confirmation_required: bool
+    server_response: dict[str, Any] = Field(repr=False)
+
+
 class BidResult(FragmentBaseModel):
     """Bid broadcast receipt."""
 

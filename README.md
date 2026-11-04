@@ -61,7 +61,27 @@ Operate user-owned assets, listings, offers, assignments, withdrawals, and sessi
 </tr>
 </table>
 
-## Release 14.3.1
+## Release 14.3.2
+
+Revenue withdrawal links now have a three-stage API for `/stars/withdraw` and `/ads/withdraw`:
+
+```python
+info = await client.inspect_withdrawal(url)  # GET only
+request = await client.prepare_withdrawal(url)  # server initialization, state-changing
+# Review request.destination and request.confirm_message in your application.
+if request.confirmation_required:
+    result = await client.confirm_withdrawal(request)  # explicit submission
+```
+
+`WithdrawalInfo` includes the link kind, mode, destination and optional amount/currency/source fields when exposed as form values. Missing metadata is `None`; units are never inferred. `kyc_required=None` means the page did not state a requirement, not that KYC is unnecessary. `prepare_withdrawal()` can still raise `KycRequiredError` based on the server response.
+
+Preparation calls the server's initialization endpoint. Fragment can return a result without a confirmation challenge, so preparation must be treated as state-changing. Inspect `request.server_response` and do not automatically repeat it. Confirmation requires the returned challenge and the original destination account. A challenge is submitted at most once per client instance, including after a network error; this guard is not a durable cross-process journal. After an uncertain result, inspect the original withdrawal in Telegram/Fragment before retrying.
+
+Use the same user-owned cookies throughout. Configure a payer seed or `sender_account` to select the withdrawal destination; a blockchain API key is not needed for these HTTP calls. This flow does not sign a TON payment or obtain withdrawal links from Telegram. Generate a valid link in Telegram first. Real reward withdrawals were not performed during development.
+
+Link tokens, opaque state and confirmation hashes are hidden from model `repr`, but serialization still contains them: keep exported requests private. Invalid hosts/routes, duplicate or empty transaction parameters and expired/mismatched link state are rejected. NFT withdrawal links retain their existing separate methods.
+
+## Previous release 14.3.1
 
 - `link_wallet()` links an already connected TON wallet using the current user session.
 - `disconnect_wallet()` disconnects TON and removes `stel_ton_token` from both local cookies and the live jar.
