@@ -98,7 +98,7 @@ WALLET_VERSION_ALIASES: dict[str, str] = {
     "highload_v2": "HighloadV2",
 }
 SUPPORTED_API_PROVIDERS = frozenset({"tonapi", "toncenter"})
-MNEMONIC_WORD_COUNTS_VALID = frozenset({12, 18, 24})
+MNEMONIC_WORD_COUNTS_VALID = frozenset({12, 15, 18, 21, 24})
 
 REQUIRED_COOKIE_KEYS = ("stel_ssid", "stel_dt", "stel_token")
 REQUIRED_COOKIE_KEYS_WALLET = (*REQUIRED_COOKIE_KEYS, "stel_ton_token")

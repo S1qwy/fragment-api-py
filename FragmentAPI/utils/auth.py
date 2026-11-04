@@ -31,6 +31,7 @@ from FragmentAPI.utils.http import FragmentTransport, raise_api_error
 from FragmentAPI.utils.proxy import build_curl_proxy_args
 from FragmentAPI.utils.validation import (
     normalize_seed,
+    normalize_mnemonic_type,
     normalize_wallet_version,
     validate_cookie_keys,
 )
@@ -80,11 +81,11 @@ def _key_bytes(value: Any) -> bytes:
     raise ParseError("Unsupported tonutils key representation.")
 
 
-def derive_account(seed: str, wallet_version: str) -> dict[str, Any]:
+def derive_account(seed: str, wallet_version: str, mnemonic_type: str | None = None) -> dict[str, Any]:
     """Build TON Connect account information offline."""
     wallet, public_key, _, _ = WALLET_CLASSES[
         normalize_wallet_version(wallet_version)
-    ].from_mnemonic(client=OfflineClient(), mnemonic=normalize_seed(seed))
+    ].from_mnemonic(client=OfflineClient(), mnemonic=normalize_seed(seed, wallet_version, mnemonic_type), mnemonic_type=normalize_mnemonic_type(mnemonic_type, wallet_version))
     return {
         "address": wallet.address.to_str(is_user_friendly=False),
         "chain": "-239",
@@ -99,12 +100,13 @@ def _generate_proof(
     mnemonic: list[str],
     wallet_version: str,
     ton_proof_payload: str,
+    mnemonic_type: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     """Sign the domain-bound TON Connect proof challenge."""
-    seed = normalize_seed(" ".join(mnemonic))
+    seed = normalize_seed(" ".join(mnemonic), wallet_version, mnemonic_type)
     version = normalize_wallet_version(wallet_version)
     wallet, public_key, private_key, _ = WALLET_CLASSES[version].from_mnemonic(
-        client=OfflineClient(), mnemonic=seed
+        client=OfflineClient(), mnemonic=seed, mnemonic_type=normalize_mnemonic_type(mnemonic_type, version)
     )
     address = wallet.address.to_str(is_user_friendly=False)
     workchain, address_hash = address.split(":")
@@ -153,6 +155,7 @@ async def _proof_on_session(
     session: requests.AsyncSession,
     seed: str,
     wallet_version: str,
+    mnemonic_type: str | None = None,
 ) -> dict[str, str]:
     """Authenticate a wallet using the supplied session."""
     session.cookies.set("stel_dt", "-180", domain="fragment.com")
@@ -163,7 +166,7 @@ async def _proof_on_session(
     if not isinstance(challenge, str) or not challenge:
         raise FragmentAPIError("Fragment did not provide a TON proof challenge.")
     account, device, proof = _generate_proof(
-        normalize_seed(seed).split(), wallet_version, challenge
+        normalize_seed(seed, wallet_version, mnemonic_type).split(), wallet_version, challenge, mnemonic_type
     )
     result = await transport.call(
         "checkTonProofAuth",
@@ -186,17 +189,18 @@ async def auth_ton_proof(
     timeout: float = DEFAULT_TIMEOUT,
     *,
     proxy: str | None = None,
+    mnemonic_type: str | None = None,
     session: requests.AsyncSession | None = None,
 ) -> dict[str, str]:
     """Authenticate only wallet ownership; Telegram authentication is not implied."""
-    seed = normalize_seed(seed)
+    seed = normalize_seed(seed, wallet_version, mnemonic_type)
     version = normalize_wallet_version(wallet_version)
     if session is not None:
-        return await _proof_on_session(session, seed, version)
+        return await _proof_on_session(session, seed, version, mnemonic_type)
     async with requests.AsyncSession(
         timeout=timeout, impersonate="chrome", **build_curl_proxy_args(proxy)
     ) as owned:
-        return await _proof_on_session(owned, seed, version)
+        return await _proof_on_session(owned, seed, version, mnemonic_type)
 
 
 async def _notify(callback: Any, status: str, payload: Any) -> None:
@@ -295,6 +299,7 @@ async def authenticate(
     timeout: float = DEFAULT_TIMEOUT,
     *,
     proxy: str | None = None,
+    mnemonic_type: str | None = None,
     auth_timeout: float = AUTH_TIMEOUT,
 ) -> dict[str, str]:
     """Obtain full wallet and Telegram cookies through explicit interactive login."""
@@ -302,7 +307,7 @@ async def authenticate(
         timeout=timeout, impersonate="chrome", **build_curl_proxy_args(proxy)
     ) as session:
         cookies = await auth_ton_proof(
-            seed, wallet_version, timeout, session=session
+            seed, wallet_version, timeout, session=session, mnemonic_type=mnemonic_type
         )
         if cookies.get("stel_token"):
             validate_cookie_keys(cookies, REQUIRED_COOKIE_KEYS_WALLET)
@@ -330,6 +335,7 @@ async def refresh_wallet_session(
     timeout: float = DEFAULT_TIMEOUT,
     *,
     proxy: str | None = None,
+    mnemonic_type: str | None = None,
 ) -> dict[str, str]:
     """Refresh wallet-only cookies without requesting Telegram OAuth."""
-    return await auth_ton_proof(seed, wallet_version, timeout, proxy=proxy)
+    return await auth_ton_proof(seed, wallet_version, timeout, proxy=proxy, mnemonic_type=mnemonic_type)

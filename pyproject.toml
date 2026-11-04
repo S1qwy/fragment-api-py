@@ -4,7 +4,7 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "fragment-api-py"
-version = "14.3.0"
+version = "14.3.1"
 description = "Async Fragment client with reusable transport, wallet authentication, external signing, and explicit payment receipts"
 readme = "README.md"
 authors = [{name = "S1qwy", email = "S1qwy@internet.ru"}]
@@ -12,9 +12,9 @@ license = {text = "MIT"}
 requires-python = ">=3.10"
 dependencies = [
     "curl_cffi>=0.7.4",
-    "tonutils>=2.3.2,<3",
+    "tonutils>=2.5.1,<3",
     "pynacl>=1.5.0",
-    "ton-core>=0.6.1,<1",
+    "ton-core>=0.7.1,<1",
     "pydantic>=2.0,<3",
     "selectolax>=0.3.0",
     "aiofiles>=23.0"

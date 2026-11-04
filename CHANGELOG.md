@@ -2,6 +2,16 @@
 
 <!-- version list -->
 
+## v14.3.1 (2026-11-04)
+
+- `link_wallet()` links an already connected TON wallet using the current user session.
+- `disconnect_wallet()` disconnects TON and removes `stel_ton_token` from both local cookies and the live jar.
+- `logout()` ends the Fragment session, clears local cookies and deletes the persisted session.
+- `mnemonic_type="ton" | "multichain"` selects validation and derivation consistently for authentication, wallet inspection, preparation and signing. Defaults: multichain/BIP-39 for `WalletTg`, TON for other contracts. Rotated Telegram Wallet phrases are validated as two BIP-39 halves.
+- Ordinary wallets support 12/15/18/21/24 words where valid for the chosen scheme; `WalletTg` accepts 12 or 24. Invalid words/checksums fail locally. Requires tonutils 2.5.1+ and ton-core 0.7.1+.
+
+
+
 ## v14.3.0 (2026-11-04)
 
 - Restore `/my/profile`, Telegram username and separately scoped `identity_verified` / `wallet_verified` fields.

@@ -100,3 +100,5 @@ All Fragment HTTP operations require `FRAGMENT_COOKIES`. Use `authentication.py`
 | Transfers and numbers | `nft_transfers_and_withdrawals.py`, `anonymous_numbers.py` |
 
 `_common.py` provides configuration, action selection, execution guards, and result summaries. It is not intended to be run directly.
+
+`TON_MNEMONIC_TYPE` selects `ton` or `multichain` (BIP-39). WalletTg defaults to multichain. `link_wallet()`, `disconnect_wallet()` and `logout()` operate on your existing cookie session and change its server-side state.

@@ -19,7 +19,7 @@ class ConfigurationError(ClientError):
     COOKIES_REQUIRED = "Authenticated Fragment cookies are required."
     TON_TOKEN_REQUIRED = "A stel_ton_token cookie is required."
     INVALID_MNEMONIC = "Invalid TON mnemonic word count: {count}."
-    INVALID_MNEMONIC_PHRASE = "The supplied phrase is not a valid basic TON mnemonic."
+    INVALID_MNEMONIC_PHRASE = "The supplied phrase is invalid for the selected wallet and mnemonic scheme."
     INVALID_STARS_AMOUNT = "Stars amount must be an integer between 50 and 10000000."
     INVALID_GRAM_AMOUNT = "TON amount must be an integer between 1 and 1000000000."
     INVALID_TON_AMOUNT = INVALID_GRAM_AMOUNT

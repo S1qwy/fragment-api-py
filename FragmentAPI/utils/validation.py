@@ -6,7 +6,7 @@ import json
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from ton_core import mnemonic_to_entropy
+from ton_core import MnemonicType
 
 from FragmentAPI.exceptions import ConfigurationError, CookieError
 from FragmentAPI.types.constants import (
@@ -17,20 +17,40 @@ from FragmentAPI.types.constants import (
     SUPPORTED_WALLET_VERSIONS,
     VALID_PAYMENT_METHODS,
     WALLET_VERSION_ALIASES,
+    WALLET_CLASSES,
 )
 
 
-def normalize_seed(seed: str) -> str:
-    """Validate a basic TON mnemonic and return normalized words."""
+def normalize_mnemonic_type(value: str | None, wallet_version: str) -> MnemonicType:
+    """Select an explicit derivation scheme, defaulting WalletTg to BIP-39."""
+    version = normalize_wallet_version(wallet_version)
+    try:
+        scheme = MnemonicType(value.strip().lower()) if isinstance(value, str) else (
+            MnemonicType.MULTICHAIN if value is None and version == "WalletTg" else MnemonicType.TON
+        )
+        if value is not None and not isinstance(value, str):
+            raise ValueError
+        if version == "WalletTg" and scheme != MnemonicType.MULTICHAIN:
+            raise ValueError
+        return scheme
+    except ValueError as exc:
+        raise ConfigurationError("mnemonic_type must be ton or multichain; WalletTg requires multichain.") from exc
+
+
+def normalize_seed(seed: str, wallet_version: str = "V5R1", mnemonic_type: str | None = None) -> str:
+    """Validate words and checksum against the wallet's selected derivation scheme."""
     if not isinstance(seed, str):
         raise ConfigurationError(ConfigurationError.INVALID_MNEMONIC_PHRASE)
     words = seed.lower().split()
-    if len(words) not in MNEMONIC_WORD_COUNTS_VALID:
+    version = normalize_wallet_version(wallet_version)
+    scheme = normalize_mnemonic_type(mnemonic_type, version)
+    lengths = {12, 24} if version == "WalletTg" else MNEMONIC_WORD_COUNTS_VALID
+    if len(words) not in lengths:
         raise ConfigurationError(
             ConfigurationError.INVALID_MNEMONIC.format(count=len(words))
         )
     try:
-        mnemonic_to_entropy(words)
+        WALLET_CLASSES[version].validate_mnemonic(words, scheme)
     except Exception as exc:
         raise ConfigurationError(
             ConfigurationError.INVALID_MNEMONIC_PHRASE

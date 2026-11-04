@@ -57,6 +57,7 @@ def make_client(
     options: dict[str, Any] = {
         "cookies": cookies,
         "wallet_version": setting("TON_WALLET_VERSION", "V5R1"),
+        "mnemonic_type": os.getenv("TON_MNEMONIC_TYPE") or None,
         "api_provider": setting("TON_API_PROVIDER", "tonapi"),
         "proxy": os.getenv("FRAGMENT_PROXY") or None,
     }

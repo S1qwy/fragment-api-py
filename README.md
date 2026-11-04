@@ -61,7 +61,21 @@ Operate user-owned assets, listings, offers, assignments, withdrawals, and sessi
 </tr>
 </table>
 
-## Release 14.3.0
+## Release 14.3.1
+
+- `link_wallet()` links an already connected TON wallet using the current user session.
+- `disconnect_wallet()` disconnects TON and removes `stel_ton_token` from both local cookies and the live jar.
+- `logout()` ends the Fragment session, clears local cookies and deletes the persisted session.
+- `mnemonic_type="ton" | "multichain"` selects validation and derivation consistently for authentication, wallet inspection, preparation and signing. Defaults: multichain/BIP-39 for `WalletTg`, TON for other contracts. Rotated Telegram Wallet phrases are validated as two BIP-39 halves.
+- Ordinary wallets support 12/15/18/21/24 words where valid for the chosen scheme; `WalletTg` accepts 12 or 24. Invalid words/checksums fail locally. Requires tonutils 2.5.1+ and ton-core 0.7.1+.
+
+```python
+client = FragmentClient(cookies=cookies, seed=seed, wallet_version="WalletTg")
+# For BIP-39 with another supported contract, set mnemonic_type="multichain".
+await client.link_wallet()  # requires an existing stel_ton_token
+```
+
+## Previous release 14.3.0
 
 Fragment restored `/my/profile`. `get_profile()` now reads the Telegram username, account details, `identity_verified` and `wallet_verified` from that page. Account and wallet badges are parsed separately.
 

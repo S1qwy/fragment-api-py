@@ -122,7 +122,7 @@ async def build_account_info(client: FragmentClient) -> dict[str, Any]:
     if client.sender_account is not None:
         return dict(client.sender_account)
     if client.seed:
-        return derive_account(client.seed, client.wallet_version)
+        return derive_account(client.seed, client.wallet_version, client.mnemonic_type)
     raise ConfigurationError(
         "A payer seed or sender_account is required to prepare a TON transaction."
     )
@@ -165,7 +165,7 @@ async def fetch_wallet_info(client: FragmentClient) -> WalletInfo:
     client._require_wallet()
     async with _make_ton_client(client) as ton:
         wallet, _, _, _ = WALLET_CLASSES[client.wallet_version].from_mnemonic(
-            client=ton, mnemonic=client.seed
+            client=ton, mnemonic=client.seed, mnemonic_type=client.mnemonic_type
         )
         try:
             state = await ton.get_info(wallet.address)
@@ -450,7 +450,7 @@ async def execute_prepared(
                 )
         async with _make_ton_client(client) as ton:
             wallet, _, _, _ = WALLET_CLASSES[client.wallet_version].from_mnemonic(
-                client=ton, mnemonic=client.seed
+                client=ton, mnemonic=client.seed, mnemonic_type=client.mnemonic_type
             )
             address = wallet.address.to_str(is_user_friendly=False)
             if prepared.sender_address and _raw_address(prepared.sender_address) != address:

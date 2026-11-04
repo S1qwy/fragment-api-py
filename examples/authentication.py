@@ -12,6 +12,7 @@ async def authenticate(phone: str | None = None) -> None:
     cookies = await FragmentClient.authenticate(
         seed=required("TON_SEED"),
         wallet_version=setting("TON_WALLET_VERSION", "V5R1"),
+        mnemonic_type=os.getenv("TON_MNEMONIC_TYPE") or None,
         phone=phone,
         print_qr=phone is None,
         proxy=os.getenv("FRAGMENT_PROXY") or None,

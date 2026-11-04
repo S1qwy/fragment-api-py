@@ -44,6 +44,7 @@ from FragmentAPI.utils.validation import (
     months as validate_months,
     normalize_provider,
     normalize_seed,
+    normalize_mnemonic_type,
     normalize_wallet_version,
     parse_cookies,
     recipient as normalize_recipient,
@@ -84,16 +85,18 @@ class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
         session_id: str | None = None,
         auto_refresh_cookies: bool = False,
         *,
+        mnemonic_type: str | None = None,
         sender_account: dict[str, Any] | None = None,
         gas_reserve_nanoton: int = C.GAS_RESERVE_NANOTON,
         confirmation_timeout: float = C.CONFIRMATION_TIMEOUT,
         payment_storage: PaymentStorage | None = None,
         wallet_lock_factory: Callable[[str], AsyncContextManager[None]] | None = None,
     ) -> None:
-        self.seed = normalize_seed(seed) if seed is not None else None
+        self.wallet_version = normalize_wallet_version(wallet_version)
+        self.mnemonic_type = normalize_mnemonic_type(mnemonic_type, self.wallet_version)
+        self.seed = normalize_seed(seed, self.wallet_version, self.mnemonic_type) if seed is not None else None
         self.api_key = api_key.strip() if api_key else None
         self.api_provider = normalize_provider(api_provider)
-        self.wallet_version = normalize_wallet_version(wallet_version)
         if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or timeout <= 0:
             raise ConfigurationError("timeout must be positive.")
         if isinstance(confirmation_timeout, bool) or not isinstance(confirmation_timeout, (int, float)) or not math.isfinite(confirmation_timeout) or confirmation_timeout <= 0:
@@ -238,11 +241,12 @@ class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
         timeout: float = C.DEFAULT_TIMEOUT,
         *,
         proxy: str | None = None,
+        mnemonic_type: str | None = None,
     ) -> dict[str, str]:
         """Run explicit full-account authentication."""
         return await authenticate(
             seed, wallet_version, phone, print_qr, on_status, timeout,
-            proxy=proxy,
+            proxy=proxy, mnemonic_type=mnemonic_type,
         )
 
     async def refresh_cookies(self) -> dict[str, str]:
@@ -254,12 +258,55 @@ class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
             seed, version = self.seed, self.wallet_version
             self.cookies = await auth_ton_proof(
                 seed, version, self.timeout,
-                proxy=self.proxy, session=self._session,
+                proxy=self.proxy, session=self._session, mnemonic_type=self.mnemonic_type,
             )
             validate_cookie_keys(self.cookies, C.REQUIRED_COOKIE_KEYS)
             transport.invalidate()
             await self._save_cookies()
             return dict(self.cookies)
+
+    async def link_wallet(self) -> None:
+        """Link the already connected wallet to the user's Fragment account."""
+        self._require_account("link_wallet")
+        self._require_ton_token()
+        result = await self._api("linkWallet", page_url=C.PROFILE_PAGE)
+        if result.get("ok") is not True:
+            raise FragmentAPIError("Fragment did not confirm wallet linking.")
+        self._get_transport().invalidate()
+        await self._save_cookies()
+
+    def _forget_cookies(self, names: set[str]) -> None:
+        """Remove invalidated Fragment cookies from both client and live jar."""
+        for name in names:
+            self.cookies.pop(name, None)
+        if self._session is not None:
+            for cookie in list(self._session.cookies.jar):
+                if cookie.name in names and cookie.domain.lstrip(".") in {"", "fragment.com"}:
+                    self._session.cookies.jar.clear(cookie.domain, cookie.path, cookie.name)
+        if self._transport is not None:
+            self._transport.invalidate()
+
+    async def disconnect_wallet(self) -> None:
+        """Disconnect TON while retaining the Telegram account session."""
+        self._require_account("disconnect_wallet")
+        result = await self._api("tonLogOut")
+        if result.get("ok") is not True:
+            raise FragmentAPIError("Fragment did not confirm wallet disconnection.")
+        self._forget_cookies({"stel_ton_token"})
+        await self._save_cookies()
+
+    async def logout(self) -> None:
+        """End the Fragment session and remove its persisted credentials."""
+        self._require_account("logout")
+        result = await self._api("logOut")
+        if result.get("ok") is not True:
+            raise FragmentAPIError("Fragment did not confirm logout.")
+        names = set(self.cookies)
+        if self._session is not None:
+            names.update(c.name for c in self._session.cookies.jar if c.domain.lstrip(".") in {"", "fragment.com"})
+        self._forget_cookies(names)
+        if self._session_storage is not None and self._session_id:
+            await self._session_storage.delete(self._session_id)
 
     @classmethod
     async def from_storage(
@@ -279,6 +326,7 @@ class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
                 wallet_version=kwargs.get("wallet_version", "V5R1"),
                 timeout=kwargs.get("timeout", C.DEFAULT_TIMEOUT),
                 proxy=kwargs.get("proxy"),
+                mnemonic_type=kwargs.get("mnemonic_type"),
             )
             await session_storage.save(session_id, cookies)
         return cls(
