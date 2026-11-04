@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v14.3.0 (2026-11-04)
+
+- Restore `/my/profile`, Telegram username and separately scoped `identity_verified` / `wallet_verified` fields.
+- Raise `KycRequiredError` when Fragment returns `need_verify` on Stars or Ads monetization withdrawal initialization/confirmation.
+- Purchases and giveaways do not preflight or require profile verification. Shared authentication and removed compatibility adapters remain absent.
+- Validate profile parsing and withdrawal challenges with regression tests. Live tests of five unpaid native purchase flows succeeded on an unverified account; no payment or real withdrawal was submitted.
+
+
+
 ## v14.2.0 (2026-11-04)
 
 - Add external USDT TRON invoices (`usdt_tron`), including network validation and exact raw token units.

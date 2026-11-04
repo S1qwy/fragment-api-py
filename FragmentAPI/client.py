@@ -19,6 +19,7 @@ from FragmentAPI.exceptions import (
     ConfigurationError,
     CookieError,
     FragmentAPIError,
+    KycRequiredError,
     ParseError,
     UserNotFoundError,
 )
@@ -589,7 +590,7 @@ class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
         return await self._history_page(C.ADS_HISTORY_PAGE, H.parse_topup_history, type="topup", sort=sort)
 
     async def get_profile(self) -> M.ProfileInfo:
-        """Read user-owned account details from the full page header."""
+        """Read user-owned profile details and verification statuses."""
         self._require_account("get_profile")
         await self._ensure_auth()
         html = await self._get_transport().get_text(C.PROFILE_PAGE)
@@ -919,7 +920,10 @@ class FragmentClient(PurchaseMixin, PaymentRecoveryMixin):
         }
         if confirm_hash is not None:
             data["confirm_hash"] = confirm_hash
-        return await self.call(method, data)
+        result = await self.call(method, data)
+        if method in {"initStarsRevenueWithdrawalRequest", "initAdsRevenueWithdrawalRequest"} and result.get("need_verify"):
+            raise KycRequiredError("Fragment requires KYC to withdraw monetization rewards. Complete verification in your Fragment profile.")
+        return result
 
     async def init_nft_withdrawal(self, transaction: str, keep_gift: bool = False) -> M.NftWithdrawalInitResult:
         """Initialize an NFT withdrawal."""

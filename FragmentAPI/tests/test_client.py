@@ -114,7 +114,7 @@ async def test_profile_reads_full_home_page() -> None:
     result = await client.get_profile()
     assert result.name == "Alice"
     assert result.wallet_address == "0:123"
-    transport.get_text.assert_awaited_once_with("https://fragment.com/")
+    transport.get_text.assert_awaited_once_with("https://fragment.com/my/profile")
     await client.aclose()
 
 

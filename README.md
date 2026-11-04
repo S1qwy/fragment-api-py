@@ -61,7 +61,15 @@ Operate user-owned assets, listings, offers, assignments, withdrawals, and sessi
 </tr>
 </table>
 
-## Release 14.2.0
+## Release 14.3.0
+
+Fragment restored `/my/profile`. `get_profile()` now reads the Telegram username, account details, `identity_verified` and `wallet_verified` from that page. Account and wallet badges are parsed separately.
+
+Monetization withdrawals can require KYC. `init_stars_withdrawal`, `confirm_stars_withdrawal`, `init_ads_withdrawal` and `confirm_ads_withdrawal` raise `KycRequiredError` when Fragment requests verification. Complete verification on Fragment and retry explicitly. The SDK never completes KYC automatically.
+
+Purchase and giveaway operations remain available without KYC. No blanket profile check is added to payments. The unified `purchase` API and external TRON invoices from 14.2.0 are retained.
+
+## Previous release 14.2.0
 
 USDT on TRON uses `payment_method="usdt_tron"` and returns `ExternalPaymentResult` with an `ExternalInvoice`. TRON payments are external: the SDK does not sign or broadcast TRC-20 transfers.
 
@@ -79,15 +87,15 @@ Shared authentication has been removed. Fragment requests now use your own cooki
 | Authentication | The built-in public auth seed, automatic shared-wallet proof, and shared-mode options are removed |
 | Sessions | Fragment HTTP operations require user-owned cookies; missing cookies fail before any request |
 | Batches | All batches return `BatchResult`; the shared-mode result type is removed |
-| Profile | `get_profile()` reads the full page header; the removed `/my/profile` route is no longer requested |
-| Account fields | Name, photo, wallet address and label; `username` is empty because the header does not expose it |
-| API errors | KYC-specific classification is removed; errors use `FragmentAPIError` |
+| Profile | `get_profile()` reads the restored `/my/profile` route and verification badges |
+| Account fields | Name, username, photo, wallet address/label, identity and wallet verification |
+| API errors | Revenue withdrawals raise `KycRequiredError` on a server verification request; other errors use `FragmentAPIError` |
 | Giveaways | Stars recipient search sends only `query`, matching the current Fragment interface |
 | Marketplace | Wallet owners and history support the current `gram.org/address/` explorer links |
 
 Remove `shared_auth_seed` and `wallet_auth` constructor arguments and stop using `nokyc_mode` or `NoKycBatchResult`. Supply `cookies` directly, load them from session storage, or call `FragmentClient.authenticate()` with your own wallet before constructing the client. No built-in wallet is used for authentication or payment.
 
-`ProfileInfo.identity_verified` and `ProfileInfo.wallet_verified` were removed in 14.1.0 with the old profile page.
+`ProfileInfo.identity_verified` and `wallet_verified` are restored in 14.3.0 with the profile page.
 
 Live checks on November 2, 2026 returned request IDs and unsigned native-TON transactions for Stars, Premium, both giveaway types, and Ads top-ups without a verification challenge in the tested session. No payments were submitted. Withdrawals and asset mutations require valid operation links or assets and were not exercised by that check.
 

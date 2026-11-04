@@ -703,12 +703,23 @@ def parse_profile(html: str) -> ProfileInfo:
     if not isinstance(address, str) or address.casefold() in {"", "false", "null"}:
         address = None
     menu_account = tree.css_first(".tm-menu-tg-account")
+    account = None
+    wallet = None
+    for row in tree.css(".tm-settings-head-item"):
+        if row.css_first(".tm-settings-account-photo") is not None:
+            account = row
+        if row.css_first(".tm-wallet") is not None:
+            wallet = row
+    def verified(row: Any) -> bool:
+        return row is not None and row.css_first(".tm-badge-verified") is not None
     return ProfileInfo(
-        name=_words(_first(menu_account, ".tm-menu-tg-account-name")),
-        username="",  # The current header does not expose the Telegram username.
-        photo_url=_image(_first(menu_account, ".tm-menu-tg-account-photo")),
+        name=_words(_first(account, ".tm-settings-item-head")) or _words(_first(menu_account, ".tm-menu-tg-account-name")),
+        username=_text(_first(account, ".tm-settings-item-desc")).lstrip("@"),
+        photo_url=_image(_first(account, ".tm-settings-account-photo")) or _image(_first(menu_account, ".tm-menu-tg-account-photo")),
         wallet_address=address,
-        wallet_label=_text(tree.css_first(".tm-menu-account-address .tm-wallet")) or None,
+        wallet_label=_text(_first(wallet, ".tm-wallet")) or _text(tree.css_first(".tm-menu-account-address .tm-wallet")) or None,
+        identity_verified=verified(account),
+        wallet_verified=verified(wallet),
     )
 
 

@@ -126,6 +126,10 @@ class ParseError(FragmentAPIError):
 # verification workflow; server errors use the normal Fragment API exception.
 
 
+class KycRequiredError(FragmentAPIError):
+    """Fragment requires identity verification for a monetization withdrawal."""
+
+
 class OperationError(FragmentError):
     """An operation failed outside Fragment's API."""
 

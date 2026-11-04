@@ -507,13 +507,15 @@ class TopupTransaction(FragmentBaseModel):
 
 
 class ProfileInfo(FragmentBaseModel):
-    """Account details from the page header; unavailable usernames are empty."""
+    """Account profile, connected wallet and their separate verification statuses."""
 
     name: str
     username: str
     photo_url: str | None = None
     wallet_address: str | None = None
     wallet_label: str | None = None
+    identity_verified: bool = False
+    wallet_verified: bool = False
 
 
 class SessionInfo(FragmentBaseModel):

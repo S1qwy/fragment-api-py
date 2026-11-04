@@ -229,7 +229,8 @@ def test_profile_from_current_header() -> None:
     assert result.photo_url == "https://example.com/alice.jpg"
     assert result.wallet_address == "0:123"
     assert result.wallet_label == "UQabcxyz"
-    assert set(result.model_dump()) == {"name", "username", "photo_url", "wallet_address", "wallet_label"}
+    assert result.identity_verified is False
+    assert result.wallet_verified is False
 
 
 def test_profile_without_wallet_or_telegram() -> None:
