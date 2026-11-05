@@ -26,6 +26,33 @@ async def test_tron_network_mismatch_rejected(monkeypatch):
         await _fetch(None,'https://fragment.com/stars/buy','usdt_tron')
 
 
+@pytest.mark.parametrize("chain_id", [56, 1])
+async def test_bsc_invoice_without_explicit_precision(monkeypatch, chain_id):
+    state = {
+        "invoiceReqId": "id",
+        "invoiceAddress": "recipient",
+        "invoiceToken": "0x55d398326f99059ff775485246999027b3197955",
+        "invoiceChainId": chain_id,
+        "invoiceNetwork": "evm",
+        "invoiceAmount": "0xa688906bd8b0000",
+    }
+    monkeypatch.setattr(
+        "FragmentAPI.utils.external.FragmentTransport.get_text",
+        AsyncMock(return_value="ajInit(" + json.dumps({"state": state}) + ");"),
+    )
+    url = "https://fragment.com/stars/buy"
+    if chain_id != 56:
+        with pytest.raises(FragmentAPIError, match="network"):
+            await _fetch(None, url, "usdt_bsc")
+        return
+    invoice = await _fetch(None, url, "usdt_bsc")
+    assert invoice.invoice_chain_name == "BSC"
+    assert invoice.token_symbol == "USDT"
+    assert invoice.token_decimals == 18
+    assert invoice.invoice_amount_raw == 750_000_000_000_000_000
+    assert invoice.invoice_amount == 0.75
+
+
 def test_removed_purchase_adapters():
     for name in ('purchase_stars','purchase_premium','topup_gram','topup_ton','batch_purchase','list_sessions'):
         assert not hasattr(FragmentClient,name)

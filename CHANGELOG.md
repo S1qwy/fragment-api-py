@@ -2,6 +2,11 @@
 
 <!-- version list -->
 
+## v14.4.0 (2026-11-05)
+
+- Add external USDT invoices on BNB Smart Chain with `payment_method="usdt_bsc"`.
+- Validate chain ID 56 and use 18 decimal places when Fragment omits token precision. The invoice retains the exact raw amount.
+
 ## v14.3.2 (2026-11-04)
 
 - Add revenue withdrawal workflows from validated Fragment URLs: GET-only inspection, server initialization and separate explicit confirmation.

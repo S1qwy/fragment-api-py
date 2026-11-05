@@ -126,7 +126,7 @@ VALID_ITEM_TYPES = frozenset(ITEM_TYPE_URL_PREFIX)
 PURCHASE_TYPES = frozenset({"stars", "premium", "ton"})
 
 EVM_PAYMENT_METHODS = frozenset({
-    "usdt_eth", "usdt_pol", "usdc_eth", "usdc_base", "usdc_pol",
+    "usdt_eth", "usdt_pol", "usdt_bsc", "usdc_eth", "usdc_base", "usdc_pol",
 })
 NATIVE_PAYMENT_METHODS = frozenset({"ton"})
 TON_PAYMENT_METHODS = frozenset({"ton", "usdt_ton"})
@@ -135,8 +135,8 @@ BATCH_PAYMENT_METHODS = TON_PAYMENT_METHODS
 EXTERNAL_PAYMENT_METHODS = EVM_PAYMENT_METHODS | {"usdt_tron"}
 VALID_PAYMENT_METHODS = TON_PAYMENT_METHODS | EXTERNAL_PAYMENT_METHODS
 
-EVM_CHAIN_NAMES = {1: "ETH", 8453: "BASE", 137: "POL"}
-EVM_CHAIN_IDS = {"eth": 1, "base": 8453, "pol": 137}
+EVM_CHAIN_NAMES = {1: "ETH", 56: "BSC", 8453: "BASE", 137: "POL"}
+EVM_CHAIN_IDS = {"eth": 1, "bsc": 56, "base": 8453, "pol": 137}
 
 DEVICE_INFO = {
     "platform": "android",

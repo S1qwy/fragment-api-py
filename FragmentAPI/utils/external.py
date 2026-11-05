@@ -63,7 +63,9 @@ async def _fetch(
         raise FragmentAPIError("Invoice network differs from the selected payment method.")
     raw_hex = str(state["invoiceAmount"])
     raw_amount = int(raw_hex, 16)
-    decimals = int(state.get("invoiceTokenDecimals", 6))
+    # Fragment omits precision for BSC's 18-decimal USDT contract.
+    default_decimals = 18 if method == "usdt_bsc" else 6
+    decimals = int(state.get("invoiceTokenDecimals", default_decimals))
     if raw_amount < 0 or not 0 <= decimals <= 36:
         raise FragmentAPIError("Invalid external invoice amount or precision.")
     match = re.search(r"hash=([a-fA-F0-9]+)", str(initial.get("apiUrl", "")))

@@ -61,7 +61,11 @@ Operate user-owned assets, listings, offers, assignments, withdrawals, and sessi
 </tr>
 </table>
 
-## Release 14.3.2
+## Release 14.4.0
+
+Use `payment_method="usdt_bsc"` to create an external USDT invoice on BNB Smart Chain. The invoice exposes the raw amount and token precision for payment from an external wallet.
+
+## Revenue withdrawal links
 
 Revenue withdrawal links now have a three-stage API for `/stars/withdraw` and `/ads/withdraw`:
 
@@ -215,6 +219,7 @@ confirmation limits, operator resolution, and coordination across processes/host
 | `usdt_tron` | TRON | USDT | External invoice |
 | `usdt_eth` | Ethereum | USDT | External invoice |
 | `usdt_pol` | Polygon | USDT | External invoice |
+| `usdt_bsc` | BNB Smart Chain | USDT | External invoice |
 | `usdc_eth` | Ethereum | USDC | External invoice |
 | `usdc_base` | Base | USDC | External invoice |
 | `usdc_pol` | Polygon | USDC | External invoice |
