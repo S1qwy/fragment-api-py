@@ -138,7 +138,8 @@ def _price(node: Any) -> str | None:
     if value is None:
         return _clean_price(_text(node)) or None
     number = Decimal(value)
-    if number.as_tuple().exponent >= -2:
+    exponent = number.as_tuple().exponent
+    if isinstance(exponent, int) and exponent >= -2:
         return format(number, ".2f")
     return format(number, "f")
 
@@ -996,7 +997,7 @@ def parse_gift_filters(
             value = _attr(node, "data-value")
             if not value:
                 continue
-            candidate = GiftAttributeValue(
+            attribute_value = GiftAttributeValue(
                 name=_attr(node, "data-keywords") or _words(_first(
                     node,
                     ".tm-main-filters-name",
@@ -1011,9 +1012,9 @@ def parse_gift_filters(
                 image_url=_image(node),
             )
             if value in values:
-                _merge_attribute(values[value], candidate)
+                _merge_attribute(values[value], attribute_value)
             else:
-                values[value] = candidate
+                values[value] = attribute_value
         category.items = list(values.values())
 
     return list(collections.values()), list(categories.values())

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+from FragmentAPI.types.context import ClientContext
+
 from FragmentAPI.exceptions import BroadcastUncertainError, ConfigurationError
 from FragmentAPI.types import constants as C
 from FragmentAPI.types import models as M
@@ -15,7 +19,7 @@ class BatchMixin:
     """A batch has one broadcast, without claiming atomic downstream fulfillment."""
 
     async def _batch_purchase(
-        self, items: list[dict | M.PurchaseItem], payment_method: str = "ton",
+        self: ClientContext, items: list[dict[str, Any] | M.PurchaseItem], payment_method: str = "ton",
     ) -> M.BatchResult:
         """Validate and prepare all invoices, then send exactly one wallet message.
 
@@ -107,7 +111,7 @@ class BatchMixin:
                         operation_id=receipt.operation_id,
                     ),
                 ))
-            record = await self.payment_storage.get(receipt.operation_id)
+            record = await self.payment_storage.get(receipt.operation_id) if receipt.operation_id else None
             return model(
                 total=len(items), succeeded=len(items), failed=0, chunks_sent=1,
                 transaction=combined, receipt=record.receipt if record else receipt,

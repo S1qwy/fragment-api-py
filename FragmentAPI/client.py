@@ -6,7 +6,7 @@ import asyncio
 import json
 import math
 import re
-from typing import Any
+from typing import Any, TypeVar
 from collections.abc import Callable
 from typing import AsyncContextManager
 from urllib.parse import quote, urlencode, urlsplit
@@ -57,6 +57,9 @@ from FragmentAPI.utils.wallet import (
     execute_transaction,
     fetch_wallet_info,
 )
+
+
+_HistoryItem = TypeVar("_HistoryItem")
 
 
 class FragmentClient(PurchaseMixin, PaymentRecoveryMixin, WithdrawalMixin):
@@ -622,7 +625,7 @@ class FragmentClient(PurchaseMixin, PaymentRecoveryMixin, WithdrawalMixin):
             **common,
         )
 
-    async def _history_page(self, page: str, parser: Any, **query: Any) -> Any:
+    async def _history_page(self, page: str, parser: Callable[[str], list[_HistoryItem]], **query: Any) -> list[_HistoryItem]:
         """Read authenticated history."""
         data = await self._page(f"{page}?{urlencode(query)}", account=True)
         return parser(data.get("h", ""))

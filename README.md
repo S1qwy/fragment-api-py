@@ -61,7 +61,11 @@ Operate user-owned assets, listings, offers, assignments, withdrawals, and sessi
 </tr>
 </table>
 
-## Release 14.4.0
+## Release 14.4.1
+
+Client mixins and wallet operations now share an explicit typing contract. Mypy checks the SDK in CI.
+
+## BNB Smart Chain payments
 
 Use `payment_method="usdt_bsc"` to create an external USDT invoice on BNB Smart Chain. The invoice exposes the raw amount and token precision for payment from an external wallet.
 

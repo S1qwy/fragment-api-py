@@ -6,6 +6,7 @@ import asyncio
 import errno
 import hashlib
 import os
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator
@@ -24,7 +25,7 @@ async def file_wallet_lock(address: str) -> AsyncIterator[None]:
     descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
     acquired = False
     try:
-        if os.name == "nt":
+        if sys.platform == "win32":
             import msvcrt
 
             # Windows byte-range locks need a byte even on a newly created file.
@@ -32,7 +33,7 @@ async def file_wallet_lock(address: str) -> AsyncIterator[None]:
                 os.write(descriptor, b"0")
         while not acquired:
             try:
-                if os.name == "nt":
+                if sys.platform == "win32":
                     os.lseek(descriptor, 0, os.SEEK_SET)
                     msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
                 else:
@@ -47,7 +48,7 @@ async def file_wallet_lock(address: str) -> AsyncIterator[None]:
         yield
     finally:
         if acquired:
-            if os.name == "nt":
+            if sys.platform == "win32":
                 os.lseek(descriptor, 0, os.SEEK_SET)
                 msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
             else:

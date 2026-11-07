@@ -74,7 +74,7 @@ async def _fetch(
         invoice_address=str(state["invoiceAddress"]),
         invoice_token=str(state["invoiceToken"]),
         invoice_chain_id=chain_id,
-        invoice_chain_name="TRON" if chain == "tron" else EVM_CHAIN_NAMES.get(chain_id, str(chain_id)),
+        invoice_chain_name="TRON" if chain == "tron" else EVM_CHAIN_NAMES.get(chain_id, str(chain_id)) if chain_id is not None else "unknown",
         invoice_network=network,
         invoice_amount_hex=raw_hex,
         invoice_amount_raw=raw_amount,

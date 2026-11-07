@@ -4,7 +4,7 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "fragment-api-py"
-version = "14.4.0"
+version = "14.4.1"
 description = "Async Fragment client with reusable transport, wallet authentication, external signing, and explicit payment receipts"
 readme = "README.md"
 authors = [{name = "S1qwy", email = "S1qwy@internet.ru"}]
@@ -42,7 +42,8 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "build>=1.0",
-    "ruff>=0.8"
+    "ruff>=0.8",
+    "mypy>=1.14,<3"
 ]
 
 [tool.flit.module]
@@ -60,3 +61,9 @@ tag_format = "v{version}"
 
 [tool.semantic_release.changelog]
 changelog_file = "CHANGELOG.md"
+
+[tool.mypy]
+files = ["FragmentAPI"]
+exclude = ["FragmentAPI/tests/"]
+ignore_missing_imports = true
+check_untyped_defs = true

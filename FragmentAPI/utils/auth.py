@@ -147,7 +147,7 @@ def fragment_cookies(session: requests.AsyncSession) -> dict[str, str]:
     return {
         cookie.name: cookie.value
         for cookie in session.cookies.jar
-        if cookie.domain.lstrip(".") == "fragment.com"
+        if cookie.domain.lstrip(".") == "fragment.com" and cookie.value is not None
     }
 
 

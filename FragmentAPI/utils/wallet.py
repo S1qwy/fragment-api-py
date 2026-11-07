@@ -58,7 +58,7 @@ from FragmentAPI.utils.decoder import decode_boc
 from FragmentAPI.utils.validation import decimal_units, normalize_payment_method
 
 if TYPE_CHECKING:
-    from FragmentAPI.client import FragmentClient
+    from FragmentAPI.types.context import ClientContext
 
 HIGHLOAD_QUERY_ID_SPACE = 1 << 23
 HIGHLOAD_BIT_NUMBER_SPACE = 1 << 10
@@ -106,7 +106,7 @@ def native_fee(payment_nanoton: int) -> int:
     ) // BASIS_POINTS_DENOMINATOR
 
 
-def _make_ton_client(client: FragmentClient) -> Any:
+def _make_ton_client(client: ClientContext) -> Any:
     """Construct the configured tonutils blockchain provider."""
     provider = ToncenterClient if client.api_provider == "toncenter" else TonapiClient
     return provider(network=NetworkGlobalID.MAINNET, api_key=client.api_key)
@@ -117,7 +117,7 @@ def _raw_address(value: str) -> str:
     return Address(value).to_str(is_user_friendly=False)
 
 
-async def build_account_info(client: FragmentClient) -> dict[str, Any]:
+async def build_account_info(client: ClientContext) -> dict[str, Any]:
     """Derive the paying account locally without a network balance request."""
     if client.sender_account is not None:
         return dict(client.sender_account)
@@ -160,7 +160,7 @@ async def _get_usdt_units(ton: Any, owner: str) -> int:
         ) from exc
 
 
-async def fetch_wallet_info(client: FragmentClient) -> WalletInfo:
+async def fetch_wallet_info(client: ClientContext) -> WalletInfo:
     """Read actual provider state instead of wallet.refresh fallback state."""
     client._require_wallet()
     async with _make_ton_client(client) as ton:
@@ -256,7 +256,7 @@ def prepare_transaction(
         )
 
     valid_until = inner.get("validUntil", inner.get("valid_until", int(time.time()) + 300))
-    if isinstance(valid_until, bool):
+    if valid_until is None or isinstance(valid_until, bool):
         raise TransactionError("Invalid transaction expiration.")
     valid_until = int(valid_until)
     if valid_until <= int(time.time()):
@@ -317,7 +317,7 @@ def combine_prepared(invoices: list[PreparedTransaction], wallet_version: str) -
     if first.payment_method == "usdt_ton":
         if any(invoice.required_usdt_units is None for invoice in invoices):
             raise TransactionError("Every USDT invoice needs an exact token amount.")
-        units = sum(invoice.required_usdt_units for invoice in invoices)
+        units = sum(invoice.required_usdt_units for invoice in invoices if invoice.required_usdt_units is not None)
     request_ids = [invoice.req_id for invoice in invoices]
     if not all(request_ids) or len(set(request_ids)) != len(request_ids):
         raise TransactionError("Every batch invoice must have a distinct request id.")
@@ -403,7 +403,7 @@ def _extract_tx_result(result: Any) -> tuple[str, str | None]:
 
 
 async def execute_prepared(
-    client: FragmentClient,
+    client: ClientContext,
     prepared: PreparedTransaction,
     *,
     required_usdt_units: int | None = None,
@@ -549,7 +549,7 @@ async def execute_prepared(
 
 
 async def execute_transaction(
-    client: FragmentClient,
+    client: ClientContext,
     transaction_data: dict[str, Any],
     *,
     payment_method: str = "ton",
@@ -588,7 +588,7 @@ async def execute_transaction(
 
 
 async def execute_batch_transaction(
-    client: FragmentClient,
+    client: ClientContext,
     transaction_data: dict[str, Any],
     *,
     payment_method: str = "ton",

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from FragmentAPI.types.context import ClientContext
+
 from typing import Literal
 
 from FragmentAPI.exceptions import BroadcastUncertainError, ConfigurationError
@@ -11,15 +13,15 @@ from FragmentAPI.types import models as M
 class PaymentRecoveryMixin:
     """Inspect durable intent and resume confirmation with the original session."""
 
-    async def get_payment(self, operation_id: str) -> M.PaymentRecord | None:
+    async def get_payment(self: ClientContext, operation_id: str) -> M.PaymentRecord | None:
         """Return a journal entry, including a recoverable signed BOC."""
         return await self.payment_storage.get(operation_id)
 
-    async def list_payments(self, sender_address: str | None = None) -> list[M.PaymentRecord]:
+    async def list_payments(self: ClientContext, sender_address: str | None = None) -> list[M.PaymentRecord]:
         """List local payment records; do not expose their BOCs in public logs."""
         return await self.payment_storage.list(sender_address)
 
-    async def _save_confirmation(self, req_id: str, receipt: M.TransactionResult) -> None:
+    async def _save_confirmation(self: ClientContext, req_id: str, receipt: M.TransactionResult) -> None:
         if not receipt.operation_id:
             return
         record = await self.payment_storage.get(receipt.operation_id)
@@ -31,8 +33,9 @@ class PaymentRecoveryMixin:
         if record.confirmations and all(context.receipt and context.receipt.confirmed for context in record.confirmations):
             record.state = "confirmed"
             record.error = None
-            record.receipt.confirmed = True
-            record.receipt.status = "confirmed"
+            if record.receipt is not None:
+                record.receipt.confirmed = True
+                record.receipt.status = "confirmed"
         elif record.state not in {"sending", "unknown", "settled", "not_broadcast"}:
             record.state = "broadcast"
         if record.receipt is not None:
@@ -40,7 +43,7 @@ class PaymentRecoveryMixin:
         await self.payment_storage.save(record)
 
     async def resolve_payment(
-        self, operation_id: str, *, outcome: Literal["settled", "not_broadcast"], evidence: str,
+        self: ClientContext, operation_id: str, *, outcome: Literal["settled", "not_broadcast"], evidence: str,
     ) -> M.PaymentRecord:
         """Record an operator's independently verified chain result and unblock the payer.
 
@@ -57,6 +60,8 @@ class PaymentRecoveryMixin:
             raise ConfigurationError("Payment journal entry is missing.")
         async with self._wallet_lock, self.wallet_lock_factory(initial.sender_address):
             record = await self.payment_storage.get(operation_id)
+            if record is None:
+                raise ConfigurationError("Payment journal entry is missing.")
             if record.state == "confirmed":
                 raise ConfigurationError("A fulfilled payment cannot be reclassified.")
             record.state = outcome
@@ -66,7 +71,7 @@ class PaymentRecoveryMixin:
             await self.payment_storage.save(record)
             return record
 
-    async def reconcile_payment(self, operation_id: str) -> M.PaymentRecord:
+    async def reconcile_payment(self: ClientContext, operation_id: str) -> M.PaymentRecord:
         """Report the recorded BOC and poll scoped invoice state, without paying again.
 
         Use the original Fragment cookies. An uncorrelated page state cannot
@@ -88,6 +93,8 @@ class PaymentRecoveryMixin:
                         context.req_id, context.page_url, context.state_method,
                     )
                 record = await self.payment_storage.get(operation_id)
+                if record is None:
+                    raise ConfigurationError("Payment journal entry is missing.")
                 if record.state in {"sending", "unknown"}:
                     raise BroadcastUncertainError(
                         "No invoice-scoped fulfillment evidence was returned; inspect the recorded message on-chain.",

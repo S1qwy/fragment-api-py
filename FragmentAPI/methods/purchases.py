@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from FragmentAPI.types.context import ClientContext
+
 import asyncio
 import json
 import time
@@ -58,7 +60,7 @@ class PurchaseMixin(BatchMixin):
     """Purchase implementation shared by the public Fragment client."""
 
     async def _confirm(
-        self,
+        self: ClientContext,
         transaction: dict[str, Any],
         receipt: M.TransactionResult,
         account: dict[str, Any],
@@ -117,7 +119,7 @@ class PurchaseMixin(BatchMixin):
         return receipt
 
     async def _purchase_flow(
-        self, kind: str, target: str, amount: int, *,
+        self: ClientContext, kind: str, target: str, amount: int, *,
         payment_method: str = "ton", show_sender: bool = True,
         winners: int | None = None,
     ) -> tuple[M.TransactionResult, str] | M.PreparedTransaction | M.ExternalPaymentResult:
@@ -141,7 +143,7 @@ class PurchaseMixin(BatchMixin):
             return receipt, context.req_id
 
     async def _prepare_purchase(
-        self,
+        self: ClientContext,
         kind: str,
         target: str,
         amount: int,
@@ -233,6 +235,8 @@ class PurchaseMixin(BatchMixin):
                 payment_method=method, invoice=invoice,
             )
 
+        if account is None:
+            raise TransactionError("A TON payment requires a sender account.")
         transaction = await self._api(
             link_method,
             {
@@ -281,7 +285,7 @@ class PurchaseMixin(BatchMixin):
 
 
     async def _single_purchase(
-        self, kind: str, username: str, amount: int,
+        self: ClientContext, kind: str, username: str, amount: int,
         show_sender: bool, payment_method: str,
     ) -> M.PurchaseResult | M.PreparedTransaction | M.ExternalPaymentResult:
         """Normalize one purchase receipt."""
@@ -306,8 +310,8 @@ class PurchaseMixin(BatchMixin):
         )
 
     async def purchase(
-        self,
-        items_or_type: list[Any] | dict[str, Any] | M.PurchaseItem | str,
+        self: ClientContext,
+        items_or_type: list[dict[str, Any] | M.PurchaseItem] | dict[str, Any] | M.PurchaseItem | str,
         username: str | None = None,
         amount: int | None = None,
         months: int | None = None,
@@ -329,7 +333,7 @@ class PurchaseMixin(BatchMixin):
         else:
             raise ConfigurationError("Unsupported purchase input.")
         kind = item.get("type")
-        target = item.get("username")
+        target = normalize_recipient(item.get("username"))
         sender = item.get("show_sender", True)
         if kind == "stars":
             value = integer(item.get("amount"), C.STARS_PURCHASE_MIN, C.STARS_PURCHASE_MAX, ConfigurationError.INVALID_STARS_AMOUNT)
@@ -345,29 +349,35 @@ class PurchaseMixin(BatchMixin):
         raise ConfigurationError(f"Unsupported purchase type: {kind!r}")
 
     async def giveaway_stars(
-        self, channel: str, winners: int, amount: int,
+        self: ClientContext, channel: str, winners: int, amount: int,
         payment_method: str = "ton",
     ) -> M.GiveawayStarsResult | M.PreparedTransaction | M.ExternalPaymentResult:
         """Run an original-limit total-package Stars giveaway."""
         stars_giveaway(amount, winners)
-        return await self._giveaway(
+        result = await self._giveaway(
             "giveaway_stars", channel, winners, amount, payment_method
         )
+        if isinstance(result, M.GiveawayPremiumResult):
+            raise TransactionError("Unexpected Premium giveaway result.")
+        return result
 
     async def giveaway_premium(
-        self, channel: str, winners: int, months: int = 3,
+        self: ClientContext, channel: str, winners: int, months: int = 3,
         payment_method: str = "ton",
     ) -> M.GiveawayPremiumResult | M.PreparedTransaction | M.ExternalPaymentResult:
         """Run a Premium giveaway."""
         integer(winners, 1, 24_000, ConfigurationError.INVALID_WINNERS_PREMIUM)
         validate_months(months)
-        return await self._giveaway(
+        result = await self._giveaway(
             "giveaway_premium", channel, winners, months, payment_method
         )
+        if isinstance(result, M.GiveawayStarsResult) and not isinstance(result, M.GiveawayPremiumResult):
+            raise TransactionError("Unexpected Stars giveaway result.")
+        return result
 
     async def _giveaway(
-        self, kind: str, channel: str, winners: int, amount: int, payment_method: str,
-    ) -> M.GiveawayStarsResult | M.PreparedTransaction | M.ExternalPaymentResult:
+        self: ClientContext, kind: str, channel: str, winners: int, amount: int, payment_method: str,
+    ) -> M.GiveawayStarsResult | M.GiveawayPremiumResult | M.PreparedTransaction | M.ExternalPaymentResult:
         """Normalize giveaway receipts."""
         channel = normalize_recipient(channel)
         result = await self._purchase_flow(
@@ -385,10 +395,12 @@ class PurchaseMixin(BatchMixin):
             req_id=req_id, confirmation_error=receipt.confirmation_error,
         )
 
-    async def recharge_ads(self, account_id: str, amount: int) -> M.AdsRechargeResult | M.PreparedTransaction:
+    async def recharge_ads(self: ClientContext, account_id: str, amount: int) -> M.AdsRechargeResult | M.PreparedTransaction:
         """Recharge a specified Ads account."""
         integer(amount, 1, C.GRAM_TOPUP_MAX, ConfigurationError.INVALID_GRAM_AMOUNT)
         result = await self._purchase_flow("ads_recharge", account_id, amount)
+        if isinstance(result, M.ExternalPaymentResult):
+            raise TransactionError("Ads recharge requires a TON transaction.")
         if not isinstance(result, tuple):
             return result
         receipt, req_id = result
@@ -399,10 +411,12 @@ class PurchaseMixin(BatchMixin):
             confirmation_error=receipt.confirmation_error,
         )
 
-    async def recharge_gateway(self, account_id: str, credits: int) -> M.GatewayRechargeResult | M.PreparedTransaction:
+    async def recharge_gateway(self: ClientContext, account_id: str, credits: int) -> M.GatewayRechargeResult | M.PreparedTransaction:
         """Recharge a Gateway account."""
         integer(credits, 1, 10 ** 12, ConfigurationError.INVALID_CREDITS_AMOUNT)
         result = await self._purchase_flow("gateway", account_id, credits)
+        if isinstance(result, M.ExternalPaymentResult):
+            raise TransactionError("Gateway recharge requires a TON transaction.")
         if not isinstance(result, tuple):
             return result
         receipt, req_id = result
@@ -413,7 +427,7 @@ class PurchaseMixin(BatchMixin):
             confirmation_error=receipt.confirmation_error,
         )
 
-    async def get_gateway_price(self, account_id: str, credits: int) -> M.GatewayPriceInfo:
+    async def get_gateway_price(self: ClientContext, account_id: str, credits: int) -> M.GatewayPriceInfo:
         """Quote Gateway credits."""
         integer(credits, 1, 10 ** 12, ConfigurationError.INVALID_CREDITS_AMOUNT)
         result = await self._api(

@@ -1,7 +1,10 @@
 """Revenue withdrawal links with read-only inspection and explicit confirmation."""
 from __future__ import annotations
 
+from FragmentAPI.types.context import ClientContext
+
 import hashlib
+from typing import Literal
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 from selectolax.lexbor import LexborHTMLParser
@@ -12,11 +15,11 @@ from FragmentAPI.utils.auth import embedded_object
 from FragmentAPI.utils.http import validate_page_url, raise_api_error
 from FragmentAPI.utils.wallet import build_account_info
 
-_PATHS = {"/stars/withdraw": ("stars", "initStarsRevenueWithdrawalRequest"),
+_PATHS: dict[str, tuple[Literal["stars", "ads"], str]] = {"/stars/withdraw": ("stars", "initStarsRevenueWithdrawalRequest"),
           "/ads/withdraw": ("ads", "initAdsRevenueWithdrawalRequest")}
 
 
-def parse_withdrawal_url(url: str) -> tuple[str, str, str]:
+def parse_withdrawal_url(url: str) -> tuple[Literal["stars", "ads"], str, str]:
     """Validate before sending cookies; canonicalize to the supported route/token."""
     try:
         if not isinstance(url, str) or any(ord(c) < 32 for c in url):
@@ -36,7 +39,7 @@ def parse_withdrawal_url(url: str) -> tuple[str, str, str]:
 
 
 class WithdrawalMixin:
-    async def inspect_withdrawal(self, url: str) -> WithdrawalInfo:
+    async def inspect_withdrawal(self: ClientContext, url: str) -> WithdrawalInfo:
         """Read a revenue link without initializing or confirming a withdrawal."""
         kind, transaction, canonical = parse_withdrawal_url(url)
         self._require_account("inspect_withdrawal")
@@ -62,7 +65,7 @@ class WithdrawalMixin:
             kyc_required=bool(state["need_verify"]) if "need_verify" in state else None,
         )
 
-    async def prepare_withdrawal(self, url: str) -> WithdrawalRequest:
+    async def prepare_withdrawal(self: ClientContext, url: str) -> WithdrawalRequest:
         """Initialize with Fragment to request a challenge; this is a state-changing call.
 
         Some server responses may have no challenge. Such results are returned
@@ -89,7 +92,7 @@ class WithdrawalMixin:
                 confirm_hash=token, confirmation_required=bool(token and message), server_response=result,
             )
 
-    async def confirm_withdrawal(self, request: WithdrawalRequest) -> WithdrawalConfirmResult:
+    async def confirm_withdrawal(self: ClientContext, request: WithdrawalRequest) -> WithdrawalConfirmResult:
         """Submit one reviewed challenge; uncertain submissions are never auto-replayed."""
         if not isinstance(request, WithdrawalRequest) or not request.confirmation_required or not request.confirm_hash:
             raise ConfigurationError("A reviewed WithdrawalRequest with a server confirmation challenge is required.")

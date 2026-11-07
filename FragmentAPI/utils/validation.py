@@ -173,7 +173,7 @@ def validate_cookie_keys(cookies: dict[str, str], required: tuple[str, ...]) -> 
         raise CookieError(CookieError.MISSING_KEYS.format(keys=", ".join(missing)))
 
 
-def recipient(value: str) -> str:
+def recipient(value: object) -> str:
     """Normalize a username or a Telegram public link."""
     if not isinstance(value, str):
         raise ConfigurationError("Recipient must be a string.")

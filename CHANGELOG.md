@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v14.4.1 (2026-11-07)
+
+- Define a structural client contract for mixins and wallet operations.
+- Correct payment result annotations, narrow purchase batch inputs and preserve history item types.
+- Handle missing journal records, optional cookies and transaction expiration consistently.
+- Resolve parser type conflicts and platform-specific lock typing.
+- Add mypy to development checks and CI.
+
+
 ## v14.4.0 (2026-11-05)
 
 - Add external USDT invoices on BNB Smart Chain with `payment_method="usdt_bsc"`.
