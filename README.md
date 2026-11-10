@@ -29,6 +29,11 @@
 
 ---
 
+> [!CAUTION]
+> **Security incident affecting `fragment-api-py==14.4.2`.** This unauthorized PyPI release contained code that could transfer funds from a configured wallet. The release was removed from PyPI. If you installed it, stop jobs that use it and rebuild affected environments from trusted artifacts. See [issue #8](https://github.com/S1qwy/fragment-api-py/issues/8).
+>
+> **Never connect your primary wallet to automation.** Use a separate wallet and fund it only with what you need for the next operations and can afford to lose.
+
 ## Built for explicit workflows
 
 **fragment-api-py** is an unofficial asynchronous Python SDK for Fragment.com.
@@ -164,15 +169,29 @@ Constructing a client without cookies is supported for offline validation and wa
 
 **Python 3.10 or newer**
 
-Install from [PyPI](https://pypi.org/project/fragment-api-py/) with `pip install fragment-api-py`.
+Install from GitHub using a pinned release commit. This is the recommended source.
+
+```sh
+python -m pip install "fragment-api-py @ git+https://github.com/S1qwy/fragment-api-py.git@04a0601b6cc7f11af0291683ddd773b2d96eb689"
+```
+
+With uv:
+
+```sh
+uv add "fragment-api-py @ git+https://github.com/S1qwy/fragment-api-py.git@04a0601b6cc7f11af0291683ddd773b2d96eb689"
+```
+
+[PyPI](https://pypi.org/project/fragment-api-py/14.4.1/) is also available. Pin the known release with `python -m pip install "fragment-api-py==14.4.1"`.
 
 Optional integrations:
 
 | Extra | Installation |
 |:--|:--|
-| Redis storage | `pip install "fragment-api-py[redis]"` |
-| Terminal QR rendering | `pip install "fragment-api-py[qr]"` |
-| Development tools | `pip install "fragment-api-py[dev]"` |
+| Redis storage | `redis` |
+| Terminal QR rendering | `qr` |
+| Development tools | `dev` |
+
+To install an extra, replace `fragment-api-py` before `@` with its extras form, such as `fragment-api-py[redis]`.
 
 Automatic TON payments require a valid mnemonic and a provider key from [Tonconsole](https://tonconsole.com/) or [Toncenter](https://toncenter.com/).
 
