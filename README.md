@@ -118,16 +118,16 @@ Constructing a client without cookies is supported for offline validation and wa
 Install from GitHub using a pinned release commit. This is the recommended source.
 
 ```sh
-python -m pip install "fragment-api-py @ git+https://github.com/S1qwy/fragment-api-py.git@04a0601b6cc7f11af0291683ddd773b2d96eb689"
+python -m pip install "fragment-api-py @ git+https://github.com/S1qwy/fragment-api-py.git@v14.5.0"
 ```
 
 With uv:
 
 ```sh
-uv add "fragment-api-py @ git+https://github.com/S1qwy/fragment-api-py.git@04a0601b6cc7f11af0291683ddd773b2d96eb689"
+uv add "fragment-api-py @ git+https://github.com/S1qwy/fragment-api-py.git@v14.5.0"
 ```
 
-[PyPI](https://pypi.org/project/fragment-api-py/14.4.1/) is also available. Pin the known release with `python -m pip install "fragment-api-py==14.4.1"`.
+[PyPI](https://pypi.org/project/fragment-api-py/14.5.0/) is also available. Pin the known release with `python -m pip install "fragment-api-py==14.5.0"`.
 
 Optional integrations:
 

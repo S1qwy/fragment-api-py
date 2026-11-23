@@ -2,7 +2,7 @@
 
 <!-- version list -->
 
-## Unreleased
+## v14.5.0 (2026-11-23)
 
 - Remove Gram Earnings top-up purchases, batch items, recipient lookup and obsolete result model after Fragment removed `/ads/topup`.
 - Preserve past top-up history and Ads account recharge.
