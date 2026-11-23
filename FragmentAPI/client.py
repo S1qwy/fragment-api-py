@@ -414,10 +414,6 @@ class FragmentClient(PurchaseMixin, PaymentRecoveryMixin, WithdrawalMixin):
         validate_months(months)
         return await self._recipient("searchPremiumGiftRecipient", username, C.PREMIUM_GIFT_PAGE, months=months)
 
-    async def get_ads_topup_recipient(self, username: str) -> M.RecipientInfo | None:
-        """Resolve an Ads top-up recipient."""
-        return await self._recipient("searchAdsTopupRecipient", username, C.ADS_TOPUP_PAGE)
-
     async def get_giveaway_stars_recipient(
         self, channel: str, winners: int = 1, amount: int = 500,
     ) -> M.RecipientInfo | None:

@@ -26,7 +26,6 @@ PREMIUM_PAGE = f"{FRAGMENT_BASE_URL}/premium"
 PREMIUM_GIFT_PAGE = f"{PREMIUM_PAGE}/gift"
 PREMIUM_HISTORY_PAGE = f"{PREMIUM_PAGE}/history"
 PREMIUM_GIVEAWAY_PAGE = f"{PREMIUM_PAGE}/giveaway"
-ADS_TOPUP_PAGE = f"{FRAGMENT_BASE_URL}/ads/topup"
 ADS_HISTORY_PAGE = f"{FRAGMENT_BASE_URL}/ads/history"
 ADS_PAY_PAGE = f"{FRAGMENT_BASE_URL}/ads/pay"
 GATEWAY_PAGE = f"{FRAGMENT_BASE_URL}/gateway"
@@ -107,8 +106,7 @@ AUTH_REQUIRED_COOKIE_KEYS = ("stel_ssid", "stel_dt", "stel_ton_token")
 PREMIUM_MONTHS_VALID = frozenset({3, 6, 12})
 STARS_PURCHASE_MIN = 50
 STARS_PURCHASE_MAX = 10_000_000
-GRAM_TOPUP_MIN = 1
-GRAM_TOPUP_MAX = 1_000_000_000
+ADS_RECHARGE_MAX = 1_000_000_000
 STARS_GIVEAWAY_MIN = 500
 STARS_GIVEAWAY_MAX = 1_000_000
 STARS_GIVEAWAY_PACKAGES = frozenset({
@@ -123,7 +121,7 @@ ITEM_TYPE_NUMBER = 3
 ITEM_TYPE_GIFT = 5
 ITEM_TYPE_URL_PREFIX = {1: "username", 3: "number", 5: "gift"}
 VALID_ITEM_TYPES = frozenset(ITEM_TYPE_URL_PREFIX)
-PURCHASE_TYPES = frozenset({"stars", "premium", "ton"})
+PURCHASE_TYPES = frozenset({"stars", "premium"})
 
 EVM_PAYMENT_METHODS = frozenset({
     "usdt_eth", "usdt_pol", "usdt_bsc", "usdc_eth", "usdc_base", "usdc_pol",

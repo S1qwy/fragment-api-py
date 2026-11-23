@@ -45,9 +45,6 @@ class BatchMixin:
                 value = months(item.get("months"))
             elif kind == "stars":
                 value = integer(item.get("amount"), C.STARS_PURCHASE_MIN, C.STARS_PURCHASE_MAX, ConfigurationError.INVALID_STARS_AMOUNT)
-            elif kind == "ton" and method == "ton":
-                kind = "ton"
-                value = integer(item.get("amount"), C.GRAM_TOPUP_MIN, C.GRAM_TOPUP_MAX, ConfigurationError.INVALID_GRAM_AMOUNT)
             else:
                 raise ConfigurationError(f"Unsupported batch item type/payment combination: {kind!r}.")
             normalized.append((kind, target, value, show))

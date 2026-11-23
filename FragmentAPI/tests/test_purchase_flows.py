@@ -14,7 +14,6 @@ from FragmentAPI.types.constants import FEE_ADDRESS
     [
         ("stars", 50, None, {"query": "recipient", "quantity": ""}),
         ("premium", 3, None, {"query": "recipient", "months": 3}),
-        ("ton", 1, None, {"query": "recipient"}),
         ("giveaway_stars", 500, 1, {"query": "recipient"}),
         ("giveaway_premium", 3, 1, {"query": "recipient", "months": 3, "quantity": 1}),
     ],
@@ -58,3 +57,17 @@ async def test_current_invoice_prepares_without_broadcast(kind, amount, winners,
         assert prepared.raw["ok"] is True
         assert prepared.raw["confirm_method"] == "confirmReq"
         client._confirm.assert_not_awaited()
+
+
+@pytest.mark.parametrize("items", ["ton", [{"type": "ton", "username": "recipient", "amount": 1}]])
+async def test_removed_earnings_topup_rejected_before_network(items):
+    from FragmentAPI import FragmentClient
+    from FragmentAPI.exceptions import ConfigurationError
+    from unittest.mock import AsyncMock
+
+    async with FragmentClient() as client:
+        client._api = AsyncMock()
+        with pytest.raises(ConfigurationError, match="Unsupported"):
+            await client.purchase(items, "recipient", 1)
+        client._api.assert_not_awaited()
+    assert not hasattr(FragmentClient, "get_ads_topup_recipient")

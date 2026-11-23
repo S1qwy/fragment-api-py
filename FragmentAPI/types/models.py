@@ -188,12 +188,6 @@ class StarsResult(PurchaseResult):
     type: str = "stars"
 
 
-class AdsTopupResult(PurchaseResult):
-    """Ads top-up compatibility result."""
-
-    type: str = "ton"
-
-
 class GiveawayStarsResult(FragmentBaseModel):
     """Stars giveaway receipt using the total package amount."""
 

@@ -94,7 +94,7 @@ All Fragment HTTP operations require `FRAGMENT_COOKIES`. Use `authentication.py`
 | Setup and authentication | `basic_setup.py`, `authentication.py`, `session_storage.py` |
 | Payments | `purchase_stars.py`, `purchase_premium.py`, `batch_purchase.py`, `giveaways.py` |
 | External payments | `external_signing.py`, `external_payment_automation.py` |
-| Ads and Gateway | `topup_grams.py`, `gateway_and_ads.py` |
+| Ads and Gateway | `gateway_and_ads.py` |
 | Marketplace | `search_marketplace.py`, `item_details.py`, `prices.py` |
 | Account operations | `wallet_and_profile.py`, `transaction_history.py`, `marketplace_bids_and_auctions.py` |
 | Transfers and numbers | `nft_transfers_and_withdrawals.py`, `anonymous_numbers.py` |

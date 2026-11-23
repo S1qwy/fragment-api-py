@@ -33,10 +33,6 @@ _FLOWS = {
         C.PREMIUM_GIFT_PAGE, "searchPremiumGiftRecipient", "updatePremiumState",
         "initGiftPremiumRequest", "getGiftPremiumLink",
     ),
-    "ton": (
-        C.ADS_TOPUP_PAGE, "searchAdsTopupRecipient", "updateAdsTopupState",
-        "initAdsTopupRequest", "getAdsTopupLink",
-    ),
     "giveaway_stars": (
         C.STARS_GIVEAWAY_PAGE, "searchStarsGiveawayRecipient", "updateStarsGiveawayState",
         "initGiveawayStarsRequest", "getGiveawayStarsLink",
@@ -155,7 +151,7 @@ class PurchaseMixin(BatchMixin):
         """Prepare an invoice and retain its confirmation context without broadcasting."""
         method = normalize_payment_method(payment_method)
         page, search_method, state_method, init_method, link_method = _FLOWS[kind]
-        if kind in {"ton", "ads_recharge", "gateway"} and method != "ton":
+        if kind in {"ads_recharge", "gateway"} and method != "ton":
             raise ConfigurationError("This operation supports native TON only.")
         if not isinstance(show_sender, bool):
             raise ConfigurationError("show_sender must be a boolean.")
@@ -204,7 +200,7 @@ class PurchaseMixin(BatchMixin):
             data["credits"] = amount
         else:
             data["amount"] = amount
-        if kind not in {"ton", "ads_recharge", "gateway"}:
+        if kind not in {"ads_recharge", "gateway"}:
             data["payment_method"] = method
         initialized = await self._api(init_method, data, page)
         req_id = str(initialized.get("req_id") or "")
@@ -257,7 +253,7 @@ class PurchaseMixin(BatchMixin):
         usdt_units: int | None = None
         if method == "ton":
             raw_price = initialized.get("amount")
-            if raw_price is None and kind in {"ton", "ads_recharge"}:
+            if raw_price is None and kind in {"ads_recharge"}:
                 raw_price = amount
             if raw_price is not None:
                 principal = decimal_units(raw_price, 9)
@@ -341,11 +337,6 @@ class PurchaseMixin(BatchMixin):
         if kind == "premium":
             value = validate_months(item.get("months") if item.get("months") is not None else item.get("amount"))
             return await self._single_purchase("premium", target, value, sender, payment_method)
-        if kind == "ton":
-            if normalize_payment_method(payment_method) != "ton":
-                raise ConfigurationError("Ads top-up requires native TON.")
-            value = integer(item.get("amount"), C.GRAM_TOPUP_MIN, C.GRAM_TOPUP_MAX, ConfigurationError.INVALID_TON_AMOUNT)
-            return await self._single_purchase("ton", target, value, sender, "ton")
         raise ConfigurationError(f"Unsupported purchase type: {kind!r}")
 
     async def giveaway_stars(
@@ -397,7 +388,7 @@ class PurchaseMixin(BatchMixin):
 
     async def recharge_ads(self: ClientContext, account_id: str, amount: int) -> M.AdsRechargeResult | M.PreparedTransaction:
         """Recharge a specified Ads account."""
-        integer(amount, 1, C.GRAM_TOPUP_MAX, ConfigurationError.INVALID_GRAM_AMOUNT)
+        integer(amount, 1, C.ADS_RECHARGE_MAX, ConfigurationError.INVALID_GRAM_AMOUNT)
         result = await self._purchase_flow("ads_recharge", account_id, amount)
         if isinstance(result, M.ExternalPaymentResult):
             raise TransactionError("Ads recharge requires a TON transaction.")

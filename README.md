@@ -46,7 +46,7 @@ Browse the marketplace, resolve recipients, prepare transactions for external si
 
 ### Purchase
 
-Telegram Stars, Premium gifts, channel giveaways, Ads top-ups, and Gateway credits.
+Telegram Stars, Premium gifts, channel giveaways, Ads account recharges, and Gateway credits.
 
 </td>
 <td width="33%" valign="top">
@@ -66,9 +66,9 @@ Operate user-owned assets, listings, offers, assignments, withdrawals, and sessi
 </tr>
 </table>
 
-## Release 14.4.1
+## Gram Earnings top-ups removed
 
-Client mixins and wallet operations now share an explicit typing contract. Mypy checks the SDK in CI.
+Fragment removed Telegram account balance top-ups. The SDK removes `purchase("ton", ...)`, Gram top-up batch items, and `get_ads_topup_recipient()`. Stars, Premium, Ads account recharge and Gateway retain their own workflows. Past top-up records remain available through `get_topup_history()`.
 
 ## BNB Smart Chain payments
 
@@ -94,63 +94,9 @@ Use the same user-owned cookies throughout. Configure a payer seed or `sender_ac
 
 Link tokens, opaque state and confirmation hashes are hidden from model `repr`, but serialization still contains them: keep exported requests private. Invalid hosts/routes, duplicate or empty transaction parameters and expired/mismatched link state are rejected. NFT withdrawal links retain their existing separate methods.
 
-## Previous release 14.3.1
+## Upgrading
 
-- `link_wallet()` links an already connected TON wallet using the current user session.
-- `disconnect_wallet()` disconnects TON and removes `stel_ton_token` from both local cookies and the live jar.
-- `logout()` ends the Fragment session, clears local cookies and deletes the persisted session.
-- `mnemonic_type="ton" | "multichain"` selects validation and derivation consistently for authentication, wallet inspection, preparation and signing. Defaults: multichain/BIP-39 for `WalletTg`, TON for other contracts. Rotated Telegram Wallet phrases are validated as two BIP-39 halves.
-- Ordinary wallets support 12/15/18/21/24 words where valid for the chosen scheme; `WalletTg` accepts 12 or 24. Invalid words/checksums fail locally. Requires tonutils 2.5.1+ and ton-core 0.7.1+.
-
-```python
-client = FragmentClient(cookies=cookies, seed=seed, wallet_version="WalletTg")
-# For BIP-39 with another supported contract, set mnemonic_type="multichain".
-await client.link_wallet()  # requires an existing stel_ton_token
-```
-
-## Previous release 14.3.0
-
-Fragment restored `/my/profile`. `get_profile()` now reads the Telegram username, account details, `identity_verified` and `wallet_verified` from that page. Account and wallet badges are parsed separately.
-
-Monetization withdrawals can require KYC. `init_stars_withdrawal`, `confirm_stars_withdrawal`, `init_ads_withdrawal` and `confirm_ads_withdrawal` raise `KycRequiredError` when Fragment requests verification. Complete verification on Fragment and retry explicitly. The SDK never completes KYC automatically.
-
-Purchase and giveaway operations remain available without KYC. No blanket profile check is added to payments. The unified `purchase` API and external TRON invoices from 14.2.0 are retained.
-
-## Previous release 14.2.0
-
-USDT on TRON uses `payment_method="usdt_tron"` and returns `ExternalPaymentResult` with an `ExternalInvoice`. TRON payments are external: the SDK does not sign or broadcast TRC-20 transfers.
-
-### API migration
-
-Use `purchase("stars", username, amount)`, `purchase("premium", username, months=3)`, or `purchase("ton", username, amount)`. Batch purchases use `purchase([...])` and retain one combined TON submission. The separate `purchase_stars`, `purchase_premium`, `topup_gram`, `topup_ton`, and `batch_purchase` methods are removed.
-
-Function-style `FragmentAPI.methods` adapters, `list_sessions`, `ConfigError`, `VerificationError`, and old `EvmInvoice` / `EvmPaymentResult` names are removed. Use `FragmentClient`, `get_sessions`, `ConfigurationError`, `FragmentAPIError`, and the `External*` classes. Payment method aliases `gram` and `usdt_gram` are removed; use `ton` and `usdt_ton`.
-
-
-Shared authentication has been removed. Fragment requests now use your own cookie session, with explicit authentication using your own wallet when needed.
-
-| Area | What changed |
-|:--|:--|
-| Authentication | The built-in public auth seed, automatic shared-wallet proof, and shared-mode options are removed |
-| Sessions | Fragment HTTP operations require user-owned cookies; missing cookies fail before any request |
-| Batches | All batches return `BatchResult`; the shared-mode result type is removed |
-| Profile | `get_profile()` reads the restored `/my/profile` route and verification badges |
-| Account fields | Name, username, photo, wallet address/label, identity and wallet verification |
-| API errors | Revenue withdrawals raise `KycRequiredError` on a server verification request; other errors use `FragmentAPIError` |
-| Giveaways | Stars recipient search sends only `query`, matching the current Fragment interface |
-| Marketplace | Wallet owners and history support the current `gram.org/address/` explorer links |
-
-Remove `shared_auth_seed` and `wallet_auth` constructor arguments and stop using `nokyc_mode` or `NoKycBatchResult`. Supply `cookies` directly, load them from session storage, or call `FragmentClient.authenticate()` with your own wallet before constructing the client. No built-in wallet is used for authentication or payment.
-
-`ProfileInfo.identity_verified` and `wallet_verified` are restored in 14.3.0 with the profile page.
-
-Live checks on November 2, 2026 returned request IDs and unsigned native-TON transactions for Stars, Premium, both giveaway types, and Ads top-ups without a verification challenge in the tested session. No payments were submitted. Withdrawals and asset mutations require valid operation links or assets and were not exercised by that check.
-
-> [!IMPORTANT]
-> Version 14 includes breaking changes. Batches combine all invoices into one wallet submission
-> and reject preparation/capacity failures before sending. TON preparation requires a real payer
-> identity. Fulfillment remains per invoice.
-> Read the [migration notes](https://github.com/S1qwy/fragment-api-py/wiki/Home#migrating-to-1400) before upgrading.
+See the [migration guide](https://github.com/S1qwy/fragment-api-py/wiki/Migrations) for breaking changes and previous API transitions.
 
 ## Choose your workflow
 
@@ -185,7 +131,7 @@ uv add "fragment-api-py @ git+https://github.com/S1qwy/fragment-api-py.git@04a06
 
 Optional integrations:
 
-| Extra | Installation |
+| Extra | Name |
 |:--|:--|
 | Redis storage | `redis` |
 | Terminal QR rendering | `qr` |

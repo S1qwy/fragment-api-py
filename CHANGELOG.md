@@ -2,6 +2,12 @@
 
 <!-- version list -->
 
+## Unreleased
+
+- Remove Gram Earnings top-up purchases, batch items, recipient lookup and obsolete result model after Fragment removed `/ads/topup`.
+- Preserve past top-up history and Ads account recharge.
+- Move historical migration notes to the Wiki Migrations page and update examples.
+
 ## v14.4.1 (2026-11-07)
 
 - Define a structural client contract for mixins and wallet operations.
