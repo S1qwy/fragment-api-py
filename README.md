@@ -1,8 +1,7 @@
-<p align="center">
-  <img src="https://fragment.com/img/fragment_icon.svg" width="112" alt="Fragment">
-</p>
-
-<h1 align="center">Fragment API Python</h1>
+<h1 align="center">
+  <img src="https://raw.githubusercontent.com/S1qwy/fragment-api-py/main/assets/fragment-diamond-webgl.gif" width="96" height="96" alt=""><br>
+  Fragment API Python
+</h1>
 
 <p align="center">
   <strong>One async client. Explicit payment states. A complete Fragment workspace.</strong>
