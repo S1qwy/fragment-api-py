@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/S1qwy/fragment-api-py/main/assets/fragment-diamond-webgl.gif" width="16" height="16" align="texttop" alt=""> <a href="https://github.com/S1qwy/fragment-api-py/wiki"><strong>Read the documentation</strong></a>
+  <a href="https://github.com/S1qwy/fragment-api-py/wiki"><strong>Read the documentation</strong></a>
   &nbsp; / &nbsp;
   <a href="https://github.com/S1qwy/fragment-api-py/tree/main/examples"><strong>Explore examples</strong></a>
   &nbsp; / &nbsp;
